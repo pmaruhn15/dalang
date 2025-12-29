@@ -53,12 +53,7 @@ fun SearchBar(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Such-Icon
-                Text(
-                    text = "🔍",
-                    fontSize = 18.sp,
-                    modifier = Modifier.padding(end = 12.dp)
-                )
+                // Such-Icon entfernt - minimalistisch
 
                 Box(modifier = Modifier.weight(1f)) {
                     if (query.isEmpty()) {
@@ -90,8 +85,8 @@ fun SearchBar(
                 // Löschen-Button
                 if (query.isNotEmpty()) {
                     Text(
-                        text = "✕",
-                        fontSize = 18.sp,
+                        text = "X",
+                        fontSize = 16.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .padding(start = 8.dp)
@@ -157,12 +152,6 @@ private fun SearchResultItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = "📍",
-            fontSize = 16.sp,
-            modifier = Modifier.padding(end = 12.dp)
-        )
-
         Column(modifier = Modifier.weight(1f)) {
             val parts = result.displayName.split(",")
             Text(
@@ -172,12 +161,29 @@ private fun SearchResultItem(
             )
             if (parts.size > 1) {
                 Text(
-                    text = parts.drop(1).joinToString(",").trim(),
+                    text = parts.drop(1).take(2).joinToString(",").trim(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
             }
         }
+
+        // Distanz anzeigen wenn vorhanden
+        if (result.distance > 0) {
+            Text(
+                text = formatDistance(result.distance),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private fun formatDistance(km: Double): String {
+    return when {
+        km < 1 -> "${(km * 1000).toInt()} m"
+        km < 10 -> String.format("%.1f km", km)
+        else -> "${km.toInt()} km"
     }
 }

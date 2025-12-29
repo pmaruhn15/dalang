@@ -154,7 +154,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 try {
                     delay(300) // Debounce
                     _isSearching.value = true
-                    _searchResults.value = searchRepository.search(query)
+
+                    // Aktuelle Position für standortbasierte Suche
+                    val location = _currentLocation.value
+                    _searchResults.value = searchRepository.search(
+                        query = query,
+                        currentLat = location?.lat,
+                        currentLon = location?.lng
+                    )
+
                     _isSearching.value = false
                 } catch (e: Exception) {
                     CrashLogger.logError("MainViewModel", "search failed", e)

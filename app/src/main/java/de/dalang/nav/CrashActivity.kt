@@ -79,10 +79,11 @@ fun CrashScreen(
         ) {
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Crash Icon
             Text(
-                text = "💥",
-                fontSize = 64.sp
+                text = "CRASH",
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFFF6B6B)
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -145,7 +146,7 @@ fun CrashScreen(
                     contentColor = Color.White
                 )
             ) {
-                Text("📋 Fehler kopieren")
+                Text("Fehler kopieren")
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -158,7 +159,7 @@ fun CrashScreen(
                     containerColor = Color(0xFF1976D2)
                 )
             ) {
-                Text("🔄 App neu starten")
+                Text("App neu starten")
             }
 
             Spacer(modifier = Modifier.height(8.dp))

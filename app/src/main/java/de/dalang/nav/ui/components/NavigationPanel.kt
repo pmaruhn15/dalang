@@ -62,30 +62,18 @@ private fun ActiveNavigationContent(
     val currentStep = state.currentStep
 
     // Nächste Anweisung
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        // Richtungspfeil
+    Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = currentStep?.maneuver?.toEmoji() ?: "➡️",
-            fontSize = 48.sp,
-            modifier = Modifier.padding(end = 16.dp)
+            text = state.distanceToNextStep.formatDistance(),
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
         )
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = state.distanceToNextStep.formatDistance(),
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = currentStep?.toGermanInstruction() ?: "",
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        Text(
+            text = currentStep?.toGermanInstruction() ?: "",
+            fontSize = 16.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 
     Spacer(modifier = Modifier.height(16.dp))
@@ -162,23 +150,15 @@ private fun RoutePreviewContent(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = "📏", fontSize = 16.sp)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = route.distance.formatDistance(),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
+        Text(
+            text = route.distance.formatDistance(),
+            color = MaterialTheme.colorScheme.onSurface
+        )
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = "⏱️", fontSize = 16.sp)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = route.duration.formatDuration(),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
+        Text(
+            text = route.duration.formatDuration(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 
     Spacer(modifier = Modifier.height(16.dp))
@@ -196,30 +176,5 @@ private fun RoutePreviewContent(
             text = "Navigation starten",
             modifier = Modifier.padding(vertical = 4.dp)
         )
-    }
-}
-
-private fun Maneuver.toEmoji(): String {
-    return when (type) {
-        "turn" -> when (modifier) {
-            "left" -> "⬅️"
-            "right" -> "➡️"
-            "slight left" -> "↖️"
-            "slight right" -> "↗️"
-            "sharp left" -> "⤴️"
-            "sharp right" -> "⤵️"
-            "uturn" -> "↩️"
-            else -> "➡️"
-        }
-        "continue", "depart" -> "⬆️"
-        "arrive" -> "🏁"
-        "roundabout", "rotary" -> "🔄"
-        "merge" -> "↘️"
-        "fork" -> when (modifier) {
-            "left" -> "↖️"
-            "right" -> "↗️"
-            else -> "⬆️"
-        }
-        else -> "➡️"
     }
 }
