@@ -28,4 +28,28 @@ object HereConfig {
     }
 
     fun isConfigured(): Boolean = settingsRepository?.isHereConfigured() == true
+
+    // Usage Tracking
+    fun canMakeRequest(): Boolean = settingsRepository?.canMakeRequest() ?: false
+
+    fun incrementUsage(): Int = settingsRepository?.incrementUsage() ?: 0
+
+    fun getTodayUsage(): Int = settingsRepository?.getTodayUsage() ?: 0
+
+    fun getDailyLimit(): Int = settingsRepository?.dailyLimit ?: SettingsRepository.DEFAULT_DAILY_LIMIT
+
+    fun setDailyLimit(limit: Int) {
+        settingsRepository?.dailyLimit = limit
+    }
+
+    fun getWarningThreshold(): Int = settingsRepository?.warningThreshold ?: SettingsRepository.DEFAULT_WARNING_THRESHOLD
+
+    fun setWarningThreshold(threshold: Int) {
+        settingsRepository?.warningThreshold = threshold
+    }
+
+    fun getRemainingRequests(): Int = settingsRepository?.getRemainingRequests() ?: 0
+
+    fun getUsageStatus(): SettingsRepository.UsageStatus =
+        settingsRepository?.getUsageStatus() ?: SettingsRepository.UsageStatus.OK
 }

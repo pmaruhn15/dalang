@@ -60,10 +60,13 @@ class RouteRepository {
         .build()
 
     suspend fun getRoute(from: LatLng, to: LatLng): Route? = withContext(Dispatchers.IO) {
-        // HERE API nutzen wenn konfiguriert, sonst OSRM
-        if (HereConfig.isConfigured()) {
-            CrashLogger.log("RouteRepository: Using HERE API with traffic")
+        // HERE API nutzen wenn konfiguriert UND Limit nicht erreicht
+        if (HereConfig.isConfigured() && HereConfig.canMakeRequest()) {
+            CrashLogger.log("RouteRepository: Using HERE API with traffic (${HereConfig.getTodayUsage()}/${HereConfig.getDailyLimit()} today)")
             getRouteFromHere(from, to)
+        } else if (HereConfig.isConfigured() && !HereConfig.canMakeRequest()) {
+            CrashLogger.log("RouteRepository: HERE limit reached, falling back to OSRM")
+            getRouteFromOsrm(from, to)
         } else {
             CrashLogger.log("RouteRepository: Using OSRM (no HERE API key)")
             getRouteFromOsrm(from, to)
@@ -94,6 +97,10 @@ class RouteRepository {
                 CrashLogger.logError("RouteRepository", "HERE API error: ${response.code}")
                 return null
             }
+
+            // Zaehler erhoehen nach erfolgreicher Anfrage
+            val newCount = HereConfig.incrementUsage()
+            CrashLogger.log("RouteRepository: HERE usage now $newCount/${HereConfig.getDailyLimit()}")
 
             return parseHereRoute(body)
         } catch (e: Exception) {
