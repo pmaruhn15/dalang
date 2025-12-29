@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import de.dalang.nav.util.CrashLogger
 
 // Minimalistische Farbpalette
 private val Primary = Color(0xFF1976D2)
@@ -54,12 +55,20 @@ fun DaLangTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = Color.Transparent.toArgb()
-            window.navigationBarColor = Color.Transparent.toArgb()
-            WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = !darkTheme
-                isAppearanceLightNavigationBars = !darkTheme
+            try {
+                // Sicherer Cast mit Nullcheck
+                val activity = view.context as? Activity
+                if (activity != null) {
+                    val window = activity.window
+                    window.statusBarColor = Color.Transparent.toArgb()
+                    window.navigationBarColor = Color.Transparent.toArgb()
+                    WindowCompat.getInsetsController(window, view).apply {
+                        isAppearanceLightStatusBars = !darkTheme
+                        isAppearanceLightNavigationBars = !darkTheme
+                    }
+                }
+            } catch (e: Exception) {
+                CrashLogger.logError("Theme", "Window configuration failed", e)
             }
         }
     }
