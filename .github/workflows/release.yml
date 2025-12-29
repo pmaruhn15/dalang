@@ -26,8 +26,8 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Build Release APK
-      run: ./gradlew assembleRelease
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug
 
     - name: Get version info
       id: version
@@ -37,7 +37,7 @@ jobs:
         echo "tag=v$VERSION" >> $GITHUB_OUTPUT
 
     - name: Rename APK
-      run: mv app/build/outputs/apk/release/app-release-unsigned.apk dalang-${{ steps.version.outputs.version }}.apk
+      run: mv app/build/outputs/apk/debug/app-debug.apk dalang-${{ steps.version.outputs.version }}.apk
 
     - name: Delete old releases
       uses: dev-drprasad/delete-older-releases@v0.3.2
