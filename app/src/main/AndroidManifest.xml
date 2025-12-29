@@ -31,6 +31,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".CrashActivity"
+            android:exported="false"
+            android:theme="@style/Theme.DaLang"
+            android:process=":crash" />
+
         <service
             android:name=".navigation.NavigationService"
             android:foregroundServiceType="location"
