@@ -55,7 +55,7 @@ fun SettingsDialog(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "Fuer Echtzeit-Verkehrsdaten. Registriere dich auf developer.here.com",
+                text = "Fuer Echtzeit-Verkehrsdaten:\nplatform.here.com > Projects > Create > API Keys",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
