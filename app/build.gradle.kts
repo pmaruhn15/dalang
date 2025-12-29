@@ -70,9 +70,6 @@ dependencies {
     // OkHttp for API calls
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // JSON parsing
-    implementation("org.json:json:20231013")
-
     // DataStore for preferences
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 

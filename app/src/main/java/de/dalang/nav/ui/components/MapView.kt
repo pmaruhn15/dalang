@@ -17,12 +17,13 @@ import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.MapLibreMap
-import org.maplibre.android.maps.Style
-import org.maplibre.android.plugins.annotation.LineManager
-import org.maplibre.android.plugins.annotation.LineOptions
-import org.maplibre.android.plugins.annotation.SymbolManager
-import org.maplibre.android.plugins.annotation.SymbolOptions
-import org.maplibre.android.utils.ColorUtils
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
 
 @Composable
 fun MapViewComposable(
@@ -61,7 +62,7 @@ fun MapViewComposable(
                 view.getMapAsync { map ->
                     mapLibreMap = map
 
-                    map.setStyle(styleUrl) { style ->
+                    map.setStyle(styleUrl) { _ ->
                         map.uiSettings.apply {
                             isCompassEnabled = true
                             isRotateGesturesEnabled = true
@@ -82,7 +83,7 @@ fun MapViewComposable(
                 }
             }
         },
-        update = { view ->
+        update = { _ ->
             mapLibreMap?.let { map ->
                 // Kamera auf aktuelle Position zentrieren
                 if (isNavigating && currentLocation != null) {
@@ -139,34 +140,22 @@ fun MapViewComposable(
 
             if (route != null && route.geometry.isNotEmpty()) {
                 // Route als GeoJSON hinzufügen
-                val coordinates = route.geometry.map {
-                    org.maplibre.geojson.Point.fromLngLat(it.lng, it.lat)
+                val coordinates = route.geometry.map { pt ->
+                    Point.fromLngLat(pt.lng, pt.lat)
                 }
 
-                val lineString = org.maplibre.geojson.LineString.fromLngLats(coordinates)
-                val feature = org.maplibre.geojson.Feature.fromGeometry(lineString)
+                val lineString = LineString.fromLngLats(coordinates)
+                val feature = Feature.fromGeometry(lineString)
 
-                val source = org.maplibre.android.style.sources.GeoJsonSource(
-                    "route-source",
-                    feature
-                )
+                val source = GeoJsonSource("route-source", feature)
                 style.addSource(source)
 
-                val lineLayer = org.maplibre.android.style.layers.LineLayer(
-                    "route-layer",
-                    "route-source"
-                ).apply {
+                val lineLayer = LineLayer("route-layer", "route-source").apply {
                     setProperties(
-                        org.maplibre.android.style.layers.PropertyFactory.lineColor(
-                            Color.parseColor("#1976D2")
-                        ),
-                        org.maplibre.android.style.layers.PropertyFactory.lineWidth(6f),
-                        org.maplibre.android.style.layers.PropertyFactory.lineCap(
-                            org.maplibre.android.style.layers.Property.LINE_CAP_ROUND
-                        ),
-                        org.maplibre.android.style.layers.PropertyFactory.lineJoin(
-                            org.maplibre.android.style.layers.Property.LINE_JOIN_ROUND
-                        )
+                        PropertyFactory.lineColor(Color.parseColor("#1976D2")),
+                        PropertyFactory.lineWidth(6f),
+                        PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                        PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
                     )
                 }
                 style.addLayer(lineLayer)
