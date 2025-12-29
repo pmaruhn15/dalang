@@ -75,26 +75,40 @@ class RouteRepository {
 
     private suspend fun getRouteFromHere(from: LatLng, to: LatLng): Route? {
         try {
+            val apiKey = HereConfig.getApiKey()
+            CrashLogger.log("RouteRepository: HERE API key length: ${apiKey.length}")
+
             val url = "${HereConfig.ROUTING_BASE_URL}/routes" +
                     "?origin=${from.lat},${from.lng}" +
                     "&destination=${to.lat},${to.lng}" +
                     "&transportMode=car" +
                     "&return=polyline,actions,instructions,summary,typicalDuration" +
                     "&spans=trafficSpeed" +
-                    "&apiKey=${HereConfig.getApiKey()}"
+                    "&apiKey=$apiKey"
 
-            CrashLogger.log("RouteRepository: HERE request to ${to.lat},${to.lng}")
+            CrashLogger.log("RouteRepository: HERE request from ${from.lat},${from.lng} to ${to.lat},${to.lng}")
 
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", "DaLang Navigation App")
                 .build()
 
+            CrashLogger.log("RouteRepository: Sending HERE request...")
             val response = client.newCall(request).execute()
             val body = response.body?.string()
 
+            CrashLogger.log("RouteRepository: HERE response code: ${response.code}")
+
+            if (body != null) {
+                // Log first 500 chars of response for debugging
+                val preview = if (body.length > 500) body.substring(0, 500) + "..." else body
+                CrashLogger.log("RouteRepository: HERE response preview: $preview")
+            } else {
+                CrashLogger.log("RouteRepository: HERE response body is NULL")
+            }
+
             if (!response.isSuccessful || body == null) {
-                CrashLogger.logError("RouteRepository", "HERE API error: ${response.code}")
+                CrashLogger.logError("RouteRepository", "HERE API error: ${response.code} - ${response.message}")
                 return null
             }
 
@@ -102,22 +116,51 @@ class RouteRepository {
             val newCount = HereConfig.incrementUsage()
             CrashLogger.log("RouteRepository: HERE usage now $newCount/${HereConfig.getDailyLimit()}")
 
-            return parseHereRoute(body)
+            val route = parseHereRoute(body)
+            if (route == null) {
+                CrashLogger.logError("RouteRepository", "HERE route parsing returned null")
+            } else {
+                CrashLogger.log("RouteRepository: HERE route parsed: ${route.distance}m, ${route.duration}s, ${route.geometry.size} points")
+            }
+            return route
         } catch (e: Exception) {
-            CrashLogger.logError("RouteRepository", "HERE routing failed", e)
+            CrashLogger.logError("RouteRepository", "HERE routing failed: ${e.javaClass.simpleName}: ${e.message}", e)
             return null
         }
     }
 
     private fun parseHereRoute(json: String): Route? {
         try {
+            CrashLogger.log("RouteRepository: Parsing HERE response...")
             val obj = JSONObject(json)
+
+            // Check for error response
+            if (obj.has("error")) {
+                val error = obj.optString("error", "unknown")
+                val errorDesc = obj.optString("error_description", "no description")
+                CrashLogger.logError("RouteRepository", "HERE API error: $error - $errorDesc")
+                return null
+            }
+
+            if (!obj.has("routes")) {
+                CrashLogger.logError("RouteRepository", "HERE response has no 'routes' field. Keys: ${obj.keys().asSequence().toList()}")
+                return null
+            }
+
             val routes = obj.getJSONArray("routes")
-            if (routes.length() == 0) return null
+            CrashLogger.log("RouteRepository: Found ${routes.length()} routes")
+            if (routes.length() == 0) {
+                CrashLogger.logError("RouteRepository", "HERE returned 0 routes")
+                return null
+            }
 
             val route = routes.getJSONObject(0)
             val sections = route.getJSONArray("sections")
-            if (sections.length() == 0) return null
+            CrashLogger.log("RouteRepository: Route has ${sections.length()} sections")
+            if (sections.length() == 0) {
+                CrashLogger.logError("RouteRepository", "HERE route has 0 sections")
+                return null
+            }
 
             val section = sections.getJSONObject(0)
             val summary = section.getJSONObject("summary")
@@ -125,9 +168,11 @@ class RouteRepository {
             val distance = summary.getDouble("length")
             val duration = summary.getDouble("duration").toDouble()
             val typicalDuration = summary.optDouble("typicalDuration", duration)
+            CrashLogger.log("RouteRepository: Summary - distance: $distance, duration: $duration")
 
             // Geometrie dekodieren (HERE Flexible Polyline)
             val polyline = section.getString("polyline")
+            CrashLogger.log("RouteRepository: Polyline length: ${polyline.length}")
             val geometry = FlexiblePolyline.decode(polyline)
 
             CrashLogger.log("RouteRepository: HERE route decoded with ${geometry.size} points")
@@ -204,7 +249,7 @@ class RouteRepository {
                 typicalDuration = typicalDuration
             )
         } catch (e: Exception) {
-            CrashLogger.logError("RouteRepository", "Parse HERE route failed", e)
+            CrashLogger.logError("RouteRepository", "Parse HERE route failed: ${e.javaClass.simpleName}: ${e.message}", e)
             return null
         }
     }
