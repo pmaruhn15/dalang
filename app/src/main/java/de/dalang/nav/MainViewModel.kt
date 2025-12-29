@@ -54,6 +54,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _voiceEnabled = MutableStateFlow(true)
     val voiceEnabled: StateFlow<Boolean> = _voiceEnabled.asStateFlow()
 
+    // Fuer Map-Klick Navigation
+    private val _clickedLocation = MutableStateFlow<LatLng?>(null)
+    val clickedLocation: StateFlow<LatLng?> = _clickedLocation.asStateFlow()
+
     private var navigationService: NavigationService? = null
     private var locationJob: Job? = null
     private var searchJob: Job? = null
@@ -390,6 +394,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setVoiceEnabled(enabled: Boolean) {
         _voiceEnabled.value = enabled
         navigationService?.voiceEnabled = enabled
+    }
+
+    // Map-Klick Handling
+    fun onMapClicked(location: LatLng) {
+        CrashLogger.log("MainViewModel: Map clicked at ${location.lat}, ${location.lng}")
+        _clickedLocation.value = location
+    }
+
+    fun dismissMapClick() {
+        _clickedLocation.value = null
+    }
+
+    fun navigateToClickedLocation() {
+        val location = _clickedLocation.value ?: return
+        CrashLogger.log("MainViewModel: Navigating to clicked location")
+
+        viewModelScope.launch(exceptionHandler) {
+            try {
+                val from = _currentLocation.value
+                if (from == null) {
+                    CrashLogger.logError("MainViewModel", "No current location for route")
+                    return@launch
+                }
+
+                _navigationState.update { it.copy(isRecalculating = true) }
+                _clickedLocation.value = null
+
+                // Reverse Geocode um Namen zu bekommen
+                val name = searchRepository.reverseGeocode(location.lat, location.lng)
+                    ?.split(",")?.firstOrNull()?.trim()
+                    ?: "Ziel"
+
+                val route = routeRepository.getRoute(from, location)
+                if (route != null) {
+                    CrashLogger.log("MainViewModel: Route to clicked location found")
+                    _navigationState.update {
+                        it.copy(
+                            route = route,
+                            destination = location,
+                            destinationName = name,
+                            isRecalculating = false,
+                            totalDistanceRemaining = route.distance,
+                            totalTimeRemaining = route.duration
+                        )
+                    }
+                } else {
+                    CrashLogger.logError("MainViewModel", "No route to clicked location")
+                    _navigationState.update { it.copy(isRecalculating = false) }
+                }
+            } catch (e: Exception) {
+                CrashLogger.logError("MainViewModel", "navigateToClickedLocation failed", e)
+                _navigationState.update { it.copy(isRecalculating = false) }
+            }
+        }
     }
 
     override fun onCleared() {

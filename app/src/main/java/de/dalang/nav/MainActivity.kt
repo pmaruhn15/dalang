@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.ui.components.MapViewComposable
 import de.dalang.nav.ui.components.NavigationPanel
 import de.dalang.nav.ui.components.SearchBar
@@ -241,6 +242,7 @@ fun DaLangApp(viewModel: MainViewModel) {
     val searchResults by viewModel.searchResults.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     val navigationState by viewModel.navigationState.collectAsState()
+    val clickedLocation by viewModel.clickedLocation.collectAsState()
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Karte im Hintergrund
@@ -249,6 +251,12 @@ fun DaLangApp(viewModel: MainViewModel) {
             destination = navigationState.destination,
             route = navigationState.route,
             isNavigating = navigationState.isNavigating,
+            onMapClick = { location ->
+                // Nur reagieren wenn keine Navigation aktiv und keine Route geplant
+                if (!navigationState.isNavigating && navigationState.route == null) {
+                    viewModel.onMapClicked(location)
+                }
+            },
             modifier = Modifier.fillMaxSize()
         )
 
@@ -276,5 +284,57 @@ fun DaLangApp(viewModel: MainViewModel) {
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
         )
+
+        // Map-Klick Dialog
+        if (clickedLocation != null) {
+            MapClickDialog(
+                onNavigate = { viewModel.navigateToClickedLocation() },
+                onDismiss = { viewModel.dismissMapClick() }
+            )
+        }
+    }
+}
+
+@Composable
+fun MapClickDialog(
+    onNavigate: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Hierhin navigieren?",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Abbrechen")
+                }
+
+                Button(
+                    onClick = onNavigate,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Route berechnen")
+                }
+            }
+        }
     }
 }

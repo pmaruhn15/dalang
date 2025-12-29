@@ -17,6 +17,7 @@ import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
@@ -28,6 +29,7 @@ fun MapViewComposable(
     destination: LatLng?,
     route: Route?,
     isNavigating: Boolean,
+    onMapClick: ((LatLng) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -37,8 +39,7 @@ fun MapViewComposable(
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var isMapReady by remember { mutableStateOf(false) }
-
-    // MapLibre wird in DaLangApp.onCreate() initialisiert
+    var hasCenteredOnLocation by remember { mutableStateOf(false) }
 
     // Style basierend auf Theme
     val styleUrl = remember(isDarkTheme) {
@@ -80,6 +81,13 @@ fun MapViewComposable(
                                         .zoom(if (currentLocation != null) 15.0 else 5.0)
                                         .build()
 
+                                    // Klick-Handler fuer Kartenklicks
+                                    map.addOnMapClickListener { point ->
+                                        CrashLogger.log("MapView: Map clicked at ${point.latitude}, ${point.longitude}")
+                                        onMapClick?.invoke(LatLng(point.latitude, point.longitude))
+                                        true
+                                    }
+
                                     isMapReady = true
                                 } catch (e: Exception) {
                                     CrashLogger.logError("MapView", "Style setup failed", e)
@@ -98,9 +106,9 @@ fun MapViewComposable(
             try {
                 val map = mapLibreMap
                 if (map != null && isMapReady) {
-                    // Kamera auf aktuelle Position zentrieren
-                    if (isNavigating && currentLocation != null) {
-                        try {
+                    // Kamera auf aktuelle Position zentrieren (nur beim ersten Mal oder bei Navigation)
+                    if (currentLocation != null) {
+                        if (isNavigating) {
                             val pos = org.maplibre.android.geometry.LatLng(
                                 currentLocation.lat,
                                 currentLocation.lng
@@ -115,8 +123,22 @@ fun MapViewComposable(
                                 ),
                                 500
                             )
-                        } catch (e: Exception) {
-                            CrashLogger.logError("MapView", "Camera animation failed", e)
+                        } else if (!hasCenteredOnLocation) {
+                            // Einmalig auf Standort zentrieren beim App-Start
+                            val pos = org.maplibre.android.geometry.LatLng(
+                                currentLocation.lat,
+                                currentLocation.lng
+                            )
+                            map.animateCamera(
+                                CameraUpdateFactory.newCameraPosition(
+                                    CameraPosition.Builder()
+                                        .target(pos)
+                                        .zoom(15.0)
+                                        .build()
+                                ),
+                                1000
+                            )
+                            hasCenteredOnLocation = true
                         }
                     }
                 }
@@ -154,6 +176,68 @@ fun MapViewComposable(
         }
     }
 
+    // Standort-Marker zeichnen
+    LaunchedEffect(currentLocation, isMapReady) {
+        if (!isMapReady) return@LaunchedEffect
+        val map = mapLibreMap ?: return@LaunchedEffect
+        val location = currentLocation ?: return@LaunchedEffect
+
+        try {
+            map.getStyle { style ->
+                try {
+                    // Vorherigen Marker entfernen
+                    try {
+                        style.removeLayer("location-layer")
+                        style.removeLayer("location-pulse-layer")
+                        style.removeSource("location-source")
+                    } catch (e: Exception) {
+                        // Layer existiert nicht
+                    }
+
+                    // Standort als GeoJSON Point
+                    val geoJson = """
+                        {
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "Point",
+                                "coordinates": [${location.lng}, ${location.lat}]
+                            }
+                        }
+                    """.trimIndent()
+
+                    val source = GeoJsonSource("location-source", geoJson)
+                    style.addSource(source)
+
+                    // Aeusserer Kreis (Puls-Effekt)
+                    val pulseLayer = CircleLayer("location-pulse-layer", "location-source").apply {
+                        setProperties(
+                            PropertyFactory.circleRadius(20f),
+                            PropertyFactory.circleColor(Color.parseColor("#1976D2")),
+                            PropertyFactory.circleOpacity(0.2f)
+                        )
+                    }
+                    style.addLayer(pulseLayer)
+
+                    // Innerer Kreis (Standort)
+                    val locationLayer = CircleLayer("location-layer", "location-source").apply {
+                        setProperties(
+                            PropertyFactory.circleRadius(8f),
+                            PropertyFactory.circleColor(Color.parseColor("#1976D2")),
+                            PropertyFactory.circleStrokeWidth(3f),
+                            PropertyFactory.circleStrokeColor(Color.WHITE)
+                        )
+                    }
+                    style.addLayer(locationLayer)
+
+                } catch (e: Exception) {
+                    CrashLogger.logError("MapView", "Location marker failed", e)
+                }
+            }
+        } catch (e: Exception) {
+            CrashLogger.logError("MapView", "getStyle failed for location", e)
+        }
+    }
+
     // Route zeichnen
     LaunchedEffect(route, isMapReady) {
         if (!isMapReady) return@LaunchedEffect
@@ -162,16 +246,15 @@ fun MapViewComposable(
         try {
             map.getStyle { style ->
                 try {
-                    // Vorhandene Route entfernen (einfacher Ansatz)
+                    // Vorhandene Route entfernen
                     try {
                         style.removeLayer("route-layer")
                         style.removeSource("route-source")
                     } catch (e: Exception) {
-                        // Layer existiert nicht - ignorieren
+                        // Layer existiert nicht
                     }
 
                     if (route != null && route.geometry.isNotEmpty()) {
-                        // Route als GeoJSON-String hinzufügen
                         val coordinatesJson = route.geometry.joinToString(",") { pt ->
                             "[${pt.lng},${pt.lat}]"
                         }
@@ -227,6 +310,55 @@ fun MapViewComposable(
             }
         } catch (e: Exception) {
             CrashLogger.logError("MapView", "getStyle failed in LaunchedEffect", e)
+        }
+    }
+
+    // Ziel-Marker zeichnen
+    LaunchedEffect(destination, isMapReady) {
+        if (!isMapReady) return@LaunchedEffect
+        val map = mapLibreMap ?: return@LaunchedEffect
+
+        try {
+            map.getStyle { style ->
+                try {
+                    // Vorherigen Ziel-Marker entfernen
+                    try {
+                        style.removeLayer("destination-layer")
+                        style.removeSource("destination-source")
+                    } catch (e: Exception) {
+                        // Layer existiert nicht
+                    }
+
+                    if (destination != null) {
+                        val geoJson = """
+                            {
+                                "type": "Feature",
+                                "geometry": {
+                                    "type": "Point",
+                                    "coordinates": [${destination.lng}, ${destination.lat}]
+                                }
+                            }
+                        """.trimIndent()
+
+                        val source = GeoJsonSource("destination-source", geoJson)
+                        style.addSource(source)
+
+                        val destLayer = CircleLayer("destination-layer", "destination-source").apply {
+                            setProperties(
+                                PropertyFactory.circleRadius(10f),
+                                PropertyFactory.circleColor(Color.parseColor("#E53935")),
+                                PropertyFactory.circleStrokeWidth(3f),
+                                PropertyFactory.circleStrokeColor(Color.WHITE)
+                            )
+                        }
+                        style.addLayer(destLayer)
+                    }
+                } catch (e: Exception) {
+                    CrashLogger.logError("MapView", "Destination marker failed", e)
+                }
+            }
+        } catch (e: Exception) {
+            CrashLogger.logError("MapView", "getStyle failed for destination", e)
         }
     }
 }
