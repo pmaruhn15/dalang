@@ -12,7 +12,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.navigation.Route
 import de.dalang.nav.util.CrashLogger
-import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLngBounds
@@ -39,16 +38,7 @@ fun MapViewComposable(
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var isMapReady by remember { mutableStateOf(false) }
 
-    // MapLibre initialisieren
-    DisposableEffect(Unit) {
-        try {
-            CrashLogger.log("MapView: Initializing MapLibre")
-            MapLibre.getInstance(context)
-        } catch (e: Exception) {
-            CrashLogger.logError("MapView", "MapLibre init failed", e)
-        }
-        onDispose { }
-    }
+    // MapLibre wird in DaLangApp.onCreate() initialisiert
 
     // Style basierend auf Theme
     val styleUrl = remember(isDarkTheme) {

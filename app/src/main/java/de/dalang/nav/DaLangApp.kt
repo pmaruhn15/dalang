@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.content.Intent
 import android.os.Build
 import de.dalang.nav.util.CrashLogger
+import org.maplibre.android.MapLibre
+import org.maplibre.android.WellKnownTileServer
 
 class DaLangApp : Application() {
 
@@ -20,6 +22,15 @@ class DaLangApp : Application() {
             CrashLogger.init(this)
         } catch (e: Exception) {
             // Ignorieren
+        }
+
+        // MapLibre MUSS vor jeder View initialisiert werden
+        try {
+            CrashLogger.log("DaLangApp: Initializing MapLibre")
+            MapLibre.getInstance(this, null, WellKnownTileServer.MapLibre)
+            CrashLogger.log("DaLangApp: MapLibre initialized successfully")
+        } catch (e: Exception) {
+            CrashLogger.logError("DaLangApp", "MapLibre init failed", e)
         }
 
         try {
