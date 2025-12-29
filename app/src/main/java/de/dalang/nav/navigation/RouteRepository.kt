@@ -78,7 +78,7 @@ class RouteRepository {
                     "&transportMode=car" +
                     "&return=polyline,actions,instructions,summary,typicalDuration" +
                     "&spans=trafficSpeed" +
-                    "&apiKey=${HereConfig.API_KEY}"
+                    "&apiKey=${HereConfig.getApiKey()}"
 
             CrashLogger.log("RouteRepository: HERE request to ${to.lat},${to.lng}")
 

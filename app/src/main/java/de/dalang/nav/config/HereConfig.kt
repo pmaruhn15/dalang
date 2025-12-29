@@ -1,19 +1,31 @@
 package de.dalang.nav.config
 
+import android.content.Context
+import de.dalang.nav.settings.SettingsRepository
+
 /**
  * HERE API Konfiguration
  *
- * Um HERE API zu nutzen:
- * 1. Registriere dich auf https://developer.here.com
- * 2. Erstelle ein Projekt und hole dir einen API Key
- * 3. Trage den API Key hier ein
+ * Der API Key wird in den App-Einstellungen gespeichert.
+ * Registriere dich auf https://developer.here.com um einen Key zu erhalten.
  */
 object HereConfig {
-    // TODO: Ersetze mit deinem HERE API Key
-    const val API_KEY = ""
+    private var settingsRepository: SettingsRepository? = null
 
     // HERE Routing API v8 Base URL
     const val ROUTING_BASE_URL = "https://router.hereapi.com/v8"
 
-    fun isConfigured(): Boolean = API_KEY.isNotBlank()
+    fun init(context: Context) {
+        if (settingsRepository == null) {
+            settingsRepository = SettingsRepository(context.applicationContext)
+        }
+    }
+
+    fun getApiKey(): String = settingsRepository?.hereApiKey ?: ""
+
+    fun setApiKey(key: String) {
+        settingsRepository?.hereApiKey = key
+    }
+
+    fun isConfigured(): Boolean = settingsRepository?.isHereConfigured() == true
 }

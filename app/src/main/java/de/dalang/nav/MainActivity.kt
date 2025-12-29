@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +29,7 @@ import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.ui.components.MapViewComposable
 import de.dalang.nav.ui.components.NavigationPanel
 import de.dalang.nav.ui.components.SearchBar
+import de.dalang.nav.ui.components.SettingsDialog
 import de.dalang.nav.ui.theme.DaLangTheme
 import de.dalang.nav.util.CrashLogger
 
@@ -244,6 +246,8 @@ fun DaLangApp(viewModel: MainViewModel) {
     val navigationState by viewModel.navigationState.collectAsState()
     val clickedLocation by viewModel.clickedLocation.collectAsState()
 
+    var showSettings by remember { mutableStateOf(false) }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // Karte im Hintergrund
         MapViewComposable(
@@ -275,6 +279,27 @@ fun DaLangApp(viewModel: MainViewModel) {
             )
         }
 
+        // Einstellungs-Button oben rechts (nur wenn keine Navigation aktiv)
+        if (!navigationState.isNavigating) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(top = 72.dp, end = 16.dp)
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .clickable { showSettings = true },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "...",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
         // Navigationspanel unten
         NavigationPanel(
             state = navigationState,
@@ -290,6 +315,14 @@ fun DaLangApp(viewModel: MainViewModel) {
             MapClickDialog(
                 onNavigate = { viewModel.navigateToClickedLocation() },
                 onDismiss = { viewModel.dismissMapClick() }
+            )
+        }
+
+        // Settings Dialog
+        if (showSettings) {
+            SettingsDialog(
+                onDismiss = { showSettings = false },
+                onSave = { }
             )
         }
     }
