@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DaLang</string>
+
+    <!-- Suche -->
+    <string name="search_hint">Ziel eingeben…</string>
+    <string name="search_current_location">Aktueller Standort</string>
+    <string name="no_results">Keine Ergebnisse gefunden</string>
+
+    <!-- Navigation -->
+    <string name="start_navigation">Navigation starten</string>
+    <string name="stop_navigation">Navigation beenden</string>
+    <string name="recalculating">Route wird neu berechnet…</string>
+    <string name="destination_reached">Ziel erreicht</string>
+
+    <!-- Richtungen -->
+    <string name="direction_straight">Geradeaus</string>
+    <string name="direction_left">Links abbiegen</string>
+    <string name="direction_right">Rechts abbiegen</string>
+    <string name="direction_slight_left">Leicht links</string>
+    <string name="direction_slight_right">Leicht rechts</string>
+    <string name="direction_sharp_left">Scharf links</string>
+    <string name="direction_sharp_right">Scharf rechts</string>
+    <string name="direction_uturn">Wenden</string>
+    <string name="direction_roundabout">Im Kreisverkehr</string>
+    <string name="direction_exit">Ausfahrt nehmen</string>
+    <string name="direction_arrive">Ziel</string>
+
+    <!-- Einheiten -->
+    <string name="meters">%d m</string>
+    <string name="kilometers">%.1f km</string>
+    <string name="in_meters">In %d Metern</string>
+    <string name="in_kilometers">In %.1f Kilometern</string>
+
+    <!-- Offline-Karten -->
+    <string name="offline_maps">Offline-Karten</string>
+    <string name="download">Herunterladen</string>
+    <string name="delete">Löschen</string>
+    <string name="downloading">Wird heruntergeladen…</string>
+
+    <!-- Einstellungen -->
+    <string name="settings">Einstellungen</string>
+    <string name="dark_mode">Dunkelmodus</string>
+    <string name="voice_enabled">Sprachansagen</string>
+
+    <!-- Bundesländer -->
+    <string name="state_baden_wuerttemberg">Baden-Württemberg</string>
+    <string name="state_bayern">Bayern</string>
+    <string name="state_berlin">Berlin</string>
+    <string name="state_brandenburg">Brandenburg</string>
+    <string name="state_bremen">Bremen</string>
+    <string name="state_hamburg">Hamburg</string>
+    <string name="state_hessen">Hessen</string>
+    <string name="state_mecklenburg_vorpommern">Mecklenburg-Vorpommern</string>
+    <string name="state_niedersachsen">Niedersachsen</string>
+    <string name="state_nordrhein_westfalen">Nordrhein-Westfalen</string>
+    <string name="state_rheinland_pfalz">Rheinland-Pfalz</string>
+    <string name="state_saarland">Saarland</string>
+    <string name="state_sachsen">Sachsen</string>
+    <string name="state_sachsen_anhalt">Sachsen-Anhalt</string>
+    <string name="state_schleswig_holstein">Schleswig-Holstein</string>
+    <string name="state_thueringen">Thüringen</string>
+
+    <!-- Berechtigungen -->
+    <string name="permission_location_title">Standortzugriff benötigt</string>
+    <string name="permission_location_message">DaLang benötigt Zugriff auf deinen Standort für die Navigation.</string>
+    <string name="permission_grant">Erlauben</string>
+
+    <!-- Fehler -->
+    <string name="error_no_location">Standort nicht verfügbar</string>
+    <string name="error_no_route">Keine Route gefunden</string>
+    <string name="error_network">Netzwerkfehler</string>
+</resources>
