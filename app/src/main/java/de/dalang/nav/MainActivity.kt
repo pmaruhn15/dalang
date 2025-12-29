@@ -245,10 +245,26 @@ fun DaLangApp(viewModel: MainViewModel) {
     val isSearching by viewModel.isSearching.collectAsState()
     val navigationState by viewModel.navigationState.collectAsState()
     val clickedLocation by viewModel.clickedLocation.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
 
     var showSettings by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // Fehler als Snackbar anzeigen
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let {
+            snackbarHostState.showSnackbar(
+                message = it,
+                duration = SnackbarDuration.Long
+            )
+            viewModel.clearError()
+        }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { paddingValues ->
+    Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
         // Karte im Hintergrund
         MapViewComposable(
             currentLocation = currentLocation,
@@ -325,6 +341,7 @@ fun DaLangApp(viewModel: MainViewModel) {
                 onSave = { }
             )
         }
+    }
     }
 }
 

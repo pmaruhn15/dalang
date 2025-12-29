@@ -54,6 +54,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _voiceEnabled = MutableStateFlow(true)
     val voiceEnabled: StateFlow<Boolean> = _voiceEnabled.asStateFlow()
 
+    // Fuer Fehlermeldungen an die UI
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
     // Fuer Map-Klick Navigation
     private val _clickedLocation = MutableStateFlow<LatLng?>(null)
     val clickedLocation: StateFlow<LatLng?> = _clickedLocation.asStateFlow()
@@ -184,6 +188,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _searchResults.value = emptyList()
     }
 
+    fun clearError() {
+        _errorMessage.value = null
+    }
+
     fun selectDestination(result: SearchResult) {
         CrashLogger.log("MainViewModel: selectDestination: ${result.displayName}")
         viewModelScope.launch(exceptionHandler) {
@@ -191,6 +199,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val from = _currentLocation.value
                 if (from == null) {
                     CrashLogger.logError("MainViewModel", "No current location for route")
+                    _errorMessage.value = "Kein GPS-Signal"
                     return@launch
                 }
                 val to = LatLng(result.lat, result.lon)
@@ -212,12 +221,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } else {
                     CrashLogger.logError("MainViewModel", "No route found")
+                    _errorMessage.value = "Route konnte nicht berechnet werden. Siehe Einstellungen > Debug Log"
                     _navigationState.update { it.copy(isRecalculating = false) }
                 }
 
                 clearSearch()
             } catch (e: Exception) {
                 CrashLogger.logError("MainViewModel", "selectDestination failed", e)
+                _errorMessage.value = "Fehler: ${e.message}"
                 _navigationState.update { it.copy(isRecalculating = false) }
             }
         }
