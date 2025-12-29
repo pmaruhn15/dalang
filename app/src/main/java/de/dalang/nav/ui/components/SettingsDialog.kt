@@ -20,6 +20,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.window.Dialog
 import de.dalang.nav.config.HereConfig
 import de.dalang.nav.settings.SettingsRepository
@@ -301,6 +303,9 @@ fun SettingsDialog(
             if (showDebugLog) {
                 Spacer(modifier = Modifier.height(8.dp))
                 val debugLog = remember { de.dalang.nav.util.CrashLogger.getLastCrashLog() }
+                val clipboardManager = LocalClipboardManager.current
+                var copied by remember { mutableStateOf(false) }
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -316,6 +321,20 @@ fun SettingsDialog(
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        debugLog?.let {
+                            clipboardManager.setText(AnnotatedString(it))
+                            copied = true
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (copied) "Kopiert!" else "Log kopieren")
                 }
             }
 
