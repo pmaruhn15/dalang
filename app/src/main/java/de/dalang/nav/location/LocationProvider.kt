@@ -13,20 +13,35 @@ import kotlinx.coroutines.flow.callbackFlow
 
 class LocationProvider(private val context: Context) {
 
-    private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    private val locationManager: LocationManager? =
+        context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
 
     val isLocationEnabled: Boolean
-        get() = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
-                locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        get() = try {
+            locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
+                locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+        } catch (e: Exception) {
+            false
+        }
 
     @SuppressLint("MissingPermission")
     fun getLastKnownLocation(): Location? {
-        return locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-            ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+        return try {
+            locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                ?: locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     @SuppressLint("MissingPermission")
     fun locationUpdates(intervalMs: Long = 1000L): Flow<Location> = callbackFlow {
+        val manager = locationManager
+        if (manager == null) {
+            close()
+            return@callbackFlow
+        }
+
         val listener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
                 trySend(location)
@@ -38,30 +53,39 @@ class LocationProvider(private val context: Context) {
             override fun onProviderDisabled(provider: String) {}
         }
 
-        // GPS Provider für höchste Genauigkeit
-        if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-            locationManager.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER,
-                intervalMs,
-                1f,
-                listener,
-                Looper.getMainLooper()
-            )
-        }
+        try {
+            // GPS Provider für höchste Genauigkeit
+            if (manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                manager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    intervalMs,
+                    1f,
+                    listener,
+                    Looper.getMainLooper()
+                )
+            }
 
-        // Network Provider als Fallback
-        if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-            locationManager.requestLocationUpdates(
-                LocationManager.NETWORK_PROVIDER,
-                intervalMs,
-                5f,
-                listener,
-                Looper.getMainLooper()
-            )
+            // Network Provider als Fallback
+            if (manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                manager.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER,
+                    intervalMs,
+                    5f,
+                    listener,
+                    Looper.getMainLooper()
+                )
+            }
+        } catch (e: Exception) {
+            close(e)
+            return@callbackFlow
         }
 
         awaitClose {
-            locationManager.removeUpdates(listener)
+            try {
+                manager.removeUpdates(listener)
+            } catch (e: Exception) {
+                // Ignore cleanup errors
+            }
         }
     }
 

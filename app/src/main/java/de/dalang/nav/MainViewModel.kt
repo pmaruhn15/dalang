@@ -45,26 +45,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var navigationService: NavigationService? = null
     private var locationJob: Job? = null
     private var searchJob: Job? = null
+    private var serviceBound = false
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            val binder = service as NavigationService.LocalBinder
-            navigationService = binder.getService()
+            val binder = service as? NavigationService.LocalBinder
+            navigationService = binder?.getService()
             navigationService?.voiceEnabled = _voiceEnabled.value
+            serviceBound = true
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             navigationService = null
+            serviceBound = false
         }
     }
 
-    init {
-        bindNavigationService()
-    }
-
     private fun bindNavigationService() {
-        val intent = Intent(getApplication(), NavigationService::class.java)
-        getApplication<Application>().bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+        if (serviceBound) return
+        try {
+            val intent = Intent(getApplication(), NavigationService::class.java)
+            getApplication<Application>().bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+        } catch (e: Exception) {
+            // Service binding failed - ignore
+        }
     }
 
     fun startLocationUpdates() {
@@ -145,6 +149,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val state = _navigationState.value
         if (state.route == null) return
 
+        // Service binden falls noch nicht geschehen
+        bindNavigationService()
+
         _navigationState.update {
             it.copy(
                 isNavigating = true,
@@ -154,10 +161,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         // Service starten
-        val intent = Intent(getApplication(), NavigationService::class.java).apply {
-            action = NavigationService.ACTION_START
+        try {
+            val intent = Intent(getApplication(), NavigationService::class.java).apply {
+                action = NavigationService.ACTION_START
+            }
+            getApplication<Application>().startForegroundService(intent)
+        } catch (e: Exception) {
+            // Foreground service start failed
         }
-        getApplication<Application>().startForegroundService(intent)
 
         // Erste Ansage
         state.route.steps.firstOrNull()?.let { step ->
@@ -276,10 +287,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         stopLocationUpdates()
-        try {
-            getApplication<Application>().unbindService(serviceConnection)
-        } catch (e: Exception) {
-            // Service not bound
+        if (serviceBound) {
+            try {
+                getApplication<Application>().unbindService(serviceConnection)
+                serviceBound = false
+            } catch (e: Exception) {
+                // Service not bound
+            }
         }
     }
 }
