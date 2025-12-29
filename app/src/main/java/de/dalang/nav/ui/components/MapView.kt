@@ -21,9 +21,6 @@ import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.sources.GeoJsonSource
-import org.maplibre.geojson.Feature
-import org.maplibre.geojson.LineString
-import org.maplibre.geojson.Point
 
 @Composable
 fun MapViewComposable(
@@ -139,15 +136,21 @@ fun MapViewComposable(
             }
 
             if (route != null && route.geometry.isNotEmpty()) {
-                // Route als GeoJSON hinzufügen
-                val coordinates = route.geometry.map { pt ->
-                    Point.fromLngLat(pt.lng, pt.lat)
+                // Route als GeoJSON-String hinzufügen
+                val coordinatesJson = route.geometry.joinToString(",") { pt ->
+                    "[${pt.lng},${pt.lat}]"
                 }
+                val geoJson = """
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "LineString",
+                            "coordinates": [$coordinatesJson]
+                        }
+                    }
+                """.trimIndent()
 
-                val lineString = LineString.fromLngLats(coordinates)
-                val feature = Feature.fromGeometry(lineString)
-
-                val source = GeoJsonSource("route-source", feature)
+                val source = GeoJsonSource("route-source", geoJson)
                 style.addSource(source)
 
                 val lineLayer = LineLayer("route-layer", "route-source").apply {
