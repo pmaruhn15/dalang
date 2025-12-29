@@ -155,8 +155,37 @@ private fun RoutePreviewContent(
             color = MaterialTheme.colorScheme.onSurface
         )
 
+        Column {
+            Text(
+                text = route.duration.formatDuration(),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            // Verkehrsverzoegerung anzeigen wenn vorhanden
+            if (route.hasTrafficData && route.typicalDuration != null) {
+                val delay = route.duration - route.typicalDuration
+                if (delay > 60) {
+                    Text(
+                        text = "+${delay.formatDuration()} Verkehr",
+                        fontSize = 12.sp,
+                        color = Color(0xFFE53935)
+                    )
+                } else {
+                    Text(
+                        text = "Verkehr: gut",
+                        fontSize = 12.sp,
+                        color = Color(0xFF43A047)
+                    )
+                }
+            }
+        }
+    }
+
+    // Traffic Indikator
+    if (route.hasTrafficData) {
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = route.duration.formatDuration(),
+            text = "Mit Echtzeit-Verkehrsdaten",
+            fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
