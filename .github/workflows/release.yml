@@ -1,18 +1,12 @@
-name: Release APK
+name: Build & Release APK
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [ main, claude/* ]
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version (z.B. 1.0.0)'
-        required: true
-        default: '1.0.0'
 
 jobs:
-  release:
+  build-and-release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -35,20 +29,36 @@ jobs:
     - name: Build Release APK
       run: ./gradlew assembleRelease
 
-    - name: Rename APK
+    - name: Get version info
+      id: version
       run: |
-        VERSION=${{ github.event.inputs.version || github.ref_name }}
-        VERSION=${VERSION#v}
-        mv app/build/outputs/apk/release/app-release-unsigned.apk dalang-${VERSION}.apk
+        VERSION="1.0.0-$(date +%Y%m%d)-$(echo ${{ github.sha }} | cut -c1-7)"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Rename APK
+      run: mv app/build/outputs/apk/release/app-release-unsigned.apk dalang-${{ steps.version.outputs.version }}.apk
+
+    - name: Delete old releases
+      uses: dev-drprasad/delete-older-releases@v0.3.2
+      with:
+        keep_latest: 5
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        name: DaLang ${{ github.event.inputs.version || github.ref_name }}
-        tag_name: ${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref_name }}
+        name: DaLang ${{ steps.version.outputs.version }}
+        tag_name: ${{ steps.version.outputs.tag }}
+        body: |
+          Automatischer Build von Commit ${{ github.sha }}
+
+          Branch: ${{ github.ref_name }}
+          Commit: ${{ github.event.head_commit.message }}
         draft: false
         prerelease: false
-        generate_release_notes: true
         files: dalang-*.apk
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
