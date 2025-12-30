@@ -59,7 +59,13 @@ object FlexiblePolyline {
                     z += zDelta
                 }
 
-                result.add(LatLng(lat / multiplier, lng / multiplier))
+                val decodedLat = lat / multiplier
+                val decodedLng = lng / multiplier
+                // Validierung und Logging bei ungültigen Koordinaten
+                if (decodedLat < -90 || decodedLat > 90 || decodedLng < -180 || decodedLng > 180) {
+                    CrashLogger.log("FlexiblePolyline: Invalid coord at index ${result.size}: lat=$decodedLat, lng=$decodedLng")
+                }
+                result.add(LatLng(decodedLat, decodedLng))
             }
 
             CrashLogger.log("FlexiblePolyline: Decoded ${result.size} points")
