@@ -22,15 +22,20 @@ object FlexiblePolyline {
             val result = mutableListOf<LatLng>()
             var index = 0
 
-            // Header dekodieren
+            // Header dekodieren - nach HERE Spezifikation:
+            // Bits 0-3: Version (immer 1)
+            // Bits 4-7: Precision (normalerweise 5)
+            // Bits 8-10: Third dimension type
+            // Bits 11-14: Third dimension precision
             val (headerValue, newIndex) = decodeUnsignedVarint(encoded, index)
             index = newIndex
 
-            val precision = headerValue and 0x0F
-            val thirdDim = (headerValue shr 4) and 0x07
-            val thirdDimPrecision = (headerValue shr 7) and 0x0F
+            val version = headerValue and 0x0F
+            val precision = (headerValue shr 4) and 0x0F
+            val thirdDim = (headerValue shr 8) and 0x07
+            val thirdDimPrecision = (headerValue shr 11) and 0x0F
 
-            CrashLogger.log("FlexiblePolyline: precision=$precision, thirdDim=$thirdDim")
+            CrashLogger.log("FlexiblePolyline: version=$version, precision=$precision, thirdDim=$thirdDim")
 
             val multiplier = Math.pow(10.0, precision.toDouble())
             val thirdDimMultiplier = Math.pow(10.0, thirdDimPrecision.toDouble())

@@ -20,8 +20,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.window.Dialog
 import de.dalang.nav.config.HereConfig
 import de.dalang.nav.settings.SettingsRepository
@@ -289,56 +287,6 @@ fun SettingsDialog(
             }
 
             Spacer(modifier = Modifier.height(20.dp))
-
-            // Debug Log Section
-            var showDebugLog by remember { mutableStateOf(false) }
-
-            OutlinedButton(
-                onClick = { showDebugLog = !showDebugLog },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (showDebugLog) "Debug Log verbergen" else "Debug Log anzeigen")
-            }
-
-            if (showDebugLog) {
-                Spacer(modifier = Modifier.height(8.dp))
-                val debugLog = remember { de.dalang.nav.util.CrashLogger.getLastCrashLog() }
-                val clipboardManager = LocalClipboardManager.current
-                var copied by remember { mutableStateOf(false) }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(8.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    Text(
-                        text = debugLog ?: "Keine Logs vorhanden",
-                        fontSize = 10.sp,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedButton(
-                    onClick = {
-                        debugLog?.let {
-                            clipboardManager.setText(AnnotatedString(it))
-                            copied = true
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(if (copied) "Kopiert!" else "Log kopieren")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
 
             // Buttons
             Row(

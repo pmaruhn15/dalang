@@ -179,19 +179,20 @@ private fun RoutePreviewContent(
             )
         }
 
-        // ETA mit Verkehr-Delay
-        Column(horizontalAlignment = Alignment.End) {
+        // ETA mit Verkehr-Delay neben der Zeit
+        Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = etaString,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
+            Spacer(modifier = Modifier.width(6.dp))
             // Immer Delay anzeigen
             val delayMinutes = trafficDelay / 60
             Text(
-                text = if (delayMinutes > 0) "+$delayMinutes Min" else "+0",
-                fontSize = 12.sp,
+                text = if (delayMinutes > 0) "+$delayMinutes" else "+0",
+                fontSize = 14.sp,
                 color = Color.White
             )
         }
