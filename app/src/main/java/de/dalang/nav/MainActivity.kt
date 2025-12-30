@@ -296,7 +296,7 @@ fun DaLangApp(viewModel: MainViewModel) {
             modifier = Modifier.fillMaxSize()
         )
 
-        // Suchleiste oben
+        // Suchleiste oben mit Menu-Button
         if (!navigationState.isNavigating) {
             SearchBar(
                 query = searchQuery,
@@ -305,31 +305,11 @@ fun DaLangApp(viewModel: MainViewModel) {
                 isSearching = isSearching,
                 onResultClick = viewModel::selectDestination,
                 onClear = viewModel::clearSearch,
+                onMenuClick = { scope.launch { drawerState.open() } },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
             )
-        }
-
-        // Menü-Button oben rechts (nur wenn keine Navigation aktiv)
-        if (!navigationState.isNavigating) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(top = 72.dp, end = 16.dp)
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .clickable { scope.launch { drawerState.open() } },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "☰",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
         }
 
         // Navigationspanel unten

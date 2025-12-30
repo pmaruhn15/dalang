@@ -64,10 +64,15 @@ class RouteRepository {
         if (HereConfig.isConfigured() && HereConfig.canMakeRequest()) {
             CrashLogger.log("RouteRepository: Using HERE API with traffic (${HereConfig.getTodayUsage()}/${HereConfig.getDailyLimit()} today)")
             val hereRoute = getRouteFromHere(from, to)
-            if (hereRoute != null) {
+            if (hereRoute != null && hereRoute.geometry.isNotEmpty()) {
+                CrashLogger.log("RouteRepository: HERE route OK with ${hereRoute.geometry.size} points")
                 hereRoute
             } else {
-                CrashLogger.log("RouteRepository: HERE failed, falling back to OSRM")
+                if (hereRoute != null) {
+                    CrashLogger.log("RouteRepository: HERE route has empty geometry, falling back to OSRM")
+                } else {
+                    CrashLogger.log("RouteRepository: HERE failed, falling back to OSRM")
+                }
                 getRouteFromOsrm(from, to)
             }
         } else if (HereConfig.isConfigured() && !HereConfig.canMakeRequest()) {

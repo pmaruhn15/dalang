@@ -114,11 +114,12 @@ private fun ActiveNavigationContent(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // Stop-Button
+    // Stop-Button - weiß mit schwarzer Schrift
     Button(
         onClick = onStop,
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color(0xFFE53935)
+            containerColor = Color.White,
+            contentColor = Color.Black
         ),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth()
@@ -178,43 +179,32 @@ private fun RoutePreviewContent(
             )
         }
 
-        // ETA mit Verkehr
-        Row(verticalAlignment = Alignment.Bottom) {
+        // ETA mit Verkehr-Delay
+        Column(horizontalAlignment = Alignment.End) {
             Text(
                 text = etaString,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            if (trafficDelay > 60) {
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "+${(trafficDelay / 60)} Min",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFFE53935)
-                )
-            }
+            // Immer Delay anzeigen
+            val delayMinutes = trafficDelay / 60
+            Text(
+                text = if (delayMinutes > 0) "+$delayMinutes Min" else "+0",
+                fontSize = 12.sp,
+                color = Color.White
+            )
         }
-    }
-
-    // Traffic Indikator
-    if (route.hasTrafficData) {
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = if (trafficDelay > 60) "Verkehr auf der Strecke" else "Verkehr: gut",
-            fontSize = 11.sp,
-            color = if (trafficDelay > 60) Color(0xFFE53935) else Color(0xFF43A047)
-        )
     }
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // Start-Button
+    // Start-Button - weiß mit schwarzer Schrift
     Button(
         onClick = onStart,
         colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary
+            containerColor = Color.White,
+            contentColor = Color.Black
         ),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth()

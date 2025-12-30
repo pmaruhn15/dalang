@@ -18,6 +18,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,70 +32,97 @@ fun SearchBar(
     isSearching: Boolean,
     onResultClick: (SearchResult) -> Unit,
     onClear: () -> Unit,
+    onMenuClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
     var isExpanded by remember { mutableStateOf(false) }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     Column(
         modifier = modifier
             .padding(16.dp)
     ) {
-        // Suchfeld
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(4.dp, RoundedCornerShape(12.dp))
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(horizontal = 16.dp, vertical = 14.dp)
+        // Suchfeld mit Menu-Button
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                // Such-Icon entfernt - minimalistisch
+            // Menu Button links
+            if (onMenuClick != null) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .shadow(4.dp, RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .clickable { onMenuClick() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "☰",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+            }
 
-                Box(modifier = Modifier.weight(1f)) {
-                    if (query.isEmpty()) {
-                        Text(
-                            text = "Ziel eingeben…",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 16.sp
+            // Suchfeld
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .shadow(4.dp, RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (query.isEmpty()) {
+                            Text(
+                                text = "Ziel eingeben…",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 16.sp
+                            )
+                        }
+
+                        BasicTextField(
+                            value = query,
+                            onValueChange = {
+                                onQueryChange(it)
+                                isExpanded = it.isNotEmpty()
+                            },
+                            textStyle = TextStyle(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 16.sp
+                            ),
+                            singleLine = true,
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester)
                         )
                     }
 
-                    BasicTextField(
-                        value = query,
-                        onValueChange = {
-                            onQueryChange(it)
-                            isExpanded = it.isNotEmpty()
-                        },
-                        textStyle = TextStyle(
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 16.sp
-                        ),
-                        singleLine = true,
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusRequester)
-                    )
-                }
-
-                // Löschen-Button
-                if (query.isNotEmpty()) {
-                    Text(
-                        text = "X",
-                        fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .padding(start = 8.dp)
-                            .clickable {
-                                onClear()
-                                isExpanded = false
-                            }
-                    )
+                    // Löschen-Button
+                    if (query.isNotEmpty()) {
+                        Text(
+                            text = "X",
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .padding(start = 8.dp)
+                                .clickable {
+                                    onClear()
+                                    isExpanded = false
+                                    keyboardController?.hide()
+                                }
+                        )
+                    }
                 }
             }
         }
@@ -128,6 +156,7 @@ fun SearchBar(
                             SearchResultItem(
                                 result = result,
                                 onClick = {
+                                    keyboardController?.hide()
                                     onResultClick(result)
                                     onClear()  // Clear query and close
                                     isExpanded = false
