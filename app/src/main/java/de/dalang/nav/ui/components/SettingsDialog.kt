@@ -141,7 +141,7 @@ fun SettingsDialog(
                 val barColor = when (usageStatus) {
                     SettingsRepository.UsageStatus.BLOCKED -> Color(0xFFE53935)
                     SettingsRepository.UsageStatus.WARNING -> Color(0xFFFF9800)
-                    SettingsRepository.UsageStatus.OK -> Color(0xFF43A047)
+                    SettingsRepository.UsageStatus.OK -> Color.White
                 }
 
                 Column {
@@ -158,7 +158,7 @@ fun SettingsDialog(
                             text = when (usageStatus) {
                                 SettingsRepository.UsageStatus.BLOCKED -> "Limit erreicht!"
                                 SettingsRepository.UsageStatus.WARNING -> "Warnung"
-                                SettingsRepository.UsageStatus.OK -> "OK"
+                                SettingsRepository.UsageStatus.OK -> ""
                             },
                             fontSize = 14.sp,
                             color = barColor

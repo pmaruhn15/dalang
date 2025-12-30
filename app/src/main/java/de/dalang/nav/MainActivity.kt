@@ -177,7 +177,7 @@ fun DaLangApp(viewModel: MainViewModel) {
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = !navigationState.isNavigating,
+        gesturesEnabled = false,  // Disable swipe gesture, use menu button only
         drawerContent = {
             ModalDrawerSheet(
                 modifier = Modifier.width(300.dp)

@@ -126,7 +126,7 @@ class RouteRepository {
             val newCount = HereConfig.incrementUsage()
             CrashLogger.log("RouteRepository: HERE usage now $newCount/${HereConfig.getDailyLimit()}")
 
-            val route = parseHereRoute(body)
+            val route = parseHereRoute(body, from)
             if (route == null) {
                 CrashLogger.logError("RouteRepository", "HERE route parsing returned null")
             } else {
@@ -139,7 +139,7 @@ class RouteRepository {
         }
     }
 
-    private fun parseHereRoute(json: String): Route? {
+    private fun parseHereRoute(json: String, origin: LatLng): Route? {
         try {
             CrashLogger.log("RouteRepository: Parsing HERE response...")
             val obj = JSONObject(json)
@@ -183,7 +183,22 @@ class RouteRepository {
             // Geometrie dekodieren (HERE Flexible Polyline)
             val polyline = section.getString("polyline")
             CrashLogger.log("RouteRepository: Polyline length: ${polyline.length}")
-            val geometry = FlexiblePolyline.decode(polyline)
+            val decodedGeometry = FlexiblePolyline.decode(polyline)
+
+            // Fix: HERE polyline encoding has a bug where first point's longitude is nearly 0
+            // If first point's longitude is clearly wrong, use origin coordinates
+            val geometry = if (decodedGeometry.isNotEmpty()) {
+                val first = decodedGeometry.first()
+                if (Math.abs(first.lng) < 1.0 && decodedGeometry.size > 1) {
+                    // First point longitude is wrong, use origin
+                    CrashLogger.log("RouteRepository: Fixing first point longitude from ${first.lng} to ${origin.lng}")
+                    listOf(LatLng(first.lat, origin.lng)) + decodedGeometry.drop(1)
+                } else {
+                    decodedGeometry
+                }
+            } else {
+                decodedGeometry
+            }
 
             CrashLogger.log("RouteRepository: HERE route decoded with ${geometry.size} points")
 
