@@ -148,7 +148,7 @@ object OfflineMapManager {
                                     0
                                 }
 
-                                val isComplete = it.isComplete
+                                val isComplete = it.isComplete()
                                 CrashLogger.log("OfflineMapManager: Download progress ${region.id}: $percentage% (${it.completedResourceCount}/${it.requiredResourceCount})")
 
                                 onProgress(DownloadProgress(region.id, percentage, isComplete))
