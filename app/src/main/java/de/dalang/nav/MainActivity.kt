@@ -29,6 +29,7 @@ import androidx.core.view.WindowCompat
 import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.ui.components.MapViewComposable
 import de.dalang.nav.ui.components.NavigationPanel
+import de.dalang.nav.ui.components.OfflineMapsDialog
 import de.dalang.nav.ui.components.SearchBar
 import de.dalang.nav.ui.components.SettingsDialog
 import de.dalang.nav.ui.theme.DaLangTheme
@@ -416,6 +417,7 @@ fun DrawerContent(
     onCloseDrawer: () -> Unit
 ) {
     var showSettings by remember { mutableStateOf(false) }
+    var showOfflineMaps by remember { mutableStateOf(false) }
     var showDebugLog by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
 
@@ -450,6 +452,17 @@ fun DrawerContent(
             selected = false,
             onClick = {
                 showSettings = true
+            },
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+
+        // Offline Karten
+        NavigationDrawerItem(
+            label = { Text("Offline Karten") },
+            selected = false,
+            onClick = {
+                CrashLogger.log("DrawerContent: Offline Karten clicked")
+                showOfflineMaps = true
             },
             modifier = Modifier.padding(vertical = 4.dp)
         )
@@ -495,6 +508,13 @@ fun DrawerContent(
         SettingsDialog(
             onDismiss = { showSettings = false },
             onSave = { }
+        )
+    }
+
+    // Offline Maps Dialog
+    if (showOfflineMaps) {
+        OfflineMapsDialog(
+            onDismiss = { showOfflineMaps = false }
         )
     }
 
