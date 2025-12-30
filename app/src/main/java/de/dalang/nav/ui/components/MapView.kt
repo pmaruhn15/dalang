@@ -1,5 +1,7 @@
 package de.dalang.nav.ui.components
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.*
@@ -7,8 +9,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import de.dalang.nav.R
 import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.navigation.Route
 import de.dalang.nav.util.CrashLogger
@@ -17,10 +21,10 @@ import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.MapLibreMap
-import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 
 @Composable
@@ -178,7 +182,7 @@ fun MapViewComposable(
         }
     }
 
-    // Standort-Marker zeichnen
+    // Standort-Marker zeichnen (weißer Pfeil)
     LaunchedEffect(currentLocation, isMapReady) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
@@ -190,10 +194,25 @@ fun MapViewComposable(
                     // Vorherigen Marker entfernen
                     try {
                         style.removeLayer("location-layer")
-                        style.removeLayer("location-pulse-layer")
                         style.removeSource("location-source")
                     } catch (e: Exception) {
                         // Layer existiert nicht
+                    }
+
+                    // Icon zum Style hinzufügen (falls noch nicht vorhanden)
+                    if (style.getImage("position-arrow") == null) {
+                        val drawable = ContextCompat.getDrawable(context, R.drawable.ic_position_arrow)
+                        if (drawable != null) {
+                            val bitmap = Bitmap.createBitmap(
+                                drawable.intrinsicWidth,
+                                drawable.intrinsicHeight,
+                                Bitmap.Config.ARGB_8888
+                            )
+                            val canvas = Canvas(bitmap)
+                            drawable.setBounds(0, 0, canvas.width, canvas.height)
+                            drawable.draw(canvas)
+                            style.addImage("position-arrow", bitmap)
+                        }
                     }
 
                     // Standort als GeoJSON Point
@@ -210,23 +229,13 @@ fun MapViewComposable(
                     val source = GeoJsonSource("location-source", geoJson)
                     style.addSource(source)
 
-                    // Aeusserer Kreis (Puls-Effekt)
-                    val pulseLayer = CircleLayer("location-pulse-layer", "location-source").apply {
+                    // Weißer Pfeil als Symbol
+                    val locationLayer = SymbolLayer("location-layer", "location-source").apply {
                         setProperties(
-                            PropertyFactory.circleRadius(20f),
-                            PropertyFactory.circleColor(Color.parseColor("#1976D2")),
-                            PropertyFactory.circleOpacity(0.2f)
-                        )
-                    }
-                    style.addLayer(pulseLayer)
-
-                    // Innerer Kreis (Standort)
-                    val locationLayer = CircleLayer("location-layer", "location-source").apply {
-                        setProperties(
-                            PropertyFactory.circleRadius(8f),
-                            PropertyFactory.circleColor(Color.parseColor("#1976D2")),
-                            PropertyFactory.circleStrokeWidth(3f),
-                            PropertyFactory.circleStrokeColor(Color.WHITE)
+                            PropertyFactory.iconImage("position-arrow"),
+                            PropertyFactory.iconSize(0.8f),
+                            PropertyFactory.iconAllowOverlap(true),
+                            PropertyFactory.iconIgnorePlacement(true)
                         )
                     }
                     style.addLayer(locationLayer)
@@ -323,7 +332,7 @@ fun MapViewComposable(
         }
     }
 
-    // Ziel-Marker zeichnen
+    // Ziel-Marker zeichnen (weiß)
     LaunchedEffect(destination, isMapReady) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
@@ -340,6 +349,22 @@ fun MapViewComposable(
                     }
 
                     if (destination != null) {
+                        // Icon zum Style hinzufügen (falls noch nicht vorhanden)
+                        if (style.getImage("destination-marker") == null) {
+                            val drawable = ContextCompat.getDrawable(context, R.drawable.ic_destination_marker)
+                            if (drawable != null) {
+                                val bitmap = Bitmap.createBitmap(
+                                    drawable.intrinsicWidth,
+                                    drawable.intrinsicHeight,
+                                    Bitmap.Config.ARGB_8888
+                                )
+                                val canvas = Canvas(bitmap)
+                                drawable.setBounds(0, 0, canvas.width, canvas.height)
+                                drawable.draw(canvas)
+                                style.addImage("destination-marker", bitmap)
+                            }
+                        }
+
                         val geoJson = """
                             {
                                 "type": "Feature",
@@ -353,12 +378,13 @@ fun MapViewComposable(
                         val source = GeoJsonSource("destination-source", geoJson)
                         style.addSource(source)
 
-                        val destLayer = CircleLayer("destination-layer", "destination-source").apply {
+                        val destLayer = SymbolLayer("destination-layer", "destination-source").apply {
                             setProperties(
-                                PropertyFactory.circleRadius(10f),
-                                PropertyFactory.circleColor(Color.parseColor("#E53935")),
-                                PropertyFactory.circleStrokeWidth(3f),
-                                PropertyFactory.circleStrokeColor(Color.WHITE)
+                                PropertyFactory.iconImage("destination-marker"),
+                                PropertyFactory.iconSize(1.0f),
+                                PropertyFactory.iconAllowOverlap(true),
+                                PropertyFactory.iconIgnorePlacement(true),
+                                PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM)
                             )
                         }
                         style.addLayer(destLayer)

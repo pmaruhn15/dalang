@@ -1,6 +1,7 @@
 package de.dalang.nav.ui.components
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,9 +12,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import de.dalang.nav.R
 import de.dalang.nav.navigation.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -63,18 +67,27 @@ private fun ActiveNavigationContent(
 ) {
     val currentStep = state.currentStep
 
-    // Nächste Anweisung
-    Column(modifier = Modifier.fillMaxWidth()) {
+    // Nächste Anweisung mit Pfeil-Icon
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Richtungspfeil
+        Image(
+            painter = painterResource(id = getTurnIconRes(currentStep)),
+            contentDescription = "Richtung",
+            modifier = Modifier.size(64.dp),
+            colorFilter = ColorFilter.tint(Color.White)
+        )
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        // Distanz
         Text(
             text = state.distanceToNextStep.formatDistance(),
             fontSize = 32.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
-        )
-        Text(
-            text = currentStep?.toGermanInstruction() ?: "",
-            fontSize = 16.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 
@@ -214,5 +227,30 @@ private fun RoutePreviewContent(
             text = "Navigation starten",
             modifier = Modifier.padding(vertical = 4.dp)
         )
+    }
+}
+
+// Hilfsfunktion für Richtungspfeile
+private fun getTurnIconRes(step: RouteStep?): Int {
+    if (step == null) return R.drawable.ic_turn_straight
+
+    return when (step.maneuver.type) {
+        "depart", "continue" -> R.drawable.ic_turn_straight
+        "arrive" -> R.drawable.ic_destination_flag
+        "turn" -> when (step.maneuver.modifier) {
+            "left", "sharp left" -> R.drawable.ic_turn_left
+            "right", "sharp right" -> R.drawable.ic_turn_right
+            "slight left" -> R.drawable.ic_turn_slight_left
+            "slight right" -> R.drawable.ic_turn_slight_right
+            "uturn" -> R.drawable.ic_turn_uturn
+            else -> R.drawable.ic_turn_straight
+        }
+        "fork" -> when (step.maneuver.modifier) {
+            "left" -> R.drawable.ic_turn_slight_left
+            "right" -> R.drawable.ic_turn_slight_right
+            else -> R.drawable.ic_turn_straight
+        }
+        "roundabout", "rotary", "exit roundabout", "exit rotary" -> R.drawable.ic_turn_right
+        else -> R.drawable.ic_turn_straight
     }
 }
