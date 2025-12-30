@@ -29,6 +29,7 @@ import androidx.core.view.WindowCompat
 import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.ui.components.MapViewComposable
 import de.dalang.nav.ui.components.NavigationPanel
+import de.dalang.nav.ui.components.OfflineMapsDialog
 import de.dalang.nav.ui.components.SearchBar
 import de.dalang.nav.ui.components.SettingsDialog
 import de.dalang.nav.ui.theme.DaLangTheme
@@ -415,6 +416,8 @@ fun DrawerContent(
     onCloseDrawer: () -> Unit
 ) {
     var showSettings by remember { mutableStateOf(false) }
+    var showOfflineMaps by remember { mutableStateOf(false) }
+    var showDebugLog by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
 
     Column(
@@ -457,7 +460,19 @@ fun DrawerContent(
             label = { Text("Offline Karten") },
             selected = false,
             onClick = {
-                // TODO: Offline maps download
+                CrashLogger.log("DrawerContent: Offline Karten clicked")
+                showOfflineMaps = true
+            },
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+
+        // Debug Log
+        NavigationDrawerItem(
+            label = { Text("Debug Log") },
+            selected = false,
+            onClick = {
+                CrashLogger.log("DrawerContent: Debug Log clicked")
+                showDebugLog = true
             },
             modifier = Modifier.padding(vertical = 4.dp)
         )
@@ -492,6 +507,20 @@ fun DrawerContent(
         SettingsDialog(
             onDismiss = { showSettings = false },
             onSave = { }
+        )
+    }
+
+    // Offline Maps Dialog
+    if (showOfflineMaps) {
+        OfflineMapsDialog(
+            onDismiss = { showOfflineMaps = false }
+        )
+    }
+
+    // Debug Log Dialog
+    if (showDebugLog) {
+        DebugLogDialog(
+            onDismiss = { showDebugLog = false }
         )
     }
 
@@ -543,6 +572,97 @@ fun DrawerContent(
                 ) {
                     Text("Schließen")
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun DebugLogDialog(
+    onDismiss: () -> Unit
+) {
+    val debugLog = remember { CrashLogger.getLastCrashLog() }
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(16.dp)
+        ) {
+            Text(
+                text = "Debug Log",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Vollständiges Protokoll aller App-Ereignisse:",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(8.dp)
+            ) {
+                Text(
+                    text = debugLog ?: "Keine Logs vorhanden",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 9.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        debugLog?.let {
+                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(it))
+                            copied = true
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (copied) "Kopiert!" else "Log kopieren")
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        CrashLogger.clearLog()
+                        onDismiss()
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Log leeren")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Schließen")
             }
         }
     }
