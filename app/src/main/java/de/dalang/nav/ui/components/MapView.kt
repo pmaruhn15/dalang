@@ -289,18 +289,26 @@ fun MapViewComposable(
                         if (!isNavigating && route.geometry.size >= 2) {
                             try {
                                 val bounds = LatLngBounds.Builder()
+                                var validPoints = 0
                                 route.geometry.forEach { point ->
-                                    bounds.include(
-                                        org.maplibre.android.geometry.LatLng(point.lat, point.lng)
+                                    // Nur gültige Koordinaten hinzufügen
+                                    if (point.lat >= -90 && point.lat <= 90 &&
+                                        point.lng >= -180 && point.lng <= 180) {
+                                        bounds.include(
+                                            org.maplibre.android.geometry.LatLng(point.lat, point.lng)
+                                        )
+                                        validPoints++
+                                    }
+                                }
+                                if (validPoints >= 2) {
+                                    map.animateCamera(
+                                        CameraUpdateFactory.newLatLngBounds(
+                                            bounds.build(),
+                                            100
+                                        ),
+                                        1000
                                     )
                                 }
-                                map.animateCamera(
-                                    CameraUpdateFactory.newLatLngBounds(
-                                        bounds.build(),
-                                        100
-                                    ),
-                                    1000
-                                )
                             } catch (e: Exception) {
                                 CrashLogger.logError("MapView", "Camera bounds animation failed", e)
                             }
