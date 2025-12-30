@@ -62,6 +62,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _clickedLocation = MutableStateFlow<LatLng?>(null)
     val clickedLocation: StateFlow<LatLng?> = _clickedLocation.asStateFlow()
 
+    private val _clickedLocationAddress = MutableStateFlow<String?>(null)
+    val clickedLocationAddress: StateFlow<String?> = _clickedLocationAddress.asStateFlow()
+
     private var navigationService: NavigationService? = null
     private var locationJob: Job? = null
     private var searchJob: Job? = null
@@ -411,10 +414,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onMapClicked(location: LatLng) {
         CrashLogger.log("MainViewModel: Map clicked at ${location.lat}, ${location.lng}")
         _clickedLocation.value = location
+        _clickedLocationAddress.value = "Lade Adresse..."
+
+        // Reverse Geocoding im Hintergrund
+        viewModelScope.launch(exceptionHandler) {
+            try {
+                val address = searchRepository.reverseGeocode(location.lat, location.lng)
+                _clickedLocationAddress.value = address ?: "Unbekannte Adresse"
+            } catch (e: Exception) {
+                _clickedLocationAddress.value = "Adresse nicht gefunden"
+            }
+        }
     }
 
     fun dismissMapClick() {
         _clickedLocation.value = null
+        _clickedLocationAddress.value = null
     }
 
     fun navigateToClickedLocation() {

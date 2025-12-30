@@ -69,6 +69,8 @@ fun MapViewComposable(
                                         isRotateGesturesEnabled = true
                                         isZoomGesturesEnabled = true
                                         isTiltGesturesEnabled = false
+                                        isAttributionEnabled = false
+                                        isLogoEnabled = false
                                     }
 
                                     // Initiale Kameraposition (Deutschland)
@@ -273,7 +275,7 @@ fun MapViewComposable(
 
                         val lineLayer = LineLayer("route-layer", "route-source").apply {
                             setProperties(
-                                PropertyFactory.lineColor(Color.parseColor("#1976D2")),
+                                PropertyFactory.lineColor(Color.parseColor("#FFFFFF")),
                                 PropertyFactory.lineWidth(6f),
                                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)

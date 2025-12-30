@@ -15,6 +15,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.dalang.nav.navigation.*
+import java.text.SimpleDateFormat
+import java.util.*
 
 @Composable
 fun NavigationPanel(
@@ -135,6 +137,18 @@ private fun RoutePreviewContent(
 ) {
     val route = state.route ?: return
 
+    // ETA berechnen
+    val eta = Calendar.getInstance().apply {
+        add(Calendar.SECOND, route.duration.toInt())
+    }
+    val etaFormat = SimpleDateFormat("HH:mm", Locale.GERMANY)
+    val etaString = etaFormat.format(eta.time)
+
+    // Traffic delay
+    val trafficDelay = if (route.hasTrafficData && route.typicalDuration != null) {
+        (route.duration - route.typicalDuration).toInt()
+    } else 0
+
     // Ziel
     Text(
         text = state.destinationName ?: "Ziel",
@@ -145,37 +159,41 @@ private fun RoutePreviewContent(
 
     Spacer(modifier = Modifier.height(8.dp))
 
-    // Route-Info
+    // Route-Info mit ETA
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(24.dp)
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(
-            text = route.distance.formatDistance(),
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
+        // Distanz
         Column {
             Text(
-                text = route.duration.formatDuration(),
+                text = route.distance.formatDistance(),
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            // Verkehrsverzoegerung anzeigen wenn vorhanden
-            if (route.hasTrafficData && route.typicalDuration != null) {
-                val delay = route.duration - route.typicalDuration
-                if (delay > 60) {
-                    Text(
-                        text = "+${delay.formatDuration()} Verkehr",
-                        fontSize = 12.sp,
-                        color = Color(0xFFE53935)
-                    )
-                } else {
-                    Text(
-                        text = "Verkehr: gut",
-                        fontSize = 12.sp,
-                        color = Color(0xFF43A047)
-                    )
-                }
+            Text(
+                text = route.duration.formatDuration(),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        // ETA mit Verkehr
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = etaString,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (trafficDelay > 60) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "+${(trafficDelay / 60)} Min",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFFE53935)
+                )
             }
         }
     }
@@ -184,9 +202,9 @@ private fun RoutePreviewContent(
     if (route.hasTrafficData) {
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Mit Echtzeit-Verkehrsdaten",
+            text = if (trafficDelay > 60) "Verkehr auf der Strecke" else "Verkehr: gut",
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = if (trafficDelay > 60) Color(0xFFE53935) else Color(0xFF43A047)
         )
     }
 

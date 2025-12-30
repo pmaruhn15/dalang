@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -247,7 +248,8 @@ fun DaLangApp(viewModel: MainViewModel) {
     val clickedLocation by viewModel.clickedLocation.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
 
-    var showSettings by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Fehler als Snackbar anzeigen
@@ -261,6 +263,19 @@ fun DaLangApp(viewModel: MainViewModel) {
         }
     }
 
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = !navigationState.isNavigating,
+        drawerContent = {
+            ModalDrawerSheet(
+                modifier = Modifier.width(300.dp)
+            ) {
+                DrawerContent(
+                    onCloseDrawer = { scope.launch { drawerState.close() } }
+                )
+            }
+        }
+    ) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
@@ -295,7 +310,7 @@ fun DaLangApp(viewModel: MainViewModel) {
             )
         }
 
-        // Einstellungs-Button oben rechts (nur wenn keine Navigation aktiv)
+        // Menü-Button oben rechts (nur wenn keine Navigation aktiv)
         if (!navigationState.isNavigating) {
             Box(
                 modifier = Modifier
@@ -305,12 +320,12 @@ fun DaLangApp(viewModel: MainViewModel) {
                     .size(44.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surface)
-                    .clickable { showSettings = true },
+                    .clickable { scope.launch { drawerState.open() } },
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "...",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = "☰",
+                    style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
@@ -327,26 +342,23 @@ fun DaLangApp(viewModel: MainViewModel) {
         )
 
         // Map-Klick Dialog
+        val clickedAddress by viewModel.clickedLocationAddress.collectAsState()
         if (clickedLocation != null) {
             MapClickDialog(
+                address = clickedAddress,
                 onNavigate = { viewModel.navigateToClickedLocation() },
                 onDismiss = { viewModel.dismissMapClick() }
             )
         }
 
-        // Settings Dialog
-        if (showSettings) {
-            SettingsDialog(
-                onDismiss = { showSettings = false },
-                onSave = { }
-            )
-        }
+    }
     }
     }
 }
 
 @Composable
 fun MapClickDialog(
+    address: String?,
     onNavigate: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -363,6 +375,15 @@ fun MapClickDialog(
                 text = "Hierhin navigieren?",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = address ?: "Lade Adresse...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -383,6 +404,144 @@ fun MapClickDialog(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Route berechnen")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DrawerContent(
+    onCloseDrawer: () -> Unit
+) {
+    var showSettings by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxHeight()
+            .padding(16.dp)
+    ) {
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text(
+            text = "DaLang",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Text(
+            text = "Navigation",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        HorizontalDivider()
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Einstellungen
+        NavigationDrawerItem(
+            label = { Text("Einstellungen") },
+            selected = false,
+            onClick = {
+                showSettings = true
+            },
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+
+        // Offline Karten
+        NavigationDrawerItem(
+            label = { Text("Offline Karten") },
+            selected = false,
+            onClick = {
+                // TODO: Offline maps download
+            },
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        HorizontalDivider()
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Über
+        NavigationDrawerItem(
+            label = { Text("Über") },
+            selected = false,
+            onClick = {
+                showAbout = true
+            },
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+
+        // Version
+        Text(
+            text = "Version 1.0",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, top = 8.dp)
+        )
+    }
+
+    // Settings Dialog
+    if (showSettings) {
+        SettingsDialog(
+            onDismiss = { showSettings = false },
+            onSave = { }
+        )
+    }
+
+    // Über Dialog
+    if (showAbout) {
+        Dialog(onDismissRequest = { showAbout = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(20.dp)
+            ) {
+                Text(
+                    text = "Über DaLang",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "DaLang ist eine minimalistische Navigations-App.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Verwendete Dienste:",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "• MapLibre GL - Kartenansicht\n• OpenFreeMap - Kartendaten\n• OpenStreetMap - Kartendaten\n• Photon - Adresssuche\n• OSRM - Routing\n• HERE - Verkehrsdaten (optional)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = { showAbout = false },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Schließen")
                 }
             }
         }
