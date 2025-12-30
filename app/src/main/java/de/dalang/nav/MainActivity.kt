@@ -153,6 +153,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DaLangApp(viewModel: MainViewModel) {
     val currentLocation by viewModel.currentLocation.collectAsState()
+    val heading by viewModel.heading.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
@@ -177,7 +178,7 @@ fun DaLangApp(viewModel: MainViewModel) {
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = false,  // Disable swipe gesture, use menu button only
+        gesturesEnabled = drawerState.isOpen,  // Allow close gestures when open, but don't open by swipe
         drawerContent = {
             ModalDrawerSheet(
                 modifier = Modifier.width(300.dp)
@@ -195,6 +196,7 @@ fun DaLangApp(viewModel: MainViewModel) {
         // Karte im Hintergrund
         MapViewComposable(
             currentLocation = currentLocation,
+            heading = heading,
             destination = navigationState.destination,
             route = navigationState.route,
             isNavigating = navigationState.isNavigating,

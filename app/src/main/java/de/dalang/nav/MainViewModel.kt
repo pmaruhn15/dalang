@@ -8,6 +8,7 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import de.dalang.nav.location.HeadingProvider
 import de.dalang.nav.location.LocationProvider
 import de.dalang.nav.navigation.*
 import de.dalang.nav.search.SearchRepository
@@ -33,11 +34,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         null
     }
 
+    private val headingProvider: HeadingProvider? = try {
+        HeadingProvider(application)
+    } catch (e: Exception) {
+        CrashLogger.logError("MainViewModel", "HeadingProvider init failed", e)
+        null
+    }
+
     private val searchRepository: SearchRepository = SearchRepository()
     private val routeRepository: RouteRepository = RouteRepository()
 
     private val _currentLocation = MutableStateFlow<LatLng?>(null)
     val currentLocation: StateFlow<LatLng?> = _currentLocation.asStateFlow()
+
+    private val _heading = MutableStateFlow(0f)
+    val heading: StateFlow<Float> = _heading.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -67,6 +78,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var navigationService: NavigationService? = null
     private var locationJob: Job? = null
+    private var headingJob: Job? = null
     private var searchJob: Job? = null
     private var serviceBound = false
 
@@ -149,11 +161,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 CrashLogger.logError("MainViewModel", "startLocationUpdates failed", e)
             }
         }
+
+        // Start heading updates
+        startHeadingUpdates()
+    }
+
+    private fun startHeadingUpdates() {
+        val provider = headingProvider ?: return
+
+        headingJob?.cancel()
+        headingJob = viewModelScope.launch(exceptionHandler) {
+            try {
+                provider.headingUpdates()
+                    .catch { e ->
+                        CrashLogger.logError("MainViewModel", "Heading updates error", e)
+                    }
+                    .collect { heading ->
+                        _heading.value = heading
+                    }
+            } catch (e: Exception) {
+                CrashLogger.logError("MainViewModel", "startHeadingUpdates failed", e)
+            }
+        }
     }
 
     fun stopLocationUpdates() {
         CrashLogger.log("MainViewModel: stopLocationUpdates")
         locationJob?.cancel()
+        headingJob?.cancel()
     }
 
     fun updateSearchQuery(query: String) {

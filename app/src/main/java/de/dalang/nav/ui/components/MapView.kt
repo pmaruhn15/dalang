@@ -30,6 +30,7 @@ import org.maplibre.android.style.sources.GeoJsonSource
 @Composable
 fun MapViewComposable(
     currentLocation: LatLng?,
+    heading: Float = 0f,
     destination: LatLng?,
     route: Route?,
     isNavigating: Boolean,
@@ -182,8 +183,8 @@ fun MapViewComposable(
         }
     }
 
-    // Standort-Marker zeichnen (weißer Pfeil)
-    LaunchedEffect(currentLocation, isMapReady) {
+    // Standort-Marker zeichnen (weißer Pfeil mit Kompass-Rotation)
+    LaunchedEffect(currentLocation, heading, isMapReady) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
         val location = currentLocation ?: return@LaunchedEffect
@@ -229,11 +230,13 @@ fun MapViewComposable(
                     val source = GeoJsonSource("location-source", geoJson)
                     style.addSource(source)
 
-                    // Weißer Pfeil als Symbol
+                    // Weißer Pfeil als Symbol mit Kompass-Rotation
                     val locationLayer = SymbolLayer("location-layer", "location-source").apply {
                         setProperties(
                             PropertyFactory.iconImage("position-arrow"),
                             PropertyFactory.iconSize(0.8f),
+                            PropertyFactory.iconRotate(heading),
+                            PropertyFactory.iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
                             PropertyFactory.iconAllowOverlap(true),
                             PropertyFactory.iconIgnorePlacement(true)
                         )

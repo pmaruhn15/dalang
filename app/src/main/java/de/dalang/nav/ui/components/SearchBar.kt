@@ -152,14 +152,16 @@ fun SearchBar(
                     }
                 } else {
                     LazyColumn {
-                        items(results) { result ->
+                        items(results, key = { it.osmId }) { result ->
                             SearchResultItem(
                                 result = result,
                                 onClick = {
-                                    keyboardController?.hide()
-                                    onResultClick(result)
-                                    onClear()  // Clear query and close
+                                    // First select the destination, then clean up UI
+                                    val selectedResult = result
                                     isExpanded = false
+                                    onResultClick(selectedResult)
+                                    onClear()
+                                    keyboardController?.hide()
                                 }
                             )
                         }
