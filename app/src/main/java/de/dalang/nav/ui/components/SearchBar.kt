@@ -129,6 +129,7 @@ fun SearchBar(
                                 result = result,
                                 onClick = {
                                     onResultClick(result)
+                                    onClear()  // Clear query and close
                                     isExpanded = false
                                 }
                             )

@@ -83,6 +83,11 @@ fun OfflineMapsDialog(
                                 }
                             }
                         },
+                        onCancel = {
+                            CrashLogger.log("OfflineMapsDialog: Cancel ${region.name}")
+                            OfflineMapManager.cancelDownload(region.id)
+                            downloadProgress = downloadProgress - region.id
+                        },
                         onDelete = {
                             CrashLogger.log("OfflineMapsDialog: Delete ${region.name}")
                             OfflineMapManager.deleteRegion(region.id) { success ->
@@ -112,6 +117,7 @@ private fun RegionItem(
     isDownloading: Boolean,
     progress: DownloadProgress?,
     onDownload: () -> Unit,
+    onCancel: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
@@ -127,14 +133,16 @@ private fun RegionItem(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = region.name, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = "Zoom ${region.minZoom.toInt()}-${region.maxZoom.toInt()}",
+                        text = "~${region.estimatedSizeMB} MB",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
                 when {
-                    isDownloading -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    isDownloading -> TextButton(onClick = onCancel) {
+                        Text("Abbrechen", color = MaterialTheme.colorScheme.error)
+                    }
                     isDownloaded -> TextButton(onClick = onDelete) {
                         Text("Löschen", color = MaterialTheme.colorScheme.error)
                     }

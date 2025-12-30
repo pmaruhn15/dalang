@@ -63,7 +63,13 @@ class RouteRepository {
         // HERE API nutzen wenn konfiguriert UND Limit nicht erreicht
         if (HereConfig.isConfigured() && HereConfig.canMakeRequest()) {
             CrashLogger.log("RouteRepository: Using HERE API with traffic (${HereConfig.getTodayUsage()}/${HereConfig.getDailyLimit()} today)")
-            getRouteFromHere(from, to)
+            val hereRoute = getRouteFromHere(from, to)
+            if (hereRoute != null) {
+                hereRoute
+            } else {
+                CrashLogger.log("RouteRepository: HERE failed, falling back to OSRM")
+                getRouteFromOsrm(from, to)
+            }
         } else if (HereConfig.isConfigured() && !HereConfig.canMakeRequest()) {
             CrashLogger.log("RouteRepository: HERE limit reached, falling back to OSRM")
             getRouteFromOsrm(from, to)
