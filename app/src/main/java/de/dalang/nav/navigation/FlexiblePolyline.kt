@@ -4,11 +4,18 @@ import de.dalang.nav.util.CrashLogger
 
 /**
  * Decoder fuer HERE Flexible Polyline Format
+ * Basiert auf der offiziellen HERE Referenzimplementierung
  * https://github.com/heremaps/flexible-polyline
  */
 object FlexiblePolyline {
 
-    private const val DECODING_TABLE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    // Dekodierungstabelle: Index = ord(char) - 45
+    private val DECODING_TABLE = intArrayOf(
+        62, -1, -1, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1, -1,
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+        22, 23, 24, 25, -1, -1, -1, -1, 63, -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+        36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51
+    )
 
     fun decode(encoded: String): List<LatLng> {
         if (encoded.isEmpty()) {
@@ -16,64 +23,64 @@ object FlexiblePolyline {
             return emptyList()
         }
 
-        CrashLogger.log("FlexiblePolyline: Decoding ${encoded.length} chars")
+        CrashLogger.log("FlexiblePolyline: Decoding ${encoded.length} chars, first 20: ${encoded.take(20)}")
 
         try {
+            val decoder = Decoder(encoded)
+
+            // Header dekodieren
+            val headerValue = decoder.decodeUnsignedValue()
+            val precision = headerValue and 0x0F
+            val thirdDim = (headerValue shr 4) and 0x07
+            val thirdDimPrecision = (headerValue shr 7) and 0x0F
+
+            CrashLogger.log("FlexiblePolyline: headerValue=$headerValue, precision=$precision, thirdDim=$thirdDim")
+
+            val factor = Math.pow(10.0, precision.toDouble())
+
             val result = mutableListOf<LatLng>()
-            var index = 0
+            var lastLat = 0L
+            var lastLng = 0L
+            var lastZ = 0L
 
-            // Header dekodieren - nach HERE Spezifikation:
-            // Bits 0-3: Version (immer 1)
-            // Bits 4-7: Precision (normalerweise 5)
-            // Bits 8-10: Third dimension type
-            // Bits 11-14: Third dimension precision
-            val (headerValue, newIndex) = decodeUnsignedVarint(encoded, index)
-            index = newIndex
+            while (decoder.hasMore()) {
+                // Latitude Delta dekodieren
+                val latDelta = decoder.decodeSignedValue()
+                lastLat += latDelta
 
-            val version = headerValue and 0x0F
-            val precision = (headerValue shr 4) and 0x0F
-            val thirdDim = (headerValue shr 8) and 0x07
-            val thirdDimPrecision = (headerValue shr 11) and 0x0F
+                if (!decoder.hasMore()) break
 
-            CrashLogger.log("FlexiblePolyline: version=$version, precision=$precision, thirdDim=$thirdDim")
+                // Longitude Delta dekodieren
+                val lngDelta = decoder.decodeSignedValue()
+                lastLng += lngDelta
 
-            val multiplier = Math.pow(10.0, precision.toDouble())
-            val thirdDimMultiplier = Math.pow(10.0, thirdDimPrecision.toDouble())
-
-            var lat = 0L
-            var lng = 0L
-            var z = 0L
-
-            while (index < encoded.length) {
-                // Latitude
-                val (latDelta, idx1) = decodeSignedVarint(encoded, index)
-                index = idx1
-                lat += latDelta
-
-                if (index >= encoded.length) break
-
-                // Longitude
-                val (lngDelta, idx2) = decodeSignedVarint(encoded, index)
-                index = idx2
-                lng += lngDelta
-
-                // Third dimension (altitude) - ueberspringen wenn vorhanden
-                if (thirdDim != 0 && index < encoded.length) {
-                    val (zDelta, idx3) = decodeSignedVarint(encoded, index)
-                    index = idx3
-                    z += zDelta
+                // Third dimension (Altitude) falls vorhanden
+                if (thirdDim != 0 && decoder.hasMore()) {
+                    val zDelta = decoder.decodeSignedValue()
+                    lastZ += zDelta
                 }
 
-                val decodedLat = lat / multiplier
-                val decodedLng = lng / multiplier
-                // Validierung und Logging bei ungültigen Koordinaten
-                if (decodedLat < -90 || decodedLat > 90 || decodedLng < -180 || decodedLng > 180) {
-                    CrashLogger.log("FlexiblePolyline: Invalid coord at index ${result.size}: lat=$decodedLat, lng=$decodedLng")
+                val lat = lastLat / factor
+                val lng = lastLng / factor
+
+                // Nur die ersten paar Punkte loggen
+                if (result.size < 3) {
+                    CrashLogger.log("FlexiblePolyline: Point ${result.size}: raw=($lastLat,$lastLng) -> ($lat,$lng)")
                 }
-                result.add(LatLng(decodedLat, decodedLng))
+
+                result.add(LatLng(lat, lng))
             }
 
             CrashLogger.log("FlexiblePolyline: Decoded ${result.size} points")
+
+            // Validierung: Erste Koordinate prüfen
+            if (result.isNotEmpty()) {
+                val first = result.first()
+                if (first.lat < -90 || first.lat > 90 || first.lng < -180 || first.lng > 180) {
+                    CrashLogger.log("FlexiblePolyline: WARNING - First point invalid: ${first.lat}, ${first.lng}")
+                }
+            }
+
             return result
         } catch (e: Exception) {
             CrashLogger.logError("FlexiblePolyline", "Decode failed: ${e.message}", e)
@@ -81,35 +88,44 @@ object FlexiblePolyline {
         }
     }
 
-    private fun decodeUnsignedVarint(encoded: String, startIndex: Int): Pair<Int, Int> {
-        var result = 0
-        var shift = 0
-        var index = startIndex
+    private class Decoder(private val encoded: String) {
+        private var index = 0
 
-        while (index < encoded.length) {
-            val char = encoded[index]
-            val value = DECODING_TABLE.indexOf(char)
-            if (value < 0) throw IllegalArgumentException("Invalid character: $char")
+        fun hasMore(): Boolean = index < encoded.length
 
-            result = result or ((value and 0x1F) shl shift)
-            index++
-
-            if ((value and 0x20) == 0) {
-                break
+        private fun decodeChar(): Int {
+            val char = encoded[index++]
+            val charValue = char.code - 45
+            if (charValue < 0 || charValue >= DECODING_TABLE.size) {
+                throw IllegalArgumentException("Invalid character: $char")
             }
-            shift += 5
+            val value = DECODING_TABLE[charValue]
+            if (value < 0) {
+                throw IllegalArgumentException("Invalid character: $char")
+            }
+            return value
         }
 
-        return Pair(result, index)
-    }
-
-    private fun decodeSignedVarint(encoded: String, startIndex: Int): Pair<Long, Int> {
-        val (unsignedValue, newIndex) = decodeUnsignedVarint(encoded, startIndex)
-        val signedValue = if ((unsignedValue and 1) != 0) {
-            -(unsignedValue shr 1) - 1L
-        } else {
-            (unsignedValue shr 1).toLong()
+        fun decodeUnsignedValue(): Int {
+            var result = 0
+            var shift = 0
+            while (true) {
+                val value = decodeChar()
+                result = result or ((value and 0x1F) shl shift)
+                if ((value and 0x20) == 0) {
+                    return result
+                }
+                shift += 5
+            }
         }
-        return Pair(signedValue, newIndex)
+
+        fun decodeSignedValue(): Long {
+            val value = decodeUnsignedValue()
+            return if ((value and 1) != 0) {
+                (value shr 1).inv().toLong()
+            } else {
+                (value shr 1).toLong()
+            }
+        }
     }
 }
