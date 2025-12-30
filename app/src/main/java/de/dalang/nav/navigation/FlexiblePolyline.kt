@@ -30,11 +30,14 @@ object FlexiblePolyline {
 
             // Header dekodieren
             val headerValue = decoder.decodeUnsignedValue()
-            val precision = headerValue and 0x0F
+            val headerPrecision = headerValue and 0x0F
             val thirdDim = (headerValue shr 4) and 0x07
             val thirdDimPrecision = (headerValue shr 7) and 0x0F
 
-            CrashLogger.log("FlexiblePolyline: headerValue=$headerValue, precision=$precision, thirdDim=$thirdDim")
+            // HERE Routing API v8 scheint Precision 6 zu verwenden (10^6)
+            // basierend auf den beobachteten Rohdaten (48179542 -> 48.179542)
+            val precision = 6
+            CrashLogger.log("FlexiblePolyline: headerValue=$headerValue, headerPrecision=$headerPrecision, using precision=$precision")
 
             val factor = Math.pow(10.0, precision.toDouble())
 
@@ -44,15 +47,14 @@ object FlexiblePolyline {
             var lastZ = 0L
 
             while (decoder.hasMore()) {
-                // Latitude Delta dekodieren
-                val latDelta = decoder.decodeSignedValue()
-                lastLat += latDelta
+                // HERE API scheint lng,lat Reihenfolge zu verwenden (nicht lat,lng)
+                val lngDelta = decoder.decodeSignedValue()
+                lastLng += lngDelta
 
                 if (!decoder.hasMore()) break
 
-                // Longitude Delta dekodieren
-                val lngDelta = decoder.decodeSignedValue()
-                lastLng += lngDelta
+                val latDelta = decoder.decodeSignedValue()
+                lastLat += latDelta
 
                 // Third dimension (Altitude) falls vorhanden
                 if (thirdDim != 0 && decoder.hasMore()) {
@@ -78,6 +80,8 @@ object FlexiblePolyline {
                 val first = result.first()
                 if (first.lat < -90 || first.lat > 90 || first.lng < -180 || first.lng > 180) {
                     CrashLogger.log("FlexiblePolyline: WARNING - First point invalid: ${first.lat}, ${first.lng}")
+                } else {
+                    CrashLogger.log("FlexiblePolyline: First point valid: ${first.lat}, ${first.lng}")
                 }
             }
 

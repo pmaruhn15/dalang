@@ -459,6 +459,10 @@ fun DrawerContent(
 
                 Button(
                     onClick = { showAbout = false },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color.Black
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Schließen")
@@ -524,23 +528,31 @@ fun DebugLogDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(
+                Button(
                     onClick = {
                         debugLog?.let {
                             clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(it))
                             copied = true
                         }
                     },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color.Black
+                    ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(if (copied) "Kopiert!" else "Log kopieren")
                 }
 
-                OutlinedButton(
+                Button(
                     onClick = {
                         CrashLogger.clearLog()
                         onDismiss()
                     },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color.Black
+                    ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Log leeren")
@@ -551,6 +563,10 @@ fun DebugLogDialog(
 
             Button(
                 onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Color.Black
+                ),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Schließen")

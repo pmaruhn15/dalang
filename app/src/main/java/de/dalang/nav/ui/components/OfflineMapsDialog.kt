@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -103,7 +104,14 @@ fun OfflineMapsDialog(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Color.Black
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("Schließen")
             }
         }
@@ -140,13 +148,33 @@ private fun RegionItem(
                 }
 
                 when {
-                    isDownloading -> TextButton(onClick = onCancel) {
-                        Text("Abbrechen", color = MaterialTheme.colorScheme.error)
+                    isDownloading -> Button(
+                        onClick = onCancel,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color.Black
+                        )
+                    ) {
+                        Text("Abbrechen")
                     }
-                    isDownloaded -> TextButton(onClick = onDelete) {
-                        Text("Löschen", color = MaterialTheme.colorScheme.error)
+                    isDownloaded -> Button(
+                        onClick = onDelete,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color.Black
+                        )
+                    ) {
+                        Text("Löschen")
                     }
-                    else -> TextButton(onClick = onDownload) { Text("Laden") }
+                    else -> Button(
+                        onClick = onDownload,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color.Black
+                        )
+                    ) {
+                        Text("Laden")
+                    }
                 }
             }
 
