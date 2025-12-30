@@ -411,6 +411,7 @@ fun MapClickDialog(
     }
 }
 
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun DrawerContent(
     onCloseDrawer: () -> Unit

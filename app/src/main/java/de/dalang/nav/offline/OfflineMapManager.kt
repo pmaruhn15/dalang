@@ -4,7 +4,6 @@ import android.content.Context
 import de.dalang.nav.util.CrashLogger
 import org.maplibre.android.offline.OfflineManager
 import org.maplibre.android.offline.OfflineRegion
-import org.maplibre.android.offline.OfflineRegionDefinition
 import org.maplibre.android.offline.OfflineTilePyramidRegionDefinition
 import org.maplibre.android.geometry.LatLngBounds
 
