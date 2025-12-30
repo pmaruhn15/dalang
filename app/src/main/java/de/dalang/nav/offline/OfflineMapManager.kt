@@ -140,29 +140,27 @@ object OfflineMapManager {
                     downloadedRegions[region.id] = offlineRegion
 
                     offlineRegion.setObserver(object : OfflineRegion.OfflineRegionObserver {
-                        override fun onStatusChanged(status: OfflineRegion.OfflineRegionStatus?) {
-                            status?.let {
-                                val percentage = if (it.requiredResourceCount > 0) {
-                                    (it.completedResourceCount * 100 / it.requiredResourceCount).toInt()
-                                } else {
-                                    0
-                                }
+                        override fun onStatusChanged(status: OfflineRegion.OfflineRegionStatus) {
+                            val percentage = if (status.requiredResourceCount > 0) {
+                                (status.completedResourceCount * 100 / status.requiredResourceCount).toInt()
+                            } else {
+                                0
+                            }
 
-                                val isComplete = it.isComplete()
-                                CrashLogger.log("OfflineMapManager: Download progress ${region.id}: $percentage% (${it.completedResourceCount}/${it.requiredResourceCount})")
+                            val isComplete = status.isComplete
+                            CrashLogger.log("OfflineMapManager: Download progress ${region.id}: $percentage% (${status.completedResourceCount}/${status.requiredResourceCount})")
 
-                                onProgress(DownloadProgress(region.id, percentage, isComplete))
+                            onProgress(DownloadProgress(region.id, percentage, isComplete))
 
-                                if (isComplete) {
-                                    CrashLogger.log("OfflineMapManager: Download complete for ${region.name}")
-                                    offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE)
-                                }
+                            if (isComplete) {
+                                CrashLogger.log("OfflineMapManager: Download complete for ${region.name}")
+                                offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE)
                             }
                         }
 
-                        override fun onError(error: OfflineRegion.OfflineRegionError?) {
-                            CrashLogger.log("OfflineMapManager: Download error: ${error?.reason} - ${error?.message}")
-                            onProgress(DownloadProgress(region.id, 0, false, error?.message ?: "Unbekannter Fehler"))
+                        override fun onError(error: OfflineRegion.OfflineRegionError) {
+                            CrashLogger.log("OfflineMapManager: Download error: ${error.reason} - ${error.message}")
+                            onProgress(DownloadProgress(region.id, 0, false, error.message ?: "Unbekannter Fehler"))
                         }
 
                         override fun mapboxTileCountLimitExceeded(limit: Long) {
