@@ -4,6 +4,8 @@ import android.content.Context
 import de.dalang.nav.util.CrashLogger
 import org.maplibre.android.offline.OfflineManager
 import org.maplibre.android.offline.OfflineRegion
+import org.maplibre.android.offline.OfflineRegionError
+import org.maplibre.android.offline.OfflineRegionStatus
 import org.maplibre.android.offline.OfflineTilePyramidRegionDefinition
 import org.maplibre.android.geometry.LatLngBounds
 
@@ -81,13 +83,13 @@ object OfflineMapManager {
     private fun loadExistingRegions() {
         CrashLogger.log("OfflineMapManager: Loading existing regions")
         offlineManager?.listOfflineRegions(object : OfflineManager.ListOfflineRegionsCallback {
-            override fun onList(regions: Array<out OfflineRegion>?) {
-                regions?.forEach { region ->
+            override fun onList(offlineRegions: Array<OfflineRegion>?) {
+                offlineRegions?.forEach { region ->
                     val metadata = String(region.metadata)
                     CrashLogger.log("OfflineMapManager: Found region: $metadata")
                     downloadedRegions[metadata] = region
                 }
-                CrashLogger.log("OfflineMapManager: Loaded ${regions?.size ?: 0} existing regions")
+                CrashLogger.log("OfflineMapManager: Loaded ${offlineRegions?.size ?: 0} existing regions")
             }
 
             override fun onError(error: String) {
@@ -134,7 +136,7 @@ object OfflineMapManager {
                     downloadedRegions[region.id] = offlineRegion
 
                     offlineRegion.setObserver(object : OfflineRegion.OfflineRegionObserver {
-                        override fun onStatusChanged(status: OfflineRegion.OfflineRegionStatus) {
+                        override fun onStatusChanged(status: OfflineRegionStatus) {
                             val percentage = if (status.requiredResourceCount > 0) {
                                 (status.completedResourceCount * 100 / status.requiredResourceCount).toInt()
                             } else {
@@ -152,7 +154,7 @@ object OfflineMapManager {
                             }
                         }
 
-                        override fun onError(error: OfflineRegion.OfflineRegionError) {
+                        override fun onError(error: OfflineRegionError) {
                             CrashLogger.log("OfflineMapManager: Download error: ${error.reason} - ${error.message}")
                             onProgress(DownloadProgress(region.id, 0, false, error.message ?: "Unbekannter Fehler"))
                         }
