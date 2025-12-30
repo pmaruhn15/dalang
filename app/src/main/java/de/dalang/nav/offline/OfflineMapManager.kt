@@ -90,7 +90,7 @@ object OfflineMapManager {
                 CrashLogger.log("OfflineMapManager: Loaded ${regions?.size ?: 0} existing regions")
             }
 
-            override fun onError(error: String?) {
+            override fun onError(error: String) {
                 CrashLogger.log("OfflineMapManager: Error loading regions: $error")
             }
         })
@@ -129,13 +129,7 @@ object OfflineMapManager {
             definition,
             metadata,
             object : OfflineManager.CreateOfflineRegionCallback {
-                override fun onCreate(offlineRegion: OfflineRegion?) {
-                    if (offlineRegion == null) {
-                        CrashLogger.log("OfflineMapManager: Region creation returned null")
-                        onProgress(DownloadProgress(region.id, 0, false, "Region konnte nicht erstellt werden"))
-                        return
-                    }
-
+                override fun onCreate(offlineRegion: OfflineRegion) {
                     CrashLogger.log("OfflineMapManager: Region created, starting download")
                     downloadedRegions[region.id] = offlineRegion
 
@@ -172,9 +166,9 @@ object OfflineMapManager {
                     offlineRegion.setDownloadState(OfflineRegion.STATE_ACTIVE)
                 }
 
-                override fun onError(error: String?) {
+                override fun onError(error: String) {
                     CrashLogger.log("OfflineMapManager: Create region error: $error")
-                    onProgress(DownloadProgress(region.id, 0, false, error ?: "Fehler beim Erstellen"))
+                    onProgress(DownloadProgress(region.id, 0, false, error))
                 }
             }
         )
@@ -196,7 +190,7 @@ object OfflineMapManager {
                 onComplete(true)
             }
 
-            override fun onError(error: String?) {
+            override fun onError(error: String) {
                 CrashLogger.log("OfflineMapManager: Delete error: $error")
                 onComplete(false)
             }
