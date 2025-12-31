@@ -104,7 +104,7 @@ class UpdateRepository(private val context: Context) {
             // Version aus Tag extrahieren (z.B. "v1.0.1" -> "1.0.1")
             val remoteVersion = tagName.ifEmpty { "0.0.0" }
             val remoteVersionCode = parseVersionCode(remoteVersion)
-            val currentVersionCode = getCurrentVersionCode()
+            val currentVersionCode = parseVersionCode(getCurrentVersion())
 
             CrashLogger.log("UpdateRepository: Remote version: $remoteVersion ($remoteVersionCode), Current: ${getCurrentVersion()} ($currentVersionCode)")
 
@@ -225,10 +225,13 @@ class UpdateRepository(private val context: Context) {
 
     /**
      * Parst Version String zu Version Code (z.B. "1.2.3" -> 10203)
+     * Ignoriert Suffixe wie "-20251231-5c543bd"
      */
     private fun parseVersionCode(version: String): Int {
         return try {
-            val parts = version.split(".")
+            // Suffix nach erstem "-" entfernen (z.B. "1.0.0-20251231-abc" -> "1.0.0")
+            val cleanVersion = version.split("-").first()
+            val parts = cleanVersion.split(".")
             val major = parts.getOrNull(0)?.toIntOrNull() ?: 0
             val minor = parts.getOrNull(1)?.toIntOrNull() ?: 0
             val patch = parts.getOrNull(2)?.toIntOrNull() ?: 0
