@@ -43,7 +43,7 @@ enum class PoiType(val searchQuery: String, val displayName: String) {
 class PoiRepository {
 
     // HERE Fuel Prices API Base URL
-    private val hereFuelPricesBaseUrl = "https://fuel.cc.api.here.com/fuel/1.0"
+    private val hereFuelPricesBaseUrl = "https://fuel.ls.hereapi.com/fuel/1.0"
 
     /**
      * Sucht POIs entlang einer Route
