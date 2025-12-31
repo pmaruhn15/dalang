@@ -200,9 +200,6 @@ private fun FuelPricesRow(prices: FuelPrices) {
         prices.e5?.let { price ->
             FuelPriceChip(label = "Super", price = price)
         }
-        prices.e10?.let { price ->
-            FuelPriceChip(label = "E10", price = price)
-        }
     }
 }
 
