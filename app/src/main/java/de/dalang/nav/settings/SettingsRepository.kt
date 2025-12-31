@@ -34,6 +34,57 @@ enum class UsageStatus {
     BLOCKED     // >= 100%
 }
 
+/**
+ * Verfügbare Map Styles von OpenFreeMap
+ */
+enum class MapStyle(
+    val displayName: String,
+    val lightUrl: String,
+    val darkUrl: String? = null  // null = kein Dark-Pendant
+) {
+    AUTO(
+        displayName = "Automatisch",
+        lightUrl = "https://tiles.openfreemap.org/styles/positron",
+        darkUrl = "https://tiles.openfreemap.org/styles/dark"
+    ),
+    POSITRON(
+        displayName = "Positron (Hell)",
+        lightUrl = "https://tiles.openfreemap.org/styles/positron",
+        darkUrl = null
+    ),
+    DARK(
+        displayName = "Dark",
+        lightUrl = "https://tiles.openfreemap.org/styles/dark",
+        darkUrl = null
+    ),
+    BRIGHT(
+        displayName = "Bright (Farbenfroh)",
+        lightUrl = "https://tiles.openfreemap.org/styles/bright",
+        darkUrl = null
+    ),
+    LIBERTY(
+        displayName = "Liberty (OSM)",
+        lightUrl = "https://tiles.openfreemap.org/styles/liberty",
+        darkUrl = null
+    ),
+    FIORD(
+        displayName = "Fiord (Natürlich)",
+        lightUrl = "https://tiles.openfreemap.org/styles/fiord",
+        darkUrl = null
+    );
+
+    /**
+     * Gibt die richtige URL basierend auf isDarkTheme zurück
+     */
+    fun getUrl(isDarkTheme: Boolean): String {
+        return if (isDarkTheme && darkUrl != null) {
+            darkUrl
+        } else {
+            lightUrl
+        }
+    }
+}
+
 class SettingsRepository(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences(
@@ -48,6 +99,17 @@ class SettingsRepository(context: Context) {
     var voiceEnabled: Boolean
         get() = prefs.getBoolean(KEY_VOICE_ENABLED, true)
         set(value) = prefs.edit { putBoolean(KEY_VOICE_ENABLED, value) }
+
+    var mapStyle: MapStyle
+        get() {
+            val styleName = prefs.getString(KEY_MAP_STYLE, MapStyle.AUTO.name) ?: MapStyle.AUTO.name
+            return try {
+                MapStyle.valueOf(styleName)
+            } catch (e: IllegalArgumentException) {
+                MapStyle.AUTO
+            }
+        }
+        set(value) = prefs.edit { putString(KEY_MAP_STYLE, value.name) }
 
     // HERE API - Monatliches Limit (Free Tier: 250.000/Monat)
     var hereMonthlyLimit: Int
@@ -177,6 +239,7 @@ class SettingsRepository(context: Context) {
         private const val PREFS_NAME = "dalang_settings"
         private const val KEY_HERE_API_KEY = "here_api_key"
         private const val KEY_VOICE_ENABLED = "voice_enabled"
+        private const val KEY_MAP_STYLE = "map_style"
 
         // HERE Usage Tracking (monatlich)
         private const val KEY_HERE_MONTHLY_LIMIT = "here_monthly_limit"

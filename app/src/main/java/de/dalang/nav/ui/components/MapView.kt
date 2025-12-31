@@ -15,6 +15,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import de.dalang.nav.R
 import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.navigation.Route
+import de.dalang.nav.settings.SettingsRepository
 import de.dalang.nav.util.CrashLogger
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -43,19 +44,18 @@ fun MapViewComposable(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val isDarkTheme = isSystemInDarkTheme()
+    val settingsRepository = remember { SettingsRepository(context) }
 
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var isMapReady by remember { mutableStateOf(false) }
     var hasCenteredOnLocation by remember { mutableStateOf(false) }
+    var styleVersion by remember { mutableIntStateOf(0) }  // Triggers marker redraw on style change
 
-    // Style basierend auf Theme
-    val styleUrl = remember(isDarkTheme) {
-        if (isDarkTheme) {
-            "https://tiles.openfreemap.org/styles/dark"
-        } else {
-            "https://tiles.openfreemap.org/styles/positron"
-        }
+    // Style aus Settings mit Auto-Switch Support
+    val selectedStyle = settingsRepository.mapStyle
+    val styleUrl = remember(selectedStyle, isDarkTheme) {
+        selectedStyle.getUrl(isDarkTheme)
     }
 
     AndroidView(
@@ -190,8 +190,24 @@ fun MapViewComposable(
         }
     }
 
+    // Style-Wechsel bei Änderung (Auto-Switch oder Settings)
+    LaunchedEffect(styleUrl, isMapReady) {
+        if (!isMapReady) return@LaunchedEffect
+        val map = mapLibreMap ?: return@LaunchedEffect
+
+        try {
+            CrashLogger.log("MapView: Switching to style $styleUrl")
+            map.setStyle(styleUrl) { _ ->
+                CrashLogger.log("MapView: Style switched successfully")
+                styleVersion++  // Trigger redraw of markers
+            }
+        } catch (e: Exception) {
+            CrashLogger.logError("MapView", "Style switch failed", e)
+        }
+    }
+
     // Standort-Marker zeichnen (weißer Pfeil mit Kompass-Rotation)
-    LaunchedEffect(currentLocation, heading, isMapReady) {
+    LaunchedEffect(currentLocation, heading, isMapReady, styleVersion) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
         val location = currentLocation ?: return@LaunchedEffect
@@ -260,7 +276,7 @@ fun MapViewComposable(
     }
 
     // Route zeichnen
-    LaunchedEffect(route, isMapReady) {
+    LaunchedEffect(route, isMapReady, styleVersion) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
 
@@ -343,7 +359,7 @@ fun MapViewComposable(
     }
 
     // Ziel-Marker zeichnen (weiß)
-    LaunchedEffect(destination, isMapReady) {
+    LaunchedEffect(destination, isMapReady, styleVersion) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
 

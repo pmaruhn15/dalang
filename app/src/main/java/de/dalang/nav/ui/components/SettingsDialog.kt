@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import de.dalang.nav.config.HereConfig
 import de.dalang.nav.settings.ApiUsageInfo
+import de.dalang.nav.settings.MapStyle
 import de.dalang.nav.settings.PeriodType
 import de.dalang.nav.settings.SettingsRepository
 import de.dalang.nav.settings.UsageStatus
@@ -42,6 +43,8 @@ fun SettingsDialog(
     var hereApiKey by remember { mutableStateOf(HereConfig.getApiKey()) }
     var showApiKey by remember { mutableStateOf(false) }
     var monthlyLimit by remember { mutableStateOf(settingsRepository.hereMonthlyLimit.toString()) }
+    var selectedMapStyle by remember { mutableStateOf(settingsRepository.mapStyle) }
+    var mapStyleExpanded by remember { mutableStateOf(false) }
 
     val usageInfos = remember { settingsRepository.getAllApiUsageInfos() }
     val numberFormat = remember { NumberFormat.getNumberInstance(Locale.GERMANY) }
@@ -59,6 +62,78 @@ fun SettingsDialog(
                 text = "Einstellungen",
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Map Style Section
+            Text(
+                text = "Kartenstil",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                // Dropdown Button
+                TextButton(
+                    onClick = { mapStyleExpanded = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(12.dp)
+                ) {
+                    Text(
+                        text = selectedMapStyle.displayName,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "▼",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = mapStyleExpanded,
+                    onDismissRequest = { mapStyleExpanded = false },
+                    modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                ) {
+                    MapStyle.entries.forEach { style ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = style.displayName,
+                                    color = if (style == selectedMapStyle) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                            },
+                            onClick = {
+                                selectedMapStyle = style
+                                mapStyleExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = if (selectedMapStyle == MapStyle.AUTO) {
+                    "Wechselt automatisch zwischen Hell/Dunkel"
+                } else {
+                    "Fester Kartenstil"
+                },
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -230,6 +305,7 @@ fun SettingsDialog(
                         monthlyLimit.toIntOrNull()?.let {
                             settingsRepository.hereMonthlyLimit = it
                         }
+                        settingsRepository.mapStyle = selectedMapStyle
                         onSave()
                         onDismiss()
                     },
