@@ -31,6 +31,9 @@ import org.maplibre.android.style.sources.GeoJsonSource
 fun MapViewComposable(
     currentLocation: LatLng?,
     heading: Float = 0f,
+    speed: Float = 0f,  // m/s
+    bearing: Float = 0f,  // GPS bearing
+    distanceToNextManeuver: Double = Double.MAX_VALUE,
     destination: LatLng?,
     route: Route?,
     isNavigating: Boolean,
@@ -120,12 +123,16 @@ fun MapViewComposable(
                                 currentLocation.lat,
                                 currentLocation.lng
                             )
+                            // Dynamischer Zoom basierend auf Geschwindigkeit und Distanz zum nächsten Manöver
+                            val dynamicZoom = calculateDynamicZoom(speed, distanceToNextManeuver)
+
                             map.animateCamera(
                                 CameraUpdateFactory.newCameraPosition(
                                     CameraPosition.Builder()
                                         .target(pos)
-                                        .zoom(17.0)
-                                        .tilt(45.0)
+                                        .zoom(dynamicZoom)
+                                        .bearing(bearing.toDouble())  // Karte in Fahrtrichtung
+                                        .tilt(60.0)  // Stärkerer Tilt für bessere 3D-Ansicht
                                         .build()
                                 ),
                                 500
@@ -400,4 +407,33 @@ fun MapViewComposable(
             CrashLogger.logError("MapView", "getStyle failed for destination", e)
         }
     }
+}
+
+/**
+ * Berechnet dynamischen Zoom basierend auf Geschwindigkeit und Distanz zum nächsten Manöver
+ * - Bei niedriger Geschwindigkeit (Stadt): Zoom 17-18
+ * - Bei hoher Geschwindigkeit (Autobahn): Zoom 14-15
+ * - Näher am Manöver: mehr reinzoomen
+ */
+private fun calculateDynamicZoom(speedMs: Float, distanceToManeuver: Double): Double {
+    // Geschwindigkeitsbasierter Zoom (m/s -> km/h: *3.6)
+    val speedKmh = speedMs * 3.6f
+    val speedZoom = when {
+        speedKmh < 20 -> 18.0    // Langsam/Stehend: sehr nah
+        speedKmh < 50 -> 17.0    // Stadt: nah
+        speedKmh < 80 -> 16.0    // Landstraße: mittel
+        speedKmh < 120 -> 15.0   // Autobahn: weiter weg
+        else -> 14.0             // Schnell: weit weg
+    }
+
+    // Distanzbasierter Zoom-Bonus (näher am Manöver = mehr reinzoomen)
+    val distanceBonus = when {
+        distanceToManeuver < 100 -> 1.5   // Unter 100m: deutlich näher
+        distanceToManeuver < 300 -> 1.0   // Unter 300m: näher
+        distanceToManeuver < 500 -> 0.5   // Unter 500m: leicht näher
+        else -> 0.0
+    }
+
+    // Kombination: Basis-Zoom + Distanz-Bonus, max 18.5
+    return (speedZoom + distanceBonus).coerceIn(14.0, 18.5)
 }

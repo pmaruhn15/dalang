@@ -9,12 +9,23 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
+data class LaneInfo(
+    val lanes: List<Lane>,
+    val recommendedLaneIndex: Int  // -1 wenn keine Empfehlung
+)
+
+data class Lane(
+    val direction: String,  // "straight", "left", "right", "slightLeft", etc.
+    val isRecommended: Boolean
+)
+
 data class RouteStep(
     val instruction: String,
     val distance: Double,
     val duration: Double,
     val maneuver: Maneuver,
-    val geometry: List<LatLng>
+    val geometry: List<LatLng>,
+    val laneInfo: LaneInfo? = null
 )
 
 data class Maneuver(
@@ -94,6 +105,7 @@ class RouteRepository {
                     "&destination=${to.lat},${to.lng}" +
                     "&transportMode=car" +
                     "&return=polyline,actions,instructions,summary,typicalDuration" +
+                    "&spans=names,length,duration,speedLimit,laneAssistance" +
                     "&apiKey=$apiKey"
 
             CrashLogger.log("RouteRepository: HERE request from ${from.lat},${from.lng} to ${to.lat},${to.lng}")
@@ -202,6 +214,45 @@ class RouteRepository {
 
             CrashLogger.log("RouteRepository: HERE route decoded with ${geometry.size} points")
 
+            // Lane-Info aus Spans extrahieren
+            val laneInfoMap = mutableMapOf<Int, LaneInfo>()  // offset -> LaneInfo
+            val spans = section.optJSONArray("spans")
+            if (spans != null) {
+                for (i in 0 until spans.length()) {
+                    val span = spans.getJSONObject(i)
+                    val laneAssistanceArray = span.optJSONArray("laneAssistance")
+                    if (laneAssistanceArray != null && laneAssistanceArray.length() > 0) {
+                        val offset = span.optInt("offset", 0)
+                        val lanes = mutableListOf<Lane>()
+                        var recommendedIndex = -1
+
+                        // Erste lane group nehmen
+                        val laneGroup = laneAssistanceArray.getJSONObject(0)
+                        val lanesArray = laneGroup.optJSONArray("lanes")
+                        if (lanesArray != null) {
+                            for (j in 0 until lanesArray.length()) {
+                                val laneObj = lanesArray.getJSONObject(j)
+                                val directionsArray = laneObj.optJSONArray("directions")
+                                val direction = if (directionsArray != null && directionsArray.length() > 0) {
+                                    directionsArray.getString(0)
+                                } else {
+                                    "straight"
+                                }
+                                val isRecommended = laneObj.optBoolean("isRecommended", false)
+                                if (isRecommended && recommendedIndex == -1) {
+                                    recommendedIndex = j
+                                }
+                                lanes.add(Lane(direction = direction, isRecommended = isRecommended))
+                            }
+                        }
+                        if (lanes.isNotEmpty()) {
+                            laneInfoMap[offset] = LaneInfo(lanes = lanes, recommendedLaneIndex = recommendedIndex)
+                        }
+                    }
+                }
+            }
+            CrashLogger.log("RouteRepository: Found ${laneInfoMap.size} spans with lane info")
+
             // Actions/Instructions parsen
             val steps = mutableListOf<RouteStep>()
             val actions = section.optJSONArray("actions")
@@ -232,6 +283,11 @@ class RouteRepository {
                         nextOffset.coerceIn(0, geometry.size)
                     )
 
+                    // Lane-Info für diesen Offset oder nächstliegenden davor finden
+                    val laneInfo = laneInfoMap[offset] ?: laneInfoMap.entries
+                        .filter { it.key < offset }
+                        .maxByOrNull { it.key }?.value
+
                     steps.add(
                         RouteStep(
                             instruction = instruction,
@@ -242,7 +298,8 @@ class RouteRepository {
                                 modifier = modifier,
                                 location = location
                             ),
-                            geometry = stepGeometry
+                            geometry = stepGeometry,
+                            laneInfo = laneInfo
                         )
                     )
                 }

@@ -3,6 +3,7 @@ package de.dalang.nav
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.compose.ui.platform.LocalView
 import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.ui.components.MapViewComposable
 import de.dalang.nav.ui.components.NavigationPanel
@@ -154,6 +156,8 @@ class MainActivity : ComponentActivity() {
 fun DaLangApp(viewModel: MainViewModel) {
     val currentLocation by viewModel.currentLocation.collectAsState()
     val heading by viewModel.heading.collectAsState()
+    val speed by viewModel.speed.collectAsState()
+    val bearing by viewModel.bearing.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
@@ -164,6 +168,17 @@ fun DaLangApp(viewModel: MainViewModel) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Screen aktiv halten während Navigation
+    val view = LocalView.current
+    DisposableEffect(navigationState.isNavigating) {
+        if (navigationState.isNavigating) {
+            view.keepScreenOn = true
+        }
+        onDispose {
+            view.keepScreenOn = false
+        }
+    }
 
     // Fehler als Snackbar anzeigen
     LaunchedEffect(errorMessage) {
@@ -197,6 +212,9 @@ fun DaLangApp(viewModel: MainViewModel) {
         MapViewComposable(
             currentLocation = currentLocation,
             heading = heading,
+            speed = speed,
+            bearing = bearing,
+            distanceToNextManeuver = navigationState.distanceToNextStep,
             destination = navigationState.destination,
             route = navigationState.route,
             isNavigating = navigationState.isNavigating,

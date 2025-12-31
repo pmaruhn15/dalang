@@ -50,6 +50,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _heading = MutableStateFlow(0f)
     val heading: StateFlow<Float> = _heading.asStateFlow()
 
+    private val _speed = MutableStateFlow(0f)  // m/s
+    val speed: StateFlow<Float> = _speed.asStateFlow()
+
+    private val _bearing = MutableStateFlow(0f)  // GPS bearing (Fahrtrichtung)
+    val bearing: StateFlow<Float> = _bearing.asStateFlow()
+
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
@@ -149,6 +155,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         try {
                             val newLocation = LatLng(location.latitude, location.longitude)
                             _currentLocation.value = newLocation
+
+                            // Speed und Bearing extrahieren
+                            if (location.hasSpeed()) {
+                                _speed.value = location.speed
+                            }
+                            if (location.hasBearing()) {
+                                _bearing.value = location.bearing
+                            }
 
                             if (_navigationState.value.isNavigating) {
                                 updateNavigation(newLocation)
