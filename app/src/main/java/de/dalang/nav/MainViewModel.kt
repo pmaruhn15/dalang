@@ -341,6 +341,70 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Fügt einen Zwischenstopp zur aktuellen Route hinzu.
+     * Berechnet neue Route: Aktueller Standort -> Waypoint -> Ursprüngliches Ziel
+     */
+    fun addWaypoint(waypoint: LatLng) {
+        CrashLogger.log("MainViewModel: addWaypoint to ${waypoint.lat},${waypoint.lng}")
+        viewModelScope.launch {
+            try {
+                val current = _currentLocation.value
+                val state = _navigationState.value
+                val destination = state.destination
+
+                if (current == null || destination == null) {
+                    CrashLogger.logError("MainViewModel", "Cannot add waypoint: missing current location or destination")
+                    return@launch
+                }
+
+                _navigationState.update { it.copy(isRecalculating = true) }
+
+                // Route vom aktuellen Standort zum Waypoint
+                val routeToWaypoint = routeRepository.getRoute(current, waypoint)
+
+                // Route vom Waypoint zum ursprünglichen Ziel
+                val routeToDestination = routeRepository.getRoute(waypoint, destination)
+
+                if (routeToWaypoint != null && routeToDestination != null) {
+                    // Kombinierte Route erstellen
+                    val combinedGeometry = routeToWaypoint.geometry + routeToDestination.geometry
+                    val combinedSteps = routeToWaypoint.steps + routeToDestination.steps
+                    val combinedDistance = routeToWaypoint.distanceMeters + routeToDestination.distanceMeters
+                    val combinedDuration = routeToWaypoint.durationSeconds + routeToDestination.durationSeconds
+
+                    val combinedRoute = Route(
+                        geometry = combinedGeometry,
+                        distanceMeters = combinedDistance,
+                        durationSeconds = combinedDuration,
+                        steps = combinedSteps
+                    )
+
+                    CrashLogger.log("MainViewModel: Combined route with waypoint - ${combinedSteps.size} steps, ${combinedDistance}m")
+
+                    _navigationState.update {
+                        it.copy(
+                            route = combinedRoute,
+                            currentStepIndex = 0,
+                            isRecalculating = false
+                        )
+                    }
+
+                    // Erste Ansage für neue Route
+                    combinedSteps.firstOrNull()?.let { step ->
+                        speakInstruction(step)
+                    }
+                } else {
+                    CrashLogger.logError("MainViewModel", "Failed to calculate route with waypoint")
+                    _navigationState.update { it.copy(isRecalculating = false) }
+                }
+            } catch (e: Exception) {
+                CrashLogger.logError("MainViewModel", "addWaypoint failed", e)
+                _navigationState.update { it.copy(isRecalculating = false) }
+            }
+        }
+    }
+
     private fun updateNavigation(location: LatLng) {
         try {
             val state = _navigationState.value

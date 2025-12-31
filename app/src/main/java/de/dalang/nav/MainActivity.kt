@@ -30,10 +30,14 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.platform.LocalView
 import de.dalang.nav.navigation.LatLng
+import de.dalang.nav.navigation.Poi
+import de.dalang.nav.navigation.PoiRepository
+import de.dalang.nav.navigation.PoiType
 import de.dalang.nav.ui.components.HereSettingsDialog
 import de.dalang.nav.ui.components.MapViewComposable
 import de.dalang.nav.ui.components.NavigationPanel
 import de.dalang.nav.ui.components.OfflineMapsDialog
+import de.dalang.nav.ui.components.PoiSelectionDialog
 import de.dalang.nav.ui.components.SearchBar
 import de.dalang.nav.ui.theme.DaLangTheme
 import de.dalang.nav.util.CrashLogger
@@ -167,6 +171,27 @@ fun DaLangApp(viewModel: MainViewModel) {
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+
+    // POI Search State
+    val poiRepository = remember { PoiRepository() }
+    var showPoiDialog by remember { mutableStateOf(false) }
+    var selectedPoiType by remember { mutableStateOf<PoiType?>(null) }
+    var poiResults by remember { mutableStateOf<List<Poi>>(emptyList()) }
+    var isSearchingPoi by remember { mutableStateOf(false) }
+
+    // POI Suche starten
+    fun searchPoi(type: PoiType) {
+        val location = currentLocation ?: return
+        selectedPoiType = type
+        showPoiDialog = true
+        isSearchingPoi = true
+        poiResults = emptyList()
+
+        scope.launch {
+            poiResults = poiRepository.searchNearby(type, location)
+            isSearchingPoi = false
+        }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Screen aktiv halten während Navigation
@@ -243,6 +268,29 @@ fun DaLangApp(viewModel: MainViewModel) {
             )
         }
 
+        // POI Buttons während Navigation (McDonald's, Tankstelle)
+        if (navigationState.isNavigating) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // McDonald's Button
+                PoiButton(
+                    text = "🍔",
+                    onClick = { searchPoi(PoiType.MCDONALDS) }
+                )
+
+                // Tankstelle Button
+                PoiButton(
+                    text = "⛽",
+                    onClick = { searchPoi(PoiType.GAS_STATION) }
+                )
+            }
+        }
+
         // Navigationspanel unten
         NavigationPanel(
             state = navigationState,
@@ -263,8 +311,48 @@ fun DaLangApp(viewModel: MainViewModel) {
             )
         }
 
+        // POI Auswahl Dialog
+        if (showPoiDialog && selectedPoiType != null) {
+            PoiSelectionDialog(
+                poiType = selectedPoiType!!,
+                pois = poiResults,
+                isLoading = isSearchingPoi,
+                onSelect = { poi ->
+                    // POI als Zwischenstopp zur Route hinzufügen
+                    viewModel.addWaypoint(LatLng(poi.lat, poi.lng))
+                    showPoiDialog = false
+                    selectedPoiType = null
+                },
+                onDismiss = {
+                    showPoiDialog = false
+                    selectedPoiType = null
+                }
+            )
+        }
+
     }
     }
+    }
+}
+
+@Composable
+fun PoiButton(
+    text: String,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.White.copy(alpha = 0.9f),
+            contentColor = Color.Black
+        ),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(20.dp)
+    ) {
+        Text(
+            text = text,
+            fontSize = 20.sp
+        )
     }
 }
 
