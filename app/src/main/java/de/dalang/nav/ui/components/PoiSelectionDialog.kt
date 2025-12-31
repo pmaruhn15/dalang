@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import de.dalang.nav.navigation.FuelPrices
 import de.dalang.nav.navigation.Poi
 import de.dalang.nav.navigation.PoiType
 
@@ -122,58 +123,110 @@ private fun PoiListItem(
     poi: Poi,
     onClick: () -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable { onClick() }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(16.dp)
     ) {
-        // Info
-        Column(
-            modifier = Modifier.weight(1f)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = poi.name,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            if (!poi.address.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(2.dp))
+            // Info
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
                 Text(
-                    text = poi.address,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    text = poi.name,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
+                )
+
+                if (!poi.address.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = poi.address,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Distance & Time
+            Column(
+                horizontalAlignment = Alignment.End
+            ) {
+                Text(
+                    text = formatDistance(poi.distanceKm),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "+${poi.estimatedArrivalMinutes} min",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        Spacer(modifier = Modifier.width(12.dp))
-
-        // Distance & Time
-        Column(
-            horizontalAlignment = Alignment.End
-        ) {
-            Text(
-                text = formatDistance(poi.distanceKm),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "+${poi.estimatedArrivalMinutes} min",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        // Kraftstoffpreise anzeigen (nur für Tankstellen)
+        poi.fuelPrices?.let { prices ->
+            Spacer(modifier = Modifier.height(8.dp))
+            FuelPricesRow(prices)
         }
+    }
+}
+
+@Composable
+private fun FuelPricesRow(prices: FuelPrices) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        prices.diesel?.let { price ->
+            FuelPriceChip(label = "Diesel", price = price)
+        }
+        prices.e5?.let { price ->
+            FuelPriceChip(label = "Super", price = price)
+        }
+        prices.e10?.let { price ->
+            FuelPriceChip(label = "E10", price = price)
+        }
+    }
+}
+
+@Composable
+private fun FuelPriceChip(label: String, price: Double) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = String.format("%.2f€", price),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 

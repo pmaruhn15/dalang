@@ -29,6 +29,8 @@ fun NavigationPanel(
     state: NavigationState,
     onStartNavigation: () -> Unit,
     onStopNavigation: () -> Unit,
+    onMcDonaldsClick: () -> Unit = {},
+    onGasStationClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Get navigation bar height for bottom padding
@@ -52,7 +54,9 @@ fun NavigationPanel(
                 // Aktive Navigation
                 ActiveNavigationContent(
                     state = state,
-                    onStop = onStopNavigation
+                    onStop = onStopNavigation,
+                    onMcDonaldsClick = onMcDonaldsClick,
+                    onGasStationClick = onGasStationClick
                 )
             } else {
                 // Routenvorschau
@@ -68,9 +72,53 @@ fun NavigationPanel(
 @Composable
 private fun ActiveNavigationContent(
     state: NavigationState,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onMcDonaldsClick: () -> Unit,
+    onGasStationClick: () -> Unit
 ) {
     val currentStep = state.currentStep
+
+    // POI-Buttons oben rechts
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End
+    ) {
+        // McDonald's Button
+        IconButton(
+            onClick = onMcDonaldsClick,
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.White)
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.ic_mcdonalds),
+                contentDescription = "McDonald's",
+                modifier = Modifier.size(24.dp),
+                colorFilter = ColorFilter.tint(Color.Black)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Tankstelle Button
+        IconButton(
+            onClick = onGasStationClick,
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.White)
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.ic_gas_station),
+                contentDescription = "Tankstelle",
+                modifier = Modifier.size(24.dp),
+                colorFilter = ColorFilter.tint(Color.Black)
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
 
     // Lane-Visualisierung oder Fallback auf Richtungspfeil
     Row(

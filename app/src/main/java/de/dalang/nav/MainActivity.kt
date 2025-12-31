@@ -268,34 +268,13 @@ fun DaLangApp(viewModel: MainViewModel) {
             )
         }
 
-        // POI Buttons während Navigation (McDonald's, Tankstelle)
-        if (navigationState.isNavigating) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // McDonald's Button
-                PoiButton(
-                    text = "🍔",
-                    onClick = { searchPoi(PoiType.MCDONALDS) }
-                )
-
-                // Tankstelle Button
-                PoiButton(
-                    text = "⛽",
-                    onClick = { searchPoi(PoiType.GAS_STATION) }
-                )
-            }
-        }
-
-        // Navigationspanel unten
+        // Navigationspanel unten (inkl. POI-Buttons)
         NavigationPanel(
             state = navigationState,
             onStartNavigation = viewModel::startNavigation,
             onStopNavigation = viewModel::stopNavigation,
+            onMcDonaldsClick = { searchPoi(PoiType.MCDONALDS) },
+            onGasStationClick = { searchPoi(PoiType.GAS_STATION) },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
         )
@@ -331,27 +310,6 @@ fun DaLangApp(viewModel: MainViewModel) {
 
     }
     }
-    }
-}
-
-@Composable
-fun PoiButton(
-    text: String,
-    onClick: () -> Unit
-) {
-    Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White.copy(alpha = 0.9f),
-            contentColor = Color.Black
-        ),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(20.dp)
-    ) {
-        Text(
-            text = text,
-            fontSize = 20.sp
-        )
     }
 }
 

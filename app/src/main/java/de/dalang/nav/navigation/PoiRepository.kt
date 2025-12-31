@@ -4,9 +4,19 @@ import de.dalang.nav.util.CrashLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONObject
 import java.net.URL
 import java.net.URLEncoder
 import kotlin.math.*
+
+/**
+ * Kraftstoffpreise für eine Tankstelle
+ */
+data class FuelPrices(
+    val diesel: Double?,  // Preis in Euro
+    val e5: Double?,      // Super E5
+    val e10: Double?      // Super E10
+)
 
 /**
  * POI (Point of Interest) Daten
@@ -17,7 +27,8 @@ data class Poi(
     val lng: Double,
     val address: String?,
     val distanceKm: Double,  // Entfernung vom aktuellen Standort
-    val estimatedArrivalMinutes: Int  // Geschätzte Ankunftszeit in Minuten
+    val estimatedArrivalMinutes: Int,  // Geschätzte Ankunftszeit in Minuten
+    val fuelPrices: FuelPrices? = null  // Nur für Tankstellen
 )
 
 enum class PoiType(val searchQuery: String, val displayName: String) {
@@ -29,6 +40,9 @@ enum class PoiType(val searchQuery: String, val displayName: String) {
  * Repository für POI-Suche (McDonald's, Tankstellen, etc.)
  */
 class PoiRepository {
+
+    // Tankerkönig API Key (öffentlicher Demo-Key)
+    private val tankerkoenigApiKey = "00000000-0000-0000-0000-000000000002"
 
     /**
      * Sucht POIs in der Nähe einer Position
@@ -42,8 +56,10 @@ class PoiRepository {
         try {
             CrashLogger.log("PoiRepository: Searching for ${type.displayName} near ${currentLocation.lat},${currentLocation.lng}")
 
-            // Nominatim Overpass-ähnliche Suche
-            val results = searchWithNominatim(type, currentLocation, radiusKm)
+            val results = when (type) {
+                PoiType.GAS_STATION -> searchGasStationsWithTankerkoenig(currentLocation, radiusKm)
+                else -> searchWithNominatim(type, currentLocation, radiusKm)
+            }
 
             // Nach Entfernung sortieren und limitieren
             val sortedResults = results
@@ -56,6 +72,96 @@ class PoiRepository {
         } catch (e: Exception) {
             CrashLogger.logError("PoiRepository", "Search failed for ${type.displayName}", e)
             emptyList()
+        }
+    }
+
+    /**
+     * Sucht Tankstellen mit Tankerkönig API inkl. Spritpreise
+     */
+    private suspend fun searchGasStationsWithTankerkoenig(
+        center: LatLng,
+        radiusKm: Double
+    ): List<Poi> = withContext(Dispatchers.IO) {
+        try {
+            // Tankerkönig API - radius in km (max 25)
+            val radius = radiusKm.coerceAtMost(25.0)
+            val url = "https://creativecommons.tankerkoenig.de/json/list.php?" +
+                "lat=${center.lat}" +
+                "&lng=${center.lng}" +
+                "&rad=$radius" +
+                "&sort=dist" +
+                "&type=all" +
+                "&apikey=$tankerkoenigApiKey"
+
+            CrashLogger.log("PoiRepository: Tankerkönig URL: $url")
+
+            val connection = URL(url).openConnection()
+            connection.setRequestProperty("User-Agent", "DaLang Navigation App")
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+
+            val response = connection.getInputStream().bufferedReader().readText()
+            val json = JSONObject(response)
+
+            if (!json.optBoolean("ok", false)) {
+                CrashLogger.log("PoiRepository: Tankerkönig returned error: ${json.optString("message")}")
+                return@withContext searchWithNominatim(PoiType.GAS_STATION, center, radiusKm)
+            }
+
+            val stations = json.optJSONArray("stations") ?: return@withContext emptyList()
+            val results = mutableListOf<Poi>()
+
+            for (i in 0 until stations.length()) {
+                val station = stations.getJSONObject(i)
+                val lat = station.optDouble("lat", 0.0)
+                val lng = station.optDouble("lng", 0.0)
+                val name = station.optString("brand", "Tankstelle")
+                val street = station.optString("street", "")
+                val houseNumber = station.optString("houseNumber", "")
+                val place = station.optString("place", "")
+
+                val address = buildString {
+                    if (street.isNotEmpty()) {
+                        append(street)
+                        if (houseNumber.isNotEmpty()) append(" $houseNumber")
+                    }
+                    if (place.isNotEmpty()) {
+                        if (isNotEmpty()) append(", ")
+                        append(place)
+                    }
+                }
+
+                val distance = station.optDouble("dist",
+                    calculateDistance(center.lat, center.lng, lat, lng))
+                val arrivalMinutes = estimateArrivalTime(distance)
+
+                // Kraftstoffpreise
+                val diesel = station.optDouble("diesel", Double.NaN).takeIf { !it.isNaN() }
+                val e5 = station.optDouble("e5", Double.NaN).takeIf { !it.isNaN() }
+                val e10 = station.optDouble("e10", Double.NaN).takeIf { !it.isNaN() }
+
+                val fuelPrices = if (diesel != null || e5 != null || e10 != null) {
+                    FuelPrices(diesel = diesel, e5 = e5, e10 = e10)
+                } else null
+
+                results.add(
+                    Poi(
+                        name = name,
+                        lat = lat,
+                        lng = lng,
+                        address = address.ifEmpty { null },
+                        distanceKm = distance,
+                        estimatedArrivalMinutes = arrivalMinutes,
+                        fuelPrices = fuelPrices
+                    )
+                )
+            }
+
+            results
+
+        } catch (e: Exception) {
+            CrashLogger.logError("PoiRepository", "Tankerkönig search failed, falling back to Nominatim", e)
+            searchWithNominatim(PoiType.GAS_STATION, center, radiusKm)
         }
     }
 
