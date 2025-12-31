@@ -14,6 +14,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import de.dalang.nav.R
 import de.dalang.nav.navigation.LatLng
+import de.dalang.nav.navigation.Poi
+import de.dalang.nav.navigation.PoiType
 import de.dalang.nav.navigation.Route
 import de.dalang.nav.util.CrashLogger
 import org.maplibre.android.camera.CameraPosition
@@ -40,6 +42,8 @@ fun MapViewComposable(
     destination: LatLng?,
     route: Route?,
     isNavigating: Boolean,
+    pois: List<Poi> = emptyList(),
+    selectedPoiType: PoiType? = null,
     onMapClick: ((LatLng) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -419,6 +423,121 @@ fun MapViewComposable(
             }
         } catch (e: Exception) {
             CrashLogger.logError("MapView", "getStyle failed for destination", e)
+        }
+    }
+
+    // POI Marker zeichnen
+    LaunchedEffect(pois, selectedPoiType, isMapReady, styleVersion) {
+        if (!isMapReady) return@LaunchedEffect
+        val map = mapLibreMap ?: return@LaunchedEffect
+
+        try {
+            map.getStyle { style ->
+                try {
+                    // Vorherige POI-Marker entfernen
+                    try {
+                        style.removeLayer("poi-layer")
+                        style.removeSource("poi-source")
+                    } catch (e: Exception) {
+                        // Layer existiert nicht
+                    }
+
+                    if (pois.isNotEmpty() && selectedPoiType != null) {
+                        // Icon zum Style hinzufügen
+                        val iconName = when (selectedPoiType) {
+                            PoiType.GAS_STATION -> "poi-gas-station"
+                            PoiType.MCDONALDS -> "poi-mcdonalds"
+                        }
+                        val drawableRes = when (selectedPoiType) {
+                            PoiType.GAS_STATION -> R.drawable.ic_gas_station
+                            PoiType.MCDONALDS -> R.drawable.ic_mcdonalds
+                        }
+
+                        if (style.getImage(iconName) == null) {
+                            val drawable = ContextCompat.getDrawable(context, drawableRes)
+                            if (drawable != null) {
+                                val bitmap = Bitmap.createBitmap(
+                                    drawable.intrinsicWidth,
+                                    drawable.intrinsicHeight,
+                                    Bitmap.Config.ARGB_8888
+                                )
+                                val canvas = Canvas(bitmap)
+                                drawable.setBounds(0, 0, canvas.width, canvas.height)
+                                drawable.draw(canvas)
+                                style.addImage(iconName, bitmap)
+                            }
+                        }
+
+                        // POIs als FeatureCollection
+                        val features = pois.mapIndexed { index, poi ->
+                            """{"type":"Feature","id":$index,"geometry":{"type":"Point","coordinates":[${poi.lng},${poi.lat}]},"properties":{"name":"${poi.name.replace("\"", "\\\"")}"}}"""
+                        }.joinToString(",")
+                        val geoJson = """{"type":"FeatureCollection","features":[$features]}"""
+
+                        val source = GeoJsonSource("poi-source", geoJson)
+                        style.addSource(source)
+
+                        val poiLayer = SymbolLayer("poi-layer", "poi-source").apply {
+                            setProperties(
+                                PropertyFactory.iconImage(iconName),
+                                PropertyFactory.iconSize(0.6f),
+                                PropertyFactory.iconAllowOverlap(true),
+                                PropertyFactory.iconIgnorePlacement(true),
+                                PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER)
+                            )
+                        }
+                        style.addLayer(poiLayer)
+
+                        CrashLogger.log("MapView: Drew ${pois.size} POI markers")
+
+                        // Kamera auf Route + POIs zoomen (wenn nicht navigierend)
+                        if (!isNavigating && route != null && route.geometry.isNotEmpty()) {
+                            try {
+                                val bounds = LatLngBounds.Builder()
+                                var validPoints = 0
+
+                                // Route-Punkte hinzufügen
+                                route.geometry.forEach { point ->
+                                    if (point.lat >= -90 && point.lat <= 90 &&
+                                        point.lng >= -180 && point.lng <= 180) {
+                                        bounds.include(
+                                            org.maplibre.android.geometry.LatLng(point.lat, point.lng)
+                                        )
+                                        validPoints++
+                                    }
+                                }
+
+                                // POI-Punkte hinzufügen
+                                pois.forEach { poi ->
+                                    if (poi.lat >= -90 && poi.lat <= 90 &&
+                                        poi.lng >= -180 && poi.lng <= 180) {
+                                        bounds.include(
+                                            org.maplibre.android.geometry.LatLng(poi.lat, poi.lng)
+                                        )
+                                        validPoints++
+                                    }
+                                }
+
+                                if (validPoints >= 2) {
+                                    map.animateCamera(
+                                        CameraUpdateFactory.newLatLngBounds(
+                                            bounds.build(),
+                                            80  // Padding
+                                        ),
+                                        1000
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                CrashLogger.logError("MapView", "POI camera bounds animation failed", e)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    CrashLogger.logError("MapView", "POI markers failed", e)
+                }
+            }
+        } catch (e: Exception) {
+            CrashLogger.logError("MapView", "getStyle failed for POIs", e)
         }
     }
 }

@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import de.dalang.nav.config.HereConfig
+import de.dalang.nav.config.TankerkoenigConfig
 import de.dalang.nav.settings.ApiUsageInfo
 import de.dalang.nav.settings.PeriodType
 import de.dalang.nav.settings.SettingsRepository
@@ -43,6 +44,9 @@ fun HereSettingsDialog(
     var showApiKey by remember { mutableStateOf(false) }
     var monthlyLimit by remember { mutableStateOf(settingsRepository.hereMonthlyLimit.toString()) }
 
+    var tankerkoenigApiKey by remember { mutableStateOf(TankerkoenigConfig.getApiKey()) }
+    var showTankerkoenigKey by remember { mutableStateOf(false) }
+
     val usageInfos = remember { settingsRepository.getAllApiUsageInfos() }
     val numberFormat = remember { NumberFormat.getNumberInstance(Locale.GERMANY) }
 
@@ -56,28 +60,21 @@ fun HereSettingsDialog(
                 .verticalScroll(rememberScrollState())
         ) {
             Text(
-                text = "HERE API",
+                text = "API Einstellungen",
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
+            // HERE Section
             Text(
-                text = "Für Echtzeit-Verkehrsdaten und Lane-Guidance",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // API Key Input
-            Text(
-                text = "API Key",
+                text = "HERE (Routing mit Verkehrsdaten)",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface
             )
+
             Spacer(modifier = Modifier.height(8.dp))
 
             Box(
@@ -133,6 +130,76 @@ fun HereSettingsDialog(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "platform.here.com → Projects → API Keys",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Tankerkönig API Key (für Spritpreise)
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Spritpreise (Tankerkönig)",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (tankerkoenigApiKey.isEmpty()) {
+                            Text(
+                                text = "API Key eingeben...",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 14.sp
+                            )
+                        }
+
+                        BasicTextField(
+                            value = tankerkoenigApiKey,
+                            onValueChange = { tankerkoenigApiKey = it },
+                            textStyle = TextStyle(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 14.sp
+                            ),
+                            singleLine = true,
+                            visualTransformation = if (showTankerkoenigKey) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            },
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    TextButton(
+                        onClick = { showTankerkoenigKey = !showTankerkoenigKey },
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Text(
+                            text = if (showTankerkoenigKey) "Verbergen" else "Zeigen",
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "creativecommons.tankerkoenig.de (kostenlos)",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -250,6 +317,7 @@ fun HereSettingsDialog(
                 Button(
                     onClick = {
                         HereConfig.setApiKey(hereApiKey.trim())
+                        TankerkoenigConfig.setApiKey(tankerkoenigApiKey.trim())
                         monthlyLimit.toIntOrNull()?.let {
                             settingsRepository.hereMonthlyLimit = it
                         }

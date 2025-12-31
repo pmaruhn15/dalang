@@ -264,6 +264,8 @@ fun DaLangApp(viewModel: MainViewModel) {
             destination = navigationState.destination,
             route = navigationState.route,
             isNavigating = navigationState.isNavigating,
+            pois = poiResults,
+            selectedPoiType = selectedPoiType,
             onMapClick = { location ->
                 // Nur reagieren wenn keine Navigation aktiv und keine Route geplant
                 if (!navigationState.isNavigating && navigationState.route == null) {
@@ -442,9 +444,9 @@ fun DrawerContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // HERE API
+        // API Einstellungen (HERE + Tankerkönig)
         NavigationDrawerItem(
-            label = { Text("HERE API") },
+            label = { Text("API Einstellungen") },
             selected = false,
             onClick = {
                 showHereSettings = true

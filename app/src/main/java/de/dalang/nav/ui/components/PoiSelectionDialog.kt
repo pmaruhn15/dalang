@@ -35,10 +35,10 @@ fun PoiSelectionDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 500.dp)
+                .heightIn(max = 280.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(MaterialTheme.colorScheme.surface)
-                .padding(20.dp)
+                .padding(16.dp)
         ) {
             // Header
             Text(
@@ -47,25 +47,27 @@ fun PoiSelectionDialog(
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             when {
                 isLoading -> {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(200.dp),
+                            .height(100.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             CircularProgressIndicator(
-                                color = Color.White
+                                color = Color.White,
+                                modifier = Modifier.size(32.dp)
                             )
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "Suche ${poiType.displayName}...",
+                                fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -76,11 +78,12 @@ fun PoiSelectionDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(200.dp),
+                            .height(80.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "Keine ${poiType.displayName} $locationText gefunden",
+                            fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -106,7 +109,7 @@ fun PoiSelectionDialog(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Close Button
             Button(
@@ -115,9 +118,9 @@ fun PoiSelectionDialog(
                     containerColor = Color.White,
                     contentColor = Color.Black
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().height(40.dp)
             ) {
-                Text("Abbrechen")
+                Text("Abbrechen", fontSize = 14.sp)
             }
         }
     }

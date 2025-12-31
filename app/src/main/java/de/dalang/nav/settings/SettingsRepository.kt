@@ -168,10 +168,19 @@ class SettingsRepository(context: Context) {
         return list
     }
 
+    // ========== Tankerkönig API Key ==========
+
+    var tankerkoenigApiKey: String
+        get() = prefs.getString(KEY_TANKERKOENIG_API_KEY, "") ?: ""
+        set(value) = prefs.edit { putString(KEY_TANKERKOENIG_API_KEY, value) }
+
+    fun isTankerkoenigConfigured(): Boolean = tankerkoenigApiKey.isNotBlank()
+
     companion object {
         private const val PREFS_NAME = "dalang_settings"
         private const val KEY_HERE_API_KEY = "here_api_key"
         private const val KEY_VOICE_ENABLED = "voice_enabled"
+        private const val KEY_TANKERKOENIG_API_KEY = "tankerkoenig_api_key"
 
         // HERE Usage Tracking (monatlich)
         private const val KEY_HERE_MONTHLY_LIMIT = "here_monthly_limit"
