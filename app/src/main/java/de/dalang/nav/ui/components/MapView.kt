@@ -3,8 +3,6 @@ package de.dalang.nav.ui.components
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffColorFilter
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -17,7 +15,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import de.dalang.nav.R
 import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.navigation.Route
-import de.dalang.nav.settings.SettingsRepository
 import de.dalang.nav.util.CrashLogger
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -29,6 +26,9 @@ import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
+
+private const val STYLE_LIGHT = "https://tiles.openfreemap.org/styles/positron"
+private const val STYLE_DARK = "https://tiles.openfreemap.org/styles/dark"
 
 @Composable
 fun MapViewComposable(
@@ -46,23 +46,15 @@ fun MapViewComposable(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val isDarkTheme = isSystemInDarkTheme()
-    val settingsRepository = remember { SettingsRepository(context) }
 
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var isMapReady by remember { mutableStateOf(false) }
     var hasCenteredOnLocation by remember { mutableStateOf(false) }
-    var styleVersion by remember { mutableIntStateOf(0) }  // Triggers marker redraw on style change
+    var styleVersion by remember { mutableIntStateOf(0) }
 
-    // Style aus Settings mit Auto-Switch Support
-    val selectedStyle = settingsRepository.mapStyle
-    val styleUrl = remember(selectedStyle, isDarkTheme) {
-        selectedStyle.getUrl(isDarkTheme)
-    }
-
-    // Farben aus Settings
-    val routeColor = settingsRepository.routeColor
-    val markerColor = settingsRepository.markerColor
+    // Auto Light/Dark basierend auf System-Theme
+    val styleUrl = if (isDarkTheme) STYLE_DARK else STYLE_LIGHT
 
     AndroidView(
         factory = { ctx ->
@@ -213,7 +205,7 @@ fun MapViewComposable(
     }
 
     // Standort-Marker zeichnen (Pfeil mit Kompass-Rotation)
-    LaunchedEffect(currentLocation, heading, isMapReady, styleVersion, markerColor) {
+    LaunchedEffect(currentLocation, heading, isMapReady, styleVersion) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
         val location = currentLocation ?: return@LaunchedEffect
@@ -229,26 +221,20 @@ fun MapViewComposable(
                         // Layer existiert nicht
                     }
 
-                    // Icon mit Farbe aus Settings erstellen
-                    val markerColorInt = markerColor.colorValue.toInt()
-
-                    // Altes Icon entfernen (falls Farbe geändert)
-                    try {
-                        style.removeImage("position-arrow")
-                    } catch (_: Exception) {}
-
-                    val drawable = ContextCompat.getDrawable(context, R.drawable.ic_position_arrow)
-                    if (drawable != null) {
-                        drawable.colorFilter = PorterDuffColorFilter(markerColorInt, PorterDuff.Mode.SRC_IN)
-                        val bitmap = Bitmap.createBitmap(
-                            drawable.intrinsicWidth,
-                            drawable.intrinsicHeight,
-                            Bitmap.Config.ARGB_8888
-                        )
-                        val canvas = Canvas(bitmap)
-                        drawable.setBounds(0, 0, canvas.width, canvas.height)
-                        drawable.draw(canvas)
-                        style.addImage("position-arrow", bitmap)
+                    // Icon zum Style hinzufügen (falls noch nicht vorhanden)
+                    if (style.getImage("position-arrow") == null) {
+                        val drawable = ContextCompat.getDrawable(context, R.drawable.ic_position_arrow)
+                        if (drawable != null) {
+                            val bitmap = Bitmap.createBitmap(
+                                drawable.intrinsicWidth,
+                                drawable.intrinsicHeight,
+                                Bitmap.Config.ARGB_8888
+                            )
+                            val canvas = Canvas(bitmap)
+                            drawable.setBounds(0, 0, canvas.width, canvas.height)
+                            drawable.draw(canvas)
+                            style.addImage("position-arrow", bitmap)
+                        }
                     }
 
                     // Standort als GeoJSON Point
@@ -288,7 +274,7 @@ fun MapViewComposable(
     }
 
     // Route zeichnen
-    LaunchedEffect(route, isMapReady, styleVersion, routeColor) {
+    LaunchedEffect(route, isMapReady, styleVersion) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
 
@@ -320,12 +306,9 @@ fun MapViewComposable(
                         val source = GeoJsonSource("route-source", geoJson)
                         style.addSource(source)
 
-                        // Farbe aus Settings konvertieren
-                        val routeColorInt = routeColor.colorValue.toInt()
-
                         val lineLayer = LineLayer("route-layer", "route-source").apply {
                             setProperties(
-                                PropertyFactory.lineColor(routeColorInt),
+                                PropertyFactory.lineColor(Color.WHITE),
                                 PropertyFactory.lineWidth(6f),
                                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
@@ -374,7 +357,7 @@ fun MapViewComposable(
     }
 
     // Ziel-Marker zeichnen
-    LaunchedEffect(destination, isMapReady, styleVersion, markerColor) {
+    LaunchedEffect(destination, isMapReady, styleVersion) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
 
@@ -390,26 +373,20 @@ fun MapViewComposable(
                     }
 
                     if (destination != null) {
-                        // Icon mit Farbe aus Settings erstellen
-                        val markerColorInt = markerColor.colorValue.toInt()
-
-                        // Altes Icon entfernen (falls Farbe geändert)
-                        try {
-                            style.removeImage("destination-marker")
-                        } catch (_: Exception) {}
-
-                        val drawable = ContextCompat.getDrawable(context, R.drawable.ic_destination_marker)
-                        if (drawable != null) {
-                            drawable.colorFilter = PorterDuffColorFilter(markerColorInt, PorterDuff.Mode.SRC_IN)
-                            val bitmap = Bitmap.createBitmap(
-                                drawable.intrinsicWidth,
-                                drawable.intrinsicHeight,
-                                Bitmap.Config.ARGB_8888
-                            )
-                            val canvas = Canvas(bitmap)
-                            drawable.setBounds(0, 0, canvas.width, canvas.height)
-                            drawable.draw(canvas)
-                            style.addImage("destination-marker", bitmap)
+                        // Icon zum Style hinzufügen (falls noch nicht vorhanden)
+                        if (style.getImage("destination-marker") == null) {
+                            val drawable = ContextCompat.getDrawable(context, R.drawable.ic_destination_marker)
+                            if (drawable != null) {
+                                val bitmap = Bitmap.createBitmap(
+                                    drawable.intrinsicWidth,
+                                    drawable.intrinsicHeight,
+                                    Bitmap.Config.ARGB_8888
+                                )
+                                val canvas = Canvas(bitmap)
+                                drawable.setBounds(0, 0, canvas.width, canvas.height)
+                                drawable.draw(canvas)
+                                style.addImage("destination-marker", bitmap)
+                            }
                         }
 
                         val geoJson = """

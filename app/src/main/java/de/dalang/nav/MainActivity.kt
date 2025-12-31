@@ -35,7 +35,6 @@ import de.dalang.nav.ui.components.MapViewComposable
 import de.dalang.nav.ui.components.NavigationPanel
 import de.dalang.nav.ui.components.OfflineMapsDialog
 import de.dalang.nav.ui.components.SearchBar
-import de.dalang.nav.ui.components.SettingsDialog
 import de.dalang.nav.ui.theme.DaLangTheme
 import de.dalang.nav.util.CrashLogger
 
@@ -336,7 +335,6 @@ fun MapClickDialog(
 fun DrawerContent(
     onCloseDrawer: () -> Unit
 ) {
-    var showSettings by remember { mutableStateOf(false) }
     var showHereSettings by remember { mutableStateOf(false) }
     var showOfflineMaps by remember { mutableStateOf(false) }
     var showDebugLog by remember { mutableStateOf(false) }
@@ -366,16 +364,6 @@ fun DrawerContent(
         HorizontalDivider()
 
         Spacer(modifier = Modifier.height(16.dp))
-
-        // Einstellungen
-        NavigationDrawerItem(
-            label = { Text("Einstellungen") },
-            selected = false,
-            onClick = {
-                showSettings = true
-            },
-            modifier = Modifier.padding(vertical = 4.dp)
-        )
 
         // HERE API
         NavigationDrawerItem(
@@ -431,14 +419,6 @@ fun DrawerContent(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 16.dp, top = 8.dp)
-        )
-    }
-
-    // Settings Dialog
-    if (showSettings) {
-        SettingsDialog(
-            onDismiss = { showSettings = false },
-            onSave = { }
         )
     }
 

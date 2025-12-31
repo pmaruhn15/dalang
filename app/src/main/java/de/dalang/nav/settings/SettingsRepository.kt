@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -34,93 +33,6 @@ enum class UsageStatus {
     BLOCKED     // >= 100%
 }
 
-/**
- * Verfügbare Farben für Route und Marker
- */
-enum class MapColor(
-    val displayName: String,
-    val colorValue: Long  // ARGB Color
-) {
-    WHITE("Weiß", 0xFFFFFFFF),
-    BLACK("Schwarz", 0xFF000000),
-    BLUE("Blau", 0xFF2196F3),
-    RED("Rot", 0xFFE53935),
-    GREEN("Grün", 0xFF4CAF50),
-    ORANGE("Orange", 0xFFFF9800),
-    PURPLE("Lila", 0xFF9C27B0),
-    CYAN("Cyan", 0xFF00BCD4)
-}
-
-/**
- * Verfügbare Map Styles von OpenFreeMap
- */
-enum class MapStyle(
-    val displayName: String,
-    val description: String,
-    val lightUrl: String,
-    val darkUrl: String? = null,  // null = kein Dark-Pendant
-    val previewBgColor: Long,     // Hintergrundfarbe für Vorschau
-    val previewFgColor: Long,     // Vordergrundfarbe für Vorschau
-    val isDark: Boolean = false
-) {
-    AUTO(
-        displayName = "Automatisch",
-        description = "Wechselt mit System-Theme",
-        lightUrl = "https://tiles.openfreemap.org/styles/positron",
-        darkUrl = "https://tiles.openfreemap.org/styles/dark",
-        previewBgColor = 0xFFE8E8E8,
-        previewFgColor = 0xFF333333
-    ),
-    POSITRON(
-        displayName = "Positron",
-        description = "Hell, minimalistisch",
-        lightUrl = "https://tiles.openfreemap.org/styles/positron",
-        previewBgColor = 0xFFE8E8E8,
-        previewFgColor = 0xFF666666
-    ),
-    DARK(
-        displayName = "Dark",
-        description = "Dunkel, augenschonend",
-        lightUrl = "https://tiles.openfreemap.org/styles/dark",
-        previewBgColor = 0xFF1A1A2E,
-        previewFgColor = 0xFF888888,
-        isDark = true
-    ),
-    BRIGHT(
-        displayName = "Bright",
-        description = "Farbenfroh, detailliert",
-        lightUrl = "https://tiles.openfreemap.org/styles/bright",
-        previewBgColor = 0xFFF5F5DC,
-        previewFgColor = 0xFF2E7D32
-    ),
-    LIBERTY(
-        displayName = "Liberty",
-        description = "Klassischer OSM-Look",
-        lightUrl = "https://tiles.openfreemap.org/styles/liberty",
-        previewBgColor = 0xFFF2EFE9,
-        previewFgColor = 0xFF725A42
-    ),
-    FIORD(
-        displayName = "Fiord",
-        description = "Natürliche Farben",
-        lightUrl = "https://tiles.openfreemap.org/styles/fiord",
-        previewBgColor = 0xFF3E4A5C,
-        previewFgColor = 0xFF8FA4B8,
-        isDark = true
-    );
-
-    /**
-     * Gibt die richtige URL basierend auf isDarkTheme zurück
-     */
-    fun getUrl(isDarkTheme: Boolean): String {
-        return if (isDarkTheme && darkUrl != null) {
-            darkUrl
-        } else {
-            lightUrl
-        }
-    }
-}
-
 class SettingsRepository(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences(
@@ -135,39 +47,6 @@ class SettingsRepository(context: Context) {
     var voiceEnabled: Boolean
         get() = prefs.getBoolean(KEY_VOICE_ENABLED, true)
         set(value) = prefs.edit { putBoolean(KEY_VOICE_ENABLED, value) }
-
-    var mapStyle: MapStyle
-        get() {
-            val styleName = prefs.getString(KEY_MAP_STYLE, MapStyle.AUTO.name) ?: MapStyle.AUTO.name
-            return try {
-                MapStyle.valueOf(styleName)
-            } catch (e: IllegalArgumentException) {
-                MapStyle.AUTO
-            }
-        }
-        set(value) = prefs.edit { putString(KEY_MAP_STYLE, value.name) }
-
-    var routeColor: MapColor
-        get() {
-            val colorName = prefs.getString(KEY_ROUTE_COLOR, MapColor.WHITE.name) ?: MapColor.WHITE.name
-            return try {
-                MapColor.valueOf(colorName)
-            } catch (e: IllegalArgumentException) {
-                MapColor.WHITE
-            }
-        }
-        set(value) = prefs.edit { putString(KEY_ROUTE_COLOR, value.name) }
-
-    var markerColor: MapColor
-        get() {
-            val colorName = prefs.getString(KEY_MARKER_COLOR, MapColor.WHITE.name) ?: MapColor.WHITE.name
-            return try {
-                MapColor.valueOf(colorName)
-            } catch (e: IllegalArgumentException) {
-                MapColor.WHITE
-            }
-        }
-        set(value) = prefs.edit { putString(KEY_MARKER_COLOR, value.name) }
 
     // HERE API - Monatliches Limit (Free Tier: 250.000/Monat)
     var hereMonthlyLimit: Int
@@ -249,7 +128,6 @@ class SettingsRepository(context: Context) {
 
     // ========== Legacy methods for backward compatibility ==========
 
-    // Diese werden von HereConfig aufgerufen
     @Deprecated("Use getHereMonthlyUsage() instead")
     fun getTodayUsage(): Int = getHereMonthlyUsage()
 
@@ -287,9 +165,6 @@ class SettingsRepository(context: Context) {
             list.add(getHereUsageInfo())
         }
 
-        // Weitere APIs könnten hier hinzugefügt werden
-        // z.B. wenn wir Photon/Nominatim tracken wollen
-
         return list
     }
 
@@ -297,9 +172,6 @@ class SettingsRepository(context: Context) {
         private const val PREFS_NAME = "dalang_settings"
         private const val KEY_HERE_API_KEY = "here_api_key"
         private const val KEY_VOICE_ENABLED = "voice_enabled"
-        private const val KEY_MAP_STYLE = "map_style"
-        private const val KEY_ROUTE_COLOR = "route_color"
-        private const val KEY_MARKER_COLOR = "marker_color"
 
         // HERE Usage Tracking (monatlich)
         private const val KEY_HERE_MONTHLY_LIMIT = "here_monthly_limit"
