@@ -7,7 +7,7 @@
 
     <!-- Background circle -->
     <path
-        android:fillColor="#1976D2"
+        android:fillColor="#000000"
         android:pathData="M54,54m-50,0a50,50 0,1 1,100 0a50,50 0,1 1,-100 0" />
 
     <!-- Navigation arrow -->
