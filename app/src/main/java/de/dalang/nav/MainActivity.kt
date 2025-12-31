@@ -298,7 +298,6 @@ fun DaLangApp(viewModel: MainViewModel) {
             onStopNavigation = viewModel::stopNavigation,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
         )
 
         // Map-Klick Dialog

@@ -14,6 +14,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -30,6 +31,9 @@ fun NavigationPanel(
     onStopNavigation: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Get navigation bar height for bottom padding
+    val navigationBarHeight = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
     AnimatedVisibility(
         visible = state.route != null,
         enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -42,7 +46,7 @@ fun NavigationPanel(
                 .shadow(8.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .background(MaterialTheme.colorScheme.surface)
-                .padding(20.dp)
+                .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 20.dp + navigationBarHeight)
         ) {
             if (state.isNavigating) {
                 // Aktive Navigation
