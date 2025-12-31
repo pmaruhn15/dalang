@@ -32,7 +32,9 @@ jobs:
     - name: Get version info
       id: version
       run: |
-        VERSION="1.0.0-$(date +%Y%m%d)-$(echo ${{ github.sha }} | cut -c1-7)"
+        # Extract versionName from build.gradle.kts
+        VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
+        VERSION="${VERSION_NAME}-$(date +%Y%m%d)-$(echo ${{ github.sha }} | cut -c1-7)"
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "tag=v$VERSION" >> $GITHUB_OUTPUT
 
