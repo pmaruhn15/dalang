@@ -75,6 +75,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    // Fuer kurze Info-Meldungen (auto-dismiss)
+    private val _infoMessage = MutableStateFlow<String?>(null)
+    val infoMessage: StateFlow<String?> = _infoMessage.asStateFlow()
+
     // Fuer Map-Klick Navigation
     private val _clickedLocation = MutableStateFlow<LatLng?>(null)
     val clickedLocation: StateFlow<LatLng?> = _clickedLocation.asStateFlow()
@@ -244,6 +248,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _errorMessage.value = null
     }
 
+    fun clearInfoMessage() {
+        _infoMessage.value = null
+    }
+
     fun selectDestination(result: SearchResult) {
         CrashLogger.log("MainViewModel: selectDestination: ${result.displayName}")
         viewModelScope.launch(exceptionHandler) {
@@ -270,6 +278,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             totalDistanceRemaining = route.distance,
                             totalTimeRemaining = route.duration
                         )
+                    }
+                    // Info wenn ohne Verkehrsdaten (OSRM Fallback)
+                    if (!route.hasTrafficData) {
+                        _infoMessage.value = "Route ohne Verkehrsdaten (OSRM)"
                     }
                 } else {
                     CrashLogger.logError("MainViewModel", "No route found")
@@ -577,6 +589,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             totalDistanceRemaining = route.distance,
                             totalTimeRemaining = route.duration
                         )
+                    }
+                    // Info wenn ohne Verkehrsdaten (OSRM Fallback)
+                    if (!route.hasTrafficData) {
+                        _infoMessage.value = "Route ohne Verkehrsdaten (OSRM)"
                     }
                 } else {
                     CrashLogger.logError("MainViewModel", "No route to clicked location")

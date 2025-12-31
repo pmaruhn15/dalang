@@ -105,7 +105,7 @@ class RouteRepository {
                     "&destination=${to.lat},${to.lng}" +
                     "&transportMode=car" +
                     "&return=polyline,actions,instructions,summary,typicalDuration" +
-                    "&spans=names,length,duration,speedLimit,laneAssistance" +
+                    "&spans=names,length,duration,speedLimit" +
                     "&apiKey=$apiKey"
 
             CrashLogger.log("RouteRepository: HERE request from ${from.lat},${from.lng} to ${to.lat},${to.lng}")

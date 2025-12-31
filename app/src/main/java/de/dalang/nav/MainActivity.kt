@@ -170,6 +170,7 @@ fun DaLangApp(viewModel: MainViewModel) {
     val navigationState by viewModel.navigationState.collectAsState()
     val clickedLocation by viewModel.clickedLocation.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val infoMessage by viewModel.infoMessage.collectAsState()
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -222,6 +223,17 @@ fun DaLangApp(viewModel: MainViewModel) {
                 duration = SnackbarDuration.Long
             )
             viewModel.clearError()
+        }
+    }
+
+    // Info-Meldung kurz anzeigen (auto-dismiss)
+    LaunchedEffect(infoMessage) {
+        infoMessage?.let {
+            snackbarHostState.showSnackbar(
+                message = it,
+                duration = SnackbarDuration.Short
+            )
+            viewModel.clearInfoMessage()
         }
     }
 
