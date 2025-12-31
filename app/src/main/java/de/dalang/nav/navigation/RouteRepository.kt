@@ -73,7 +73,7 @@ class RouteRepository {
     suspend fun getRoute(from: LatLng, to: LatLng): Route? = withContext(Dispatchers.IO) {
         // HERE API nutzen wenn konfiguriert UND Limit nicht erreicht
         if (HereConfig.isConfigured() && HereConfig.canMakeRequest()) {
-            CrashLogger.log("RouteRepository: Using HERE API with traffic (${HereConfig.getTodayUsage()}/${HereConfig.getDailyLimit()} today)")
+            CrashLogger.log("RouteRepository: Using HERE API with traffic (${HereConfig.getMonthlyUsage()}/${HereConfig.getMonthlyLimit()} this month)")
             val hereRoute = getRouteFromHere(from, to)
             if (hereRoute != null && hereRoute.geometry.isNotEmpty()) {
                 CrashLogger.log("RouteRepository: HERE route OK with ${hereRoute.geometry.size} points")
@@ -136,7 +136,7 @@ class RouteRepository {
 
             // Zaehler erhoehen nach erfolgreicher Anfrage
             val newCount = HereConfig.incrementUsage()
-            CrashLogger.log("RouteRepository: HERE usage now $newCount/${HereConfig.getDailyLimit()}")
+            CrashLogger.log("RouteRepository: HERE usage now $newCount/${HereConfig.getMonthlyLimit()} this month")
 
             val route = parseHereRoute(body, from)
             if (route == null) {

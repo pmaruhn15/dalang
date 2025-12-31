@@ -14,7 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -22,20 +24,27 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import de.dalang.nav.config.HereConfig
+import de.dalang.nav.settings.ApiUsageInfo
+import de.dalang.nav.settings.PeriodType
 import de.dalang.nav.settings.SettingsRepository
+import de.dalang.nav.settings.UsageStatus
+import java.text.NumberFormat
+import java.util.Locale
 
 @Composable
 fun SettingsDialog(
     onDismiss: () -> Unit,
     onSave: () -> Unit
 ) {
+    val context = LocalContext.current
+    val settingsRepository = remember { SettingsRepository(context) }
+
     var hereApiKey by remember { mutableStateOf(HereConfig.getApiKey()) }
     var showApiKey by remember { mutableStateOf(false) }
-    var dailyLimit by remember { mutableStateOf(HereConfig.getDailyLimit().toString()) }
-    var warningThreshold by remember { mutableStateOf(HereConfig.getWarningThreshold().toString()) }
+    var monthlyLimit by remember { mutableStateOf(settingsRepository.hereMonthlyLimit.toString()) }
 
-    val todayUsage = remember { HereConfig.getTodayUsage() }
-    val usageStatus = remember { HereConfig.getUsageStatus() }
+    val usageInfos = remember { settingsRepository.getAllApiUsageInfos() }
+    val numberFormat = remember { NumberFormat.getNumberInstance(Locale.GERMANY) }
 
     Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -123,151 +132,62 @@ fun SettingsDialog(
                 }
             }
 
-            // Usage Stats (nur wenn API Key vorhanden)
-            if (hereApiKey.isNotBlank()) {
-                Spacer(modifier = Modifier.height(16.dp))
+            // API Usage Stats Section (wenn APIs konfiguriert sind)
+            if (usageInfos.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
-                    text = "API Nutzung heute",
+                    text = "API Nutzung",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Usage Bar
-                val currentLimit = dailyLimit.toIntOrNull() ?: SettingsRepository.DEFAULT_DAILY_LIMIT
-                val usagePercent = (todayUsage.toFloat() / currentLimit.toFloat()).coerceIn(0f, 1f)
-                val barColor = when (usageStatus) {
-                    SettingsRepository.UsageStatus.BLOCKED -> Color(0xFFE53935)
-                    SettingsRepository.UsageStatus.WARNING -> Color(0xFFFF9800)
-                    SettingsRepository.UsageStatus.OK -> Color.White
+                usageInfos.forEach { info ->
+                    ApiUsageCard(
+                        info = info,
+                        numberFormat = numberFormat
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
-
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "$todayUsage / $currentLimit Anfragen",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = when (usageStatus) {
-                                SettingsRepository.UsageStatus.BLOCKED -> "Limit erreicht!"
-                                SettingsRepository.UsageStatus.WARNING -> "Warnung"
-                                SettingsRepository.UsageStatus.OK -> ""
-                            },
-                            fontSize = 14.sp,
-                            color = barColor
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Progress Bar
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(usagePercent)
-                                .fillMaxHeight()
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(barColor)
-                        )
-                    }
-
-                    if (usageStatus == SettingsRepository.UsageStatus.BLOCKED) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Fallback auf OSRM (ohne Verkehr)",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
 
                 // Limit Settings
                 Text(
-                    text = "Limits",
+                    text = "Monatslimit",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "HERE Free Tier: 250.000/Monat",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(12.dp)
                 ) {
-                    // Daily Limit
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Tageslimit",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .padding(12.dp)
-                        ) {
-                            BasicTextField(
-                                value = dailyLimit,
-                                onValueChange = { dailyLimit = it.filter { c -> c.isDigit() } },
-                                textStyle = TextStyle(
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 14.sp
-                                ),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-
-                    // Warning Threshold
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Warnung ab",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .padding(12.dp)
-                        ) {
-                            BasicTextField(
-                                value = warningThreshold,
-                                onValueChange = { warningThreshold = it.filter { c -> c.isDigit() } },
-                                textStyle = TextStyle(
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 14.sp
-                                ),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
+                    BasicTextField(
+                        value = monthlyLimit,
+                        onValueChange = { monthlyLimit = it.filter { c -> c.isDigit() } },
+                        textStyle = TextStyle(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 14.sp
+                        ),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -276,7 +196,7 @@ fun SettingsDialog(
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
+            } else if (hereApiKey.isBlank()) {
                 // Status wenn kein Key
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -307,8 +227,9 @@ fun SettingsDialog(
                 Button(
                     onClick = {
                         HereConfig.setApiKey(hereApiKey.trim())
-                        dailyLimit.toIntOrNull()?.let { HereConfig.setDailyLimit(it) }
-                        warningThreshold.toIntOrNull()?.let { HereConfig.setWarningThreshold(it) }
+                        monthlyLimit.toIntOrNull()?.let {
+                            settingsRepository.hereMonthlyLimit = it
+                        }
                         onSave()
                         onDismiss()
                     },
@@ -321,6 +242,112 @@ fun SettingsDialog(
                     Text("Speichern")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ApiUsageCard(
+    info: ApiUsageInfo,
+    numberFormat: NumberFormat
+) {
+    val barColor = when (info.status) {
+        UsageStatus.BLOCKED -> Color(0xFFE53935)  // Rot
+        UsageStatus.WARNING -> Color(0xFFFF9800)  // Orange
+        UsageStatus.OK -> Color(0xFF4CAF50)       // Grün
+    }
+
+    val statusText = when (info.status) {
+        UsageStatus.BLOCKED -> "Limit erreicht!"
+        UsageStatus.WARNING -> "Warnung"
+        UsageStatus.OK -> "OK"
+    }
+
+    val periodText = when (info.periodType) {
+        PeriodType.MONTHLY -> info.periodStart
+        PeriodType.DAILY -> "Heute"
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(12.dp)
+    ) {
+        // Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = info.apiName,
+                fontWeight = FontWeight.Medium,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = statusText,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = barColor
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Progress Bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(12.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction = (info.percentage / 100f).coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(barColor)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Stats
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "${numberFormat.format(info.used)} / ${numberFormat.format(info.limit)}",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = periodText,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        // Remaining
+        Text(
+            text = "${numberFormat.format(info.remaining)} verbleibend (${String.format("%.1f", info.percentage)}%)",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        // Warning bei Limit erreicht
+        if (info.status == UsageStatus.BLOCKED) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Fallback auf OSRM aktiv (ohne Verkehr)",
+                fontSize = 11.sp,
+                color = barColor
+            )
         }
     }
 }
