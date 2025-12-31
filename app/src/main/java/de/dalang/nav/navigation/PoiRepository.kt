@@ -260,25 +260,26 @@ class PoiRepository {
                 val fuelTypes = station.optJSONArray("fuelTypes")
                 var diesel: Double? = null
                 var e5: Double? = null
-                var e10: Double? = null
 
                 if (fuelTypes != null) {
+                    CrashLogger.log("PoiRepository: Station $name has ${fuelTypes.length()} fuel types")
                     for (j in 0 until fuelTypes.length()) {
                         val fuelType = fuelTypes.getJSONObject(j)
                         val fuelName = fuelType.optString("name", "").lowercase()
                         val price = fuelType.optDouble("price", Double.NaN).takeIf { !it.isNaN() }
+                        CrashLogger.log("PoiRepository: Fuel type: '$fuelName' price: $price")
 
                         when {
                             fuelName.contains("diesel") -> diesel = price
-                            fuelName.contains("super") && !fuelName.contains("e10") -> e5 = price
-                            fuelName.contains("e10") || fuelName.contains("super e10") -> e10 = price
-                            fuelName.contains("e5") || fuelName.contains("super e5") -> e5 = price
+                            fuelName.contains("super") || fuelName.contains("e5") || fuelName.contains("95") -> e5 = price
                         }
                     }
+                } else {
+                    CrashLogger.log("PoiRepository: Station $name has NO fuel types")
                 }
 
-                val fuelPrices = if (diesel != null || e5 != null || e10 != null) {
-                    FuelPrices(diesel = diesel, e5 = e5, e10 = e10)
+                val fuelPrices = if (diesel != null || e5 != null) {
+                    FuelPrices(diesel = diesel, e5 = e5, e10 = null)
                 } else null
 
                 results.add(
