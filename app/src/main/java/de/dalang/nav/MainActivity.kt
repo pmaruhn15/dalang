@@ -39,6 +39,7 @@ import de.dalang.nav.ui.components.NavigationPanel
 import de.dalang.nav.ui.components.OfflineMapsDialog
 import de.dalang.nav.ui.components.PoiSelectionDialog
 import de.dalang.nav.ui.components.SearchBar
+import de.dalang.nav.ui.components.UpdateDialog
 import de.dalang.nav.ui.theme.DaLangTheme
 import de.dalang.nav.util.CrashLogger
 
@@ -384,6 +385,7 @@ fun DrawerContent(
     var showOfflineMaps by remember { mutableStateOf(false) }
     var showDebugLog by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
+    var showUpdate by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -438,6 +440,17 @@ fun DrawerContent(
             onClick = {
                 CrashLogger.log("DrawerContent: Debug Log clicked")
                 showDebugLog = true
+            },
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+
+        // App aktualisieren
+        NavigationDrawerItem(
+            label = { Text("App aktualisieren") },
+            selected = false,
+            onClick = {
+                CrashLogger.log("DrawerContent: App aktualisieren clicked")
+                showUpdate = true
             },
             modifier = Modifier.padding(vertical = 4.dp)
         )
@@ -543,6 +556,13 @@ fun DrawerContent(
                 }
             }
         }
+    }
+
+    // Update Dialog
+    if (showUpdate) {
+        UpdateDialog(
+            onDismiss = { showUpdate = false }
+        )
     }
 }
 
