@@ -45,7 +45,72 @@ class PoiRepository {
     private val tankerkoenigApiKey = "00000000-0000-0000-0000-000000000002"
 
     /**
-     * Sucht POIs in der Nähe einer Position
+     * Sucht POIs entlang einer Route
+     */
+    suspend fun searchAlongRoute(
+        type: PoiType,
+        routeGeometry: List<LatLng>,
+        currentLocation: LatLng,
+        maxDistanceFromRouteKm: Double = 2.0,
+        limit: Int = 15
+    ): List<Poi> = withContext(Dispatchers.IO) {
+        try {
+            CrashLogger.log("PoiRepository: Searching for ${type.displayName} along route with ${routeGeometry.size} points")
+
+            if (routeGeometry.isEmpty()) {
+                return@withContext emptyList()
+            }
+
+            // Sample-Punkte entlang der Route (alle ~5km)
+            val samplePoints = sampleRoutePoints(routeGeometry, 5.0)
+            CrashLogger.log("PoiRepository: Using ${samplePoints.size} sample points along route")
+
+            val allResults = mutableListOf<Poi>()
+            val seenLocations = mutableSetOf<String>()
+
+            for (samplePoint in samplePoints) {
+                val results = when (type) {
+                    PoiType.GAS_STATION -> searchGasStationsWithTankerkoenig(samplePoint, maxDistanceFromRouteKm + 3.0)
+                    else -> searchWithNominatim(type, samplePoint, maxDistanceFromRouteKm + 3.0)
+                }
+
+                // Nur POIs hinzufügen, die nah an der Route sind und nicht schon vorhanden
+                for (poi in results) {
+                    val locationKey = "${poi.lat.format(4)}_${poi.lng.format(4)}"
+                    if (locationKey !in seenLocations) {
+                        val distanceToRoute = minDistanceToRoute(poi.lat, poi.lng, routeGeometry)
+                        if (distanceToRoute <= maxDistanceFromRouteKm) {
+                            // Entfernung vom aktuellen Standort berechnen
+                            val distanceFromCurrent = calculateDistance(
+                                currentLocation.lat, currentLocation.lng,
+                                poi.lat, poi.lng
+                            )
+                            allResults.add(poi.copy(
+                                distanceKm = distanceFromCurrent,
+                                estimatedArrivalMinutes = estimateArrivalTime(distanceFromCurrent)
+                            ))
+                            seenLocations.add(locationKey)
+                        }
+                    }
+                }
+            }
+
+            // Nach Entfernung vom aktuellen Standort sortieren
+            val sortedResults = allResults
+                .sortedBy { it.distanceKm }
+                .take(limit)
+
+            CrashLogger.log("PoiRepository: Found ${sortedResults.size} ${type.displayName} along route")
+            sortedResults
+
+        } catch (e: Exception) {
+            CrashLogger.logError("PoiRepository", "Search along route failed for ${type.displayName}", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Sucht POIs in der Nähe einer Position (Fallback wenn keine Route)
      */
     suspend fun searchNearby(
         type: PoiType,
@@ -73,6 +138,54 @@ class PoiRepository {
             CrashLogger.logError("PoiRepository", "Search failed for ${type.displayName}", e)
             emptyList()
         }
+    }
+
+    private fun Double.format(digits: Int) = "%.${digits}f".format(this)
+
+    /**
+     * Sample-Punkte entlang der Route (ca. alle sampleDistanceKm Kilometer)
+     */
+    private fun sampleRoutePoints(geometry: List<LatLng>, sampleDistanceKm: Double): List<LatLng> {
+        if (geometry.isEmpty()) return emptyList()
+        if (geometry.size == 1) return geometry
+
+        val samples = mutableListOf(geometry.first())
+        var accumulatedDistance = 0.0
+
+        for (i in 1 until geometry.size) {
+            val prev = geometry[i - 1]
+            val curr = geometry[i]
+            val segmentDistance = calculateDistance(prev.lat, prev.lng, curr.lat, curr.lng)
+            accumulatedDistance += segmentDistance
+
+            if (accumulatedDistance >= sampleDistanceKm) {
+                samples.add(curr)
+                accumulatedDistance = 0.0
+            }
+        }
+
+        // Letzten Punkt immer hinzufügen
+        if (samples.last() != geometry.last()) {
+            samples.add(geometry.last())
+        }
+
+        return samples
+    }
+
+    /**
+     * Minimale Entfernung eines Punktes zur Route
+     */
+    private fun minDistanceToRoute(lat: Double, lng: Double, routeGeometry: List<LatLng>): Double {
+        if (routeGeometry.isEmpty()) return Double.MAX_VALUE
+
+        var minDist = Double.MAX_VALUE
+        for (point in routeGeometry) {
+            val dist = calculateDistance(lat, lng, point.lat, point.lng)
+            if (dist < minDist) {
+                minDist = dist
+            }
+        }
+        return minDist
     }
 
     /**

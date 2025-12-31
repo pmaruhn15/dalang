@@ -181,7 +181,7 @@ fun DaLangApp(viewModel: MainViewModel) {
     var poiResults by remember { mutableStateOf<List<Poi>>(emptyList()) }
     var isSearchingPoi by remember { mutableStateOf(false) }
 
-    // POI Suche starten
+    // POI Suche starten - entlang der Route wenn vorhanden
     fun searchPoi(type: PoiType) {
         val location = currentLocation ?: return
         selectedPoiType = type
@@ -190,7 +190,14 @@ fun DaLangApp(viewModel: MainViewModel) {
         poiResults = emptyList()
 
         scope.launch {
-            poiResults = poiRepository.searchNearby(type, location)
+            val route = navigationState.route
+            poiResults = if (route != null && route.geometry.isNotEmpty()) {
+                // Suche entlang der Route
+                poiRepository.searchAlongRoute(type, route.geometry, location)
+            } else {
+                // Fallback: Suche in der Nähe
+                poiRepository.searchNearby(type, location)
+            }
             isSearchingPoi = false
         }
     }
@@ -297,6 +304,7 @@ fun DaLangApp(viewModel: MainViewModel) {
                 poiType = selectedPoiType!!,
                 pois = poiResults,
                 isLoading = isSearchingPoi,
+                isAlongRoute = navigationState.route != null,
                 onSelect = { poi ->
                     // POI als Zwischenstopp zur Route hinzufügen
                     viewModel.addWaypoint(LatLng(poi.lat, poi.lng))

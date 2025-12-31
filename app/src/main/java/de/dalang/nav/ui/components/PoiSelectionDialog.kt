@@ -26,9 +26,11 @@ fun PoiSelectionDialog(
     poiType: PoiType,
     pois: List<Poi>,
     isLoading: Boolean,
+    isAlongRoute: Boolean = false,
     onSelect: (Poi) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val locationText = if (isAlongRoute) "entlang der Route" else "in der Nähe"
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -40,7 +42,7 @@ fun PoiSelectionDialog(
         ) {
             // Header
             Text(
-                text = "${poiType.displayName} in der Nähe",
+                text = "${poiType.displayName} $locationText",
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -78,7 +80,7 @@ fun PoiSelectionDialog(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Keine ${poiType.displayName} in der Nähe gefunden",
+                            text = "Keine ${poiType.displayName} $locationText gefunden",
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
