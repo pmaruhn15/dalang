@@ -3,6 +3,8 @@ package de.dalang.nav.ui.components
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -227,20 +229,26 @@ fun MapViewComposable(
                         // Layer existiert nicht
                     }
 
-                    // Icon zum Style hinzufügen (falls noch nicht vorhanden)
-                    if (style.getImage("position-arrow") == null) {
-                        val drawable = ContextCompat.getDrawable(context, R.drawable.ic_position_arrow)
-                        if (drawable != null) {
-                            val bitmap = Bitmap.createBitmap(
-                                drawable.intrinsicWidth,
-                                drawable.intrinsicHeight,
-                                Bitmap.Config.ARGB_8888
-                            )
-                            val canvas = Canvas(bitmap)
-                            drawable.setBounds(0, 0, canvas.width, canvas.height)
-                            drawable.draw(canvas)
-                            style.addImage("position-arrow", bitmap)
-                        }
+                    // Icon mit Farbe aus Settings erstellen
+                    val markerColorInt = markerColor.colorValue.toInt()
+
+                    // Altes Icon entfernen (falls Farbe geändert)
+                    try {
+                        style.removeImage("position-arrow")
+                    } catch (_: Exception) {}
+
+                    val drawable = ContextCompat.getDrawable(context, R.drawable.ic_position_arrow)
+                    if (drawable != null) {
+                        drawable.colorFilter = PorterDuffColorFilter(markerColorInt, PorterDuff.Mode.SRC_IN)
+                        val bitmap = Bitmap.createBitmap(
+                            drawable.intrinsicWidth,
+                            drawable.intrinsicHeight,
+                            Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = Canvas(bitmap)
+                        drawable.setBounds(0, 0, canvas.width, canvas.height)
+                        drawable.draw(canvas)
+                        style.addImage("position-arrow", bitmap)
                     }
 
                     // Standort als GeoJSON Point
@@ -257,7 +265,7 @@ fun MapViewComposable(
                     val source = GeoJsonSource("location-source", geoJson)
                     style.addSource(source)
 
-                    // Weißer Pfeil als Symbol mit Kompass-Rotation
+                    // Pfeil als Symbol mit Kompass-Rotation
                     val locationLayer = SymbolLayer("location-layer", "location-source").apply {
                         setProperties(
                             PropertyFactory.iconImage("position-arrow"),
@@ -382,20 +390,26 @@ fun MapViewComposable(
                     }
 
                     if (destination != null) {
-                        // Icon zum Style hinzufügen (falls noch nicht vorhanden)
-                        if (style.getImage("destination-marker") == null) {
-                            val drawable = ContextCompat.getDrawable(context, R.drawable.ic_destination_marker)
-                            if (drawable != null) {
-                                val bitmap = Bitmap.createBitmap(
-                                    drawable.intrinsicWidth,
-                                    drawable.intrinsicHeight,
-                                    Bitmap.Config.ARGB_8888
-                                )
-                                val canvas = Canvas(bitmap)
-                                drawable.setBounds(0, 0, canvas.width, canvas.height)
-                                drawable.draw(canvas)
-                                style.addImage("destination-marker", bitmap)
-                            }
+                        // Icon mit Farbe aus Settings erstellen
+                        val markerColorInt = markerColor.colorValue.toInt()
+
+                        // Altes Icon entfernen (falls Farbe geändert)
+                        try {
+                            style.removeImage("destination-marker")
+                        } catch (_: Exception) {}
+
+                        val drawable = ContextCompat.getDrawable(context, R.drawable.ic_destination_marker)
+                        if (drawable != null) {
+                            drawable.colorFilter = PorterDuffColorFilter(markerColorInt, PorterDuff.Mode.SRC_IN)
+                            val bitmap = Bitmap.createBitmap(
+                                drawable.intrinsicWidth,
+                                drawable.intrinsicHeight,
+                                Bitmap.Config.ARGB_8888
+                            )
+                            val canvas = Canvas(bitmap)
+                            drawable.setBounds(0, 0, canvas.width, canvas.height)
+                            drawable.draw(canvas)
+                            style.addImage("destination-marker", bitmap)
                         }
 
                         val geoJson = """
