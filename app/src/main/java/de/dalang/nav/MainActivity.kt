@@ -30,6 +30,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.platform.LocalView
 import de.dalang.nav.navigation.LatLng
+import de.dalang.nav.ui.components.HereSettingsDialog
 import de.dalang.nav.ui.components.MapViewComposable
 import de.dalang.nav.ui.components.NavigationPanel
 import de.dalang.nav.ui.components.OfflineMapsDialog
@@ -336,6 +337,7 @@ fun DrawerContent(
     onCloseDrawer: () -> Unit
 ) {
     var showSettings by remember { mutableStateOf(false) }
+    var showHereSettings by remember { mutableStateOf(false) }
     var showOfflineMaps by remember { mutableStateOf(false) }
     var showDebugLog by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
@@ -371,6 +373,16 @@ fun DrawerContent(
             selected = false,
             onClick = {
                 showSettings = true
+            },
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+
+        // HERE API
+        NavigationDrawerItem(
+            label = { Text("HERE API") },
+            selected = false,
+            onClick = {
+                showHereSettings = true
             },
             modifier = Modifier.padding(vertical = 4.dp)
         )
@@ -426,6 +438,14 @@ fun DrawerContent(
     if (showSettings) {
         SettingsDialog(
             onDismiss = { showSettings = false },
+            onSave = { }
+        )
+    }
+
+    // HERE Settings Dialog
+    if (showHereSettings) {
+        HereSettingsDialog(
+            onDismiss = { showHereSettings = false },
             onSave = { }
         )
     }
