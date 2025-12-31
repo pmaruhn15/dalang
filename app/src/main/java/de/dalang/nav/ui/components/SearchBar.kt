@@ -152,7 +152,7 @@ fun SearchBar(
                     }
                 } else {
                     LazyColumn {
-                        items(results, key = { it.osmId }) { result ->
+                        items(results, key = { "${it.lat}_${it.lon}" }) { result ->
                             SearchResultItem(
                                 result = result,
                                 onClick = {
