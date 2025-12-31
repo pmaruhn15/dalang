@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.navigation.Poi
@@ -381,6 +382,15 @@ fun MapClickDialog(
 fun DrawerContent(
     onCloseDrawer: () -> Unit
 ) {
+    val context = LocalContext.current
+    val appVersion = remember {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
+        } catch (e: Exception) {
+            "1.0.0"
+        }
+    }
+
     var showHereSettings by remember { mutableStateOf(false) }
     var showOfflineMaps by remember { mutableStateOf(false) }
     var showDebugLog by remember { mutableStateOf(false) }
@@ -473,7 +483,7 @@ fun DrawerContent(
 
         // Version
         Text(
-            text = "Version 1.0",
+            text = "Version $appVersion",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 16.dp, top = 8.dp)
