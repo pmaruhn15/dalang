@@ -304,8 +304,12 @@ fun MapClickDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(
+                Button(
                     onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color.Black
+                    ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Abbrechen")
@@ -313,9 +317,13 @@ fun MapClickDialog(
 
                 Button(
                     onClick = onNavigate,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color.Black
+                    ),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Route berechnen")
+                    Text("Route")
                 }
             }
         }

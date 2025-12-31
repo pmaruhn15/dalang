@@ -58,6 +58,10 @@ fun MapViewComposable(
         selectedStyle.getUrl(isDarkTheme)
     }
 
+    // Farben aus Settings
+    val routeColor = settingsRepository.routeColor
+    val markerColor = settingsRepository.markerColor
+
     AndroidView(
         factory = { ctx ->
             CrashLogger.log("MapView: Creating MapView")
@@ -206,8 +210,8 @@ fun MapViewComposable(
         }
     }
 
-    // Standort-Marker zeichnen (weißer Pfeil mit Kompass-Rotation)
-    LaunchedEffect(currentLocation, heading, isMapReady, styleVersion) {
+    // Standort-Marker zeichnen (Pfeil mit Kompass-Rotation)
+    LaunchedEffect(currentLocation, heading, isMapReady, styleVersion, markerColor) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
         val location = currentLocation ?: return@LaunchedEffect
@@ -276,7 +280,7 @@ fun MapViewComposable(
     }
 
     // Route zeichnen
-    LaunchedEffect(route, isMapReady, styleVersion) {
+    LaunchedEffect(route, isMapReady, styleVersion, routeColor) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
 
@@ -308,9 +312,12 @@ fun MapViewComposable(
                         val source = GeoJsonSource("route-source", geoJson)
                         style.addSource(source)
 
+                        // Farbe aus Settings konvertieren
+                        val routeColorInt = routeColor.colorValue.toInt()
+
                         val lineLayer = LineLayer("route-layer", "route-source").apply {
                             setProperties(
-                                PropertyFactory.lineColor(Color.parseColor("#FFFFFF")),
+                                PropertyFactory.lineColor(routeColorInt),
                                 PropertyFactory.lineWidth(6f),
                                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
@@ -358,8 +365,8 @@ fun MapViewComposable(
         }
     }
 
-    // Ziel-Marker zeichnen (weiß)
-    LaunchedEffect(destination, isMapReady, styleVersion) {
+    // Ziel-Marker zeichnen
+    LaunchedEffect(destination, isMapReady, styleVersion, markerColor) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
 
