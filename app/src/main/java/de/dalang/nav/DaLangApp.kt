@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.content.Intent
 import android.os.Build
 import de.dalang.nav.config.HereConfig
-import de.dalang.nav.config.TankerkoenigConfig
 import de.dalang.nav.util.CrashLogger
 import org.maplibre.android.MapLibre
 import org.maplibre.android.WellKnownTileServer
@@ -32,14 +31,6 @@ class DaLangApp : Application() {
             CrashLogger.log("DaLangApp: HereConfig initialized")
         } catch (e: Exception) {
             CrashLogger.logError("DaLangApp", "HereConfig init failed", e)
-        }
-
-        // Tankerkönig Config initialisieren
-        try {
-            TankerkoenigConfig.init(this)
-            CrashLogger.log("DaLangApp: TankerkoenigConfig initialized")
-        } catch (e: Exception) {
-            CrashLogger.logError("DaLangApp", "TankerkoenigConfig init failed", e)
         }
 
         // MapLibre MUSS vor jeder View initialisiert werden

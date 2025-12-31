@@ -444,9 +444,9 @@ fun DrawerContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // API Einstellungen (HERE + Tankerkönig)
+        // HERE API
         NavigationDrawerItem(
-            label = { Text("API Einstellungen") },
+            label = { Text("HERE API") },
             selected = false,
             onClick = {
                 showHereSettings = true

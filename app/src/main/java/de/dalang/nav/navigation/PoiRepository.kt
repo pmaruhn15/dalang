@@ -1,6 +1,6 @@
 package de.dalang.nav.navigation
 
-import de.dalang.nav.config.TankerkoenigConfig
+import de.dalang.nav.config.HereConfig
 import de.dalang.nav.util.CrashLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -68,7 +68,7 @@ class PoiRepository {
 
             for (samplePoint in samplePoints) {
                 val results = when (type) {
-                    PoiType.GAS_STATION -> searchGasStationsWithTankerkoenig(samplePoint, maxDistanceFromRouteKm + 3.0)
+                    PoiType.GAS_STATION -> searchGasStationsWithHere(samplePoint, maxDistanceFromRouteKm + 3.0)
                     else -> searchWithNominatim(type, samplePoint, maxDistanceFromRouteKm + 3.0)
                 }
 
@@ -120,7 +120,7 @@ class PoiRepository {
             CrashLogger.log("PoiRepository: Searching for ${type.displayName} near ${currentLocation.lat},${currentLocation.lng}")
 
             val results = when (type) {
-                PoiType.GAS_STATION -> searchGasStationsWithTankerkoenig(currentLocation, radiusKm)
+                PoiType.GAS_STATION -> searchGasStationsWithHere(currentLocation, radiusKm)
                 else -> searchWithNominatim(type, currentLocation, radiusKm)
             }
 
@@ -187,30 +187,28 @@ class PoiRepository {
     }
 
     /**
-     * Sucht Tankstellen mit Tankerkönig API inkl. Spritpreise
-     * API Key unter https://creativecommons.tankerkoenig.de erhältlich
+     * Sucht Tankstellen mit HERE Fuel Prices API inkl. Spritpreise
+     * API: https://fuel-v2.cc.api.here.com/fuel/stations.json
      */
-    private suspend fun searchGasStationsWithTankerkoenig(
+    private suspend fun searchGasStationsWithHere(
         center: LatLng,
         radiusKm: Double
     ): List<Poi> = withContext(Dispatchers.IO) {
         try {
-            // Prüfen ob Tankerkönig API konfiguriert ist
-            if (!TankerkoenigConfig.isConfigured()) {
-                CrashLogger.log("PoiRepository: Tankerkönig not configured, falling back to Nominatim")
+            // Prüfen ob HERE API konfiguriert ist
+            if (!HereConfig.isConfigured()) {
+                CrashLogger.log("PoiRepository: HERE not configured, falling back to Nominatim")
                 return@withContext searchWithNominatim(PoiType.GAS_STATION, center, radiusKm)
             }
 
-            val apiKey = TankerkoenigConfig.getApiKey()
-            val url = "${TankerkoenigConfig.API_BASE_URL}?" +
-                "lat=${center.lat}" +
-                "&lng=${center.lng}" +
-                "&rad=${radiusKm.coerceAtMost(25.0)}" +  // Max 25km radius
-                "&sort=dist" +
-                "&type=all" +
-                "&apikey=$apiKey"
+            val apiKey = HereConfig.getApiKey()
+            // HERE Fuel Prices API v2 - radius in Metern
+            val radiusMeters = (radiusKm * 1000).toInt().coerceAtMost(100000)
+            val url = "https://fuel-v2.cc.api.here.com/fuel/stations.json?" +
+                "prox=${center.lat},${center.lng},$radiusMeters" +
+                "&apiKey=$apiKey"
 
-            CrashLogger.log("PoiRepository: Tankerkönig request at ${center.lat},${center.lng} radius ${radiusKm}km")
+            CrashLogger.log("PoiRepository: HERE Fuel Prices request at ${center.lat},${center.lng} radius ${radiusKm}km")
 
             val connection = URL(url).openConnection()
             connection.setRequestProperty("User-Agent", "DaLang Navigation App")
@@ -218,55 +216,79 @@ class PoiRepository {
             connection.readTimeout = 10000
 
             val response = connection.getInputStream().bufferedReader().readText()
-            val json = JSONObject(response)
 
-            if (!json.optBoolean("ok", false)) {
-                val message = json.optString("message", "Unknown error")
-                CrashLogger.log("PoiRepository: Tankerkönig error: $message")
+            // HERE Usage zählen
+            HereConfig.incrementUsage()
+            CrashLogger.log("PoiRepository: HERE Fuel usage: ${HereConfig.getMonthlyUsage()}/${HereConfig.getMonthlyLimit()}")
+
+            val json = JSONObject(response)
+            val stationsObj = json.optJSONObject("stations")
+            if (stationsObj == null) {
+                CrashLogger.log("PoiRepository: HERE Fuel Prices - no stations object in response")
                 return@withContext searchWithNominatim(PoiType.GAS_STATION, center, radiusKm)
             }
 
-            val stations = json.optJSONArray("stations") ?: return@withContext emptyList()
+            val stationsArray = stationsObj.optJSONArray("items") ?: return@withContext emptyList()
             val results = mutableListOf<Poi>()
 
-            for (i in 0 until stations.length()) {
-                val station = stations.getJSONObject(i)
-                val lat = station.optDouble("lat", 0.0)
-                val lng = station.optDouble("lng", 0.0)
-                val brand = station.optString("brand", "").ifEmpty { "Tankstelle" }
+            for (i in 0 until stationsArray.length()) {
+                val station = stationsArray.getJSONObject(i)
+
+                // Position
+                val posArray = station.optJSONArray("position")
+                val lat = posArray?.optDouble(0, 0.0) ?: 0.0
+                val lng = posArray?.optDouble(1, 0.0) ?: 0.0
+
+                val brand = station.optString("brand", "Tankstelle")
                 val name = station.optString("name", brand)
 
                 // Adresse
-                val street = station.optString("street", "")
-                val houseNumber = station.optString("houseNumber", "")
-                val place = station.optString("place", "")
-                val address = buildString {
-                    if (street.isNotEmpty()) {
-                        append(street)
-                        if (houseNumber.isNotEmpty()) append(" $houseNumber")
-                    }
-                    if (place.isNotEmpty()) {
-                        if (isNotEmpty()) append(", ")
-                        append(place)
-                    }
-                }.ifEmpty { null }
+                val addressObj = station.optJSONObject("address")
+                val address = if (addressObj != null) {
+                    val street = addressObj.optString("street", "")
+                    val houseNumber = addressObj.optString("houseNumber", "")
+                    val city = addressObj.optString("city", "")
+                    buildString {
+                        if (street.isNotEmpty()) {
+                            append(street)
+                            if (houseNumber.isNotEmpty()) append(" $houseNumber")
+                        }
+                        if (city.isNotEmpty()) {
+                            if (isNotEmpty()) append(", ")
+                            append(city)
+                        }
+                    }.ifEmpty { null }
+                } else null
 
-                val distance = station.optDouble("dist", calculateDistance(center.lat, center.lng, lat, lng))
+                val distance = calculateDistance(center.lat, center.lng, lat, lng)
                 val arrivalMinutes = estimateArrivalTime(distance)
 
                 // Kraftstoffpreise
-                val diesel = station.optDouble("diesel", Double.NaN).takeIf { !it.isNaN() }
-                val e5 = station.optDouble("e5", Double.NaN).takeIf { !it.isNaN() }
-                val isOpen = station.optBoolean("isOpen", true)
+                var diesel: Double? = null
+                var e5: Double? = null
 
-                // Nur offene Tankstellen mit Preisen
-                val fuelPrices = if (isOpen && (diesel != null || e5 != null)) {
+                val fuelTypesArray = station.optJSONArray("fuelTypes")
+                if (fuelTypesArray != null) {
+                    for (j in 0 until fuelTypesArray.length()) {
+                        val fuelType = fuelTypesArray.getJSONObject(j)
+                        val fuelName = fuelType.optString("name", "").lowercase()
+                        val price = fuelType.optDouble("price", Double.NaN).takeIf { !it.isNaN() }
+
+                        when {
+                            fuelName.contains("diesel") -> diesel = price
+                            fuelName.contains("super") || fuelName.contains("e5") ||
+                                fuelName.contains("95") || fuelName.contains("benzin") -> e5 = price
+                        }
+                    }
+                }
+
+                val fuelPrices = if (diesel != null || e5 != null) {
                     FuelPrices(diesel = diesel, e5 = e5, e10 = null)
                 } else null
 
                 results.add(
                     Poi(
-                        name = if (brand.isNotEmpty() && brand != name) "$brand ($name)" else name,
+                        name = if (brand.isNotEmpty() && brand != name) "$brand" else name,
                         lat = lat,
                         lng = lng,
                         address = address,
@@ -277,11 +299,11 @@ class PoiRepository {
                 )
             }
 
-            CrashLogger.log("PoiRepository: Tankerkönig returned ${results.size} stations")
+            CrashLogger.log("PoiRepository: HERE Fuel Prices returned ${results.size} stations")
             results
 
         } catch (e: Exception) {
-            CrashLogger.logError("PoiRepository", "Tankerkönig failed, falling back to Nominatim", e)
+            CrashLogger.logError("PoiRepository", "HERE Fuel Prices failed, falling back to Nominatim", e)
             searchWithNominatim(PoiType.GAS_STATION, center, radiusKm)
         }
     }
