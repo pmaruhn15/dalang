@@ -370,13 +370,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Kombinierte Route erstellen
                     val combinedGeometry = routeToWaypoint.geometry + routeToDestination.geometry
                     val combinedSteps = routeToWaypoint.steps + routeToDestination.steps
-                    val combinedDistance = routeToWaypoint.distanceMeters + routeToDestination.distanceMeters
-                    val combinedDuration = routeToWaypoint.durationSeconds + routeToDestination.durationSeconds
+                    val combinedDistance = routeToWaypoint.distance + routeToDestination.distance
+                    val combinedDuration = routeToWaypoint.duration + routeToDestination.duration
 
                     val combinedRoute = Route(
                         geometry = combinedGeometry,
-                        distanceMeters = combinedDistance,
-                        durationSeconds = combinedDuration,
+                        distance = combinedDistance,
+                        duration = combinedDuration,
                         steps = combinedSteps
                     )
 
