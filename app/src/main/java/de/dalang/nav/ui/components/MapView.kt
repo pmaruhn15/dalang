@@ -38,7 +38,8 @@ import org.maplibre.android.style.sources.GeoJsonSource
 
 // OpenFreeMap styles (kostenlos, kein API Key)
 private const val OPENFREEMAP_LIGHT = "https://tiles.openfreemap.org/styles/positron"
-private const val OPENFREEMAP_DARK = "https://tiles.openfreemap.org/styles/dark"
+// Custom dark style aus Assets (mit ausgeblendeten Einbahnstraßen-Pfeilen und Gehwegen)
+private const val CUSTOM_DARK_STYLE = "asset://map_style_dark.json"
 
 // MapTiler styles (mit API Key)
 private fun mapTilerStyle(style: String, apiKey: String) =
@@ -88,8 +89,8 @@ fun MapViewComposable(
             mapTilerStyle("streets-v2-light", mapTilerKey)
         }
     } else {
-        // OpenFreeMap (kostenlos) - Light oder Dark je nach Theme
-        if (isDarkTheme) OPENFREEMAP_DARK else OPENFREEMAP_LIGHT
+        // OpenFreeMap (kostenlos) - Light von URL, Dark aus Custom Asset
+        if (isDarkTheme) CUSTOM_DARK_STYLE else OPENFREEMAP_LIGHT
     }
 
     AndroidView(
