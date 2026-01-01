@@ -4,8 +4,8 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- McDonald's Golden Arches M -->
+    <!-- McDonald's Golden Arches M (official logo shape) -->
     <path
-        android:fillColor="#000000"
-        android:pathData="M3,21 L3,5 C3,3 4,2 5.5,2 C7,2 8,3 9,5 L12,12 L15,5 C16,3 17,2 18.5,2 C20,2 21,3 21,5 L21,21 L18,21 L18,9 L14,18 L10,18 L6,9 L6,21 Z"/>
+        android:fillColor="#FFC300"
+        android:pathData="M17.243,3.006c2.066,0 3.742,8.714 3.742,19.478L24,22.484c0,-11.588 -3.042,-20.968 -6.766,-20.968c-2.127,0 -4.007,2.81 -5.248,7.227c-1.241,-4.416 -3.121,-7.227 -5.231,-7.227C3.031,1.516 0,10.888 0,22.476l3.014,0c0,-10.763 1.658,-19.47 3.724,-19.47c2.066,0 3.741,8.05 3.741,17.98l2.997,0c0,-9.93 1.684,-17.98 3.75,-17.98Z"/>
 </vector>
