@@ -242,8 +242,12 @@ fun MapViewComposable(
         }
     }
 
-    // Standort-Marker zeichnen (Pfeil mit Kompass-Rotation)
-    LaunchedEffect(currentLocation, heading, isMapReady, styleVersion) {
+    // Ego-Marker Rotation: Ab 5 km/h GPS-Bearing nutzen, sonst Kompass-Heading
+    // 5 km/h = 1.39 m/s
+    val effectiveRotation = if (speed > 1.39f) bearing else heading
+
+    // Standort-Marker zeichnen (Pfeil mit Rotation)
+    LaunchedEffect(currentLocation, effectiveRotation, isMapReady, styleVersion) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
         val location = currentLocation ?: return@LaunchedEffect
@@ -289,12 +293,12 @@ fun MapViewComposable(
                     val source = GeoJsonSource("location-source", geoJson)
                     style.addSource(source)
 
-                    // Pfeil als Symbol mit Kompass-Rotation
+                    // Pfeil als Symbol mit Rotation (GPS-Bearing ab 5 km/h, sonst Kompass)
                     val locationLayer = SymbolLayer("location-layer", "location-source").apply {
                         setProperties(
                             PropertyFactory.iconImage("position-arrow"),
                             PropertyFactory.iconSize(0.8f),
-                            PropertyFactory.iconRotate(heading),
+                            PropertyFactory.iconRotate(effectiveRotation),
                             PropertyFactory.iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
                             PropertyFactory.iconAllowOverlap(true),
                             PropertyFactory.iconIgnorePlacement(true)

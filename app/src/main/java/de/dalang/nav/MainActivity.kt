@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -173,6 +174,7 @@ fun DaLangApp(viewModel: MainViewModel) {
     val clickedLocation by viewModel.clickedLocation.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val infoMessage by viewModel.infoMessage.collectAsState()
+    val isRecalculatingRoute by viewModel.isRecalculatingRoute.collectAsState()
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -333,6 +335,40 @@ fun DaLangApp(viewModel: MainViewModel) {
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        // Recalculating Banner - Slide von oben
+        AnimatedVisibility(
+            visible = isRecalculatingRoute,
+            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Text(
+                        text = "Route wird neu berechnet...",
+                        color = Color.White,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
 
         // Suchleiste oben mit Menu-Button
         if (!navigationState.isNavigating) {

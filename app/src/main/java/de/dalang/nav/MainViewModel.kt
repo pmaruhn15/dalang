@@ -79,6 +79,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _infoMessage = MutableStateFlow<String?>(null)
     val infoMessage: StateFlow<String?> = _infoMessage.asStateFlow()
 
+    // Für Recalculating Banner
+    private val _isRecalculatingRoute = MutableStateFlow(false)
+    val isRecalculatingRoute: StateFlow<Boolean> = _isRecalculatingRoute.asStateFlow()
+
+    // Off-route Schwellenwert in Metern
+    private val OFF_ROUTE_THRESHOLD = 40.0
+    // Cooldown um nicht zu oft neu zu berechnen
+    private var lastRecalculationTime = 0L
+    private val RECALCULATION_COOLDOWN_MS = 5000L
+
     // Fuer Map-Klick Navigation
     private val _clickedLocation = MutableStateFlow<LatLng?>(null)
     val clickedLocation: StateFlow<LatLng?> = _clickedLocation.asStateFlow()
@@ -423,6 +433,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val route = state.route ?: return
             val currentStep = state.currentStep ?: return
 
+            // Prüfen ob wir von der Route abgewichen sind
+            val distanceToRoute = calculateDistanceToRoute(location, route)
+            if (distanceToRoute > OFF_ROUTE_THRESHOLD) {
+                val now = System.currentTimeMillis()
+                if (now - lastRecalculationTime > RECALCULATION_COOLDOWN_MS) {
+                    CrashLogger.log("MainViewModel: Off-route detected (${distanceToRoute.toInt()}m), recalculating...")
+                    lastRecalculationTime = now
+                    recalculateRoute(location)
+                    return
+                }
+            }
+
             // Distanz zum nächsten Manöver
             val distanceToManeuver = location.distanceTo(currentStep.maneuver.location)
 
@@ -466,6 +488,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             updateRemainingDistance(location, route, state.currentStepIndex)
         } catch (e: Exception) {
             CrashLogger.logError("MainViewModel", "updateNavigation failed", e)
+        }
+    }
+
+    /**
+     * Berechnet die kürzeste Distanz vom aktuellen Standort zur Route
+     */
+    private fun calculateDistanceToRoute(location: LatLng, route: Route): Double {
+        var minDistance = Double.MAX_VALUE
+        val geometry = route.geometry
+
+        // Nur die nächsten ~50 Punkte der Route prüfen für Performance
+        val startIndex = 0.coerceAtLeast(findNearestPointIndex(location, geometry) - 10)
+        val endIndex = (startIndex + 50).coerceAtMost(geometry.size)
+
+        for (i in startIndex until endIndex) {
+            val distance = location.distanceTo(geometry[i])
+            if (distance < minDistance) {
+                minDistance = distance
+            }
+        }
+        return minDistance
+    }
+
+    /**
+     * Findet den Index des nächsten Punktes auf der Route
+     */
+    private fun findNearestPointIndex(location: LatLng, geometry: List<LatLng>): Int {
+        var minDistance = Double.MAX_VALUE
+        var nearestIndex = 0
+
+        for (i in geometry.indices) {
+            val distance = location.distanceTo(geometry[i])
+            if (distance < minDistance) {
+                minDistance = distance
+                nearestIndex = i
+            }
+        }
+        return nearestIndex
+    }
+
+    /**
+     * Neuberechnung der Route vom aktuellen Standort zum Ziel
+     */
+    private fun recalculateRoute(currentLocation: LatLng) {
+        val destination = _navigationState.value.destination ?: return
+
+        viewModelScope.launch(exceptionHandler) {
+            try {
+                _isRecalculatingRoute.value = true
+                CrashLogger.log("MainViewModel: Recalculating route to destination...")
+
+                val route = routeRepository.getRoute(currentLocation, destination)
+                if (route != null) {
+                    CrashLogger.log("MainViewModel: New route calculated with ${route.steps.size} steps")
+                    _navigationState.update {
+                        it.copy(
+                            route = route,
+                            currentStepIndex = 0,
+                            totalDistanceRemaining = route.distance,
+                            totalTimeRemaining = route.duration
+                        )
+                    }
+
+                    // Erste Ansage für neue Route
+                    route.steps.firstOrNull()?.let { step ->
+                        speakInstruction(step)
+                    }
+                } else {
+                    CrashLogger.logError("MainViewModel", "Route recalculation failed")
+                }
+            } catch (e: Exception) {
+                CrashLogger.logError("MainViewModel", "recalculateRoute failed", e)
+            } finally {
+                _isRecalculatingRoute.value = false
+            }
         }
     }
 

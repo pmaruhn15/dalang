@@ -84,11 +84,40 @@ private fun ActiveNavigationContent(
 ) {
     val currentStep = state.currentStep
 
-    // POI-Buttons oben rechts
+    // Lane-Visualisierung + Distanz + POI-Buttons in einer Zeile
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        // Lane-Anzeige wenn verfügbar, sonst Richtungspfeil
+        if (currentStep?.laneInfo != null && currentStep.laneInfo.lanes.isNotEmpty()) {
+            LaneGuidancePanel(
+                laneInfo = currentStep.laneInfo,
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            // Fallback: Richtungspfeil
+            Image(
+                painter = painterResource(id = getTurnIconRes(currentStep)),
+                contentDescription = "Richtung",
+                modifier = Modifier.size(64.dp),
+                colorFilter = ColorFilter.tint(Color.White)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Distanz
+        Text(
+            text = state.distanceToNextStep.formatDistance(),
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        // POI-Buttons rechts in der gleichen Zeile
         // McDonald's Button - mit Lade-Spinner oder aktivem Zustand
         IconButton(
             onClick = onMcDonaldsClick,
@@ -121,7 +150,7 @@ private fun ActiveNavigationContent(
             }
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(8.dp))
 
         // Tankstelle Button
         IconButton(
@@ -138,40 +167,6 @@ private fun ActiveNavigationContent(
                 colorFilter = ColorFilter.tint(Color.Black)
             )
         }
-    }
-
-    Spacer(modifier = Modifier.height(12.dp))
-
-    // Lane-Visualisierung oder Fallback auf Richtungspfeil
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Lane-Anzeige wenn verfügbar, sonst Richtungspfeil
-        if (currentStep?.laneInfo != null && currentStep.laneInfo.lanes.isNotEmpty()) {
-            LaneGuidancePanel(
-                laneInfo = currentStep.laneInfo,
-                modifier = Modifier.weight(1f)
-            )
-        } else {
-            // Fallback: Richtungspfeil
-            Image(
-                painter = painterResource(id = getTurnIconRes(currentStep)),
-                contentDescription = "Richtung",
-                modifier = Modifier.size(64.dp),
-                colorFilter = ColorFilter.tint(Color.White)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Distanz
-        Text(
-            text = state.distanceToNextStep.formatDistance(),
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
     }
 
     Spacer(modifier = Modifier.height(16.dp))
@@ -313,73 +308,57 @@ private fun RoutePreviewContent(
     }
 }
 
-// Lane-Guidance Panel
+// Lane-Guidance Panel - Google-Style: Pfeile pro Spur, empfohlene dicker
 @Composable
 private fun LaneGuidancePanel(
     laneInfo: LaneInfo,
     modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.15f))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.Center,
+        modifier = modifier,
+        horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically
     ) {
         laneInfo.lanes.forEachIndexed { index, lane ->
             LaneIndicator(
                 lane = lane,
-                modifier = Modifier.padding(horizontal = 2.dp)
+                modifier = Modifier.padding(horizontal = 1.dp)
             )
-            // Trennlinie zwischen Spuren (außer nach der letzten)
+            // Dünne Trennlinie zwischen Spuren
             if (index < laneInfo.lanes.size - 1) {
                 Box(
                     modifier = Modifier
                         .width(1.dp)
-                        .height(48.dp)
-                        .background(Color.White.copy(alpha = 0.3f))
+                        .height(40.dp)
+                        .background(Color.White.copy(alpha = 0.2f))
                 )
             }
         }
     }
 }
 
+// Google-Style Lane Indicator: Nur Pfeil, empfohlene größer und dicker
 @Composable
 private fun LaneIndicator(
     lane: Lane,
     modifier: Modifier = Modifier
 ) {
-    val backgroundColor = if (lane.isRecommended) {
-        Color.White
-    } else {
-        Color.Transparent
-    }
-    val iconTint = if (lane.isRecommended) {
-        Color.Black
-    } else {
-        Color.White.copy(alpha = 0.5f)
-    }
+    // Empfohlene Spur: größer, weiß, voll sichtbar
+    // Andere Spuren: kleiner, transparent
+    val iconSize = if (lane.isRecommended) 44.dp else 32.dp
+    val iconAlpha = if (lane.isRecommended) 1f else 0.4f
 
     Box(
         modifier = modifier
-            .size(48.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(backgroundColor)
-            .then(
-                if (!lane.isRecommended) {
-                    Modifier.border(1.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                } else {
-                    Modifier
-                }
-            ),
+            .width(44.dp)
+            .height(56.dp),
         contentAlignment = Alignment.Center
     ) {
         Image(
             painter = painterResource(id = getLaneIconRes(lane.direction)),
             contentDescription = lane.direction,
-            modifier = Modifier.size(32.dp),
-            colorFilter = ColorFilter.tint(iconTint)
+            modifier = Modifier.size(iconSize),
+            colorFilter = ColorFilter.tint(Color.White.copy(alpha = iconAlpha))
         )
     }
 }
