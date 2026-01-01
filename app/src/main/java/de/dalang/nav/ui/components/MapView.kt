@@ -3,6 +3,9 @@ package de.dalang.nav.ui.components
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.Typeface
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -17,6 +20,7 @@ import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.navigation.Poi
 import de.dalang.nav.navigation.PoiType
 import de.dalang.nav.navigation.Route
+import de.dalang.nav.settings.FuelType
 import de.dalang.nav.util.CrashLogger
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -44,6 +48,8 @@ fun MapViewComposable(
     isNavigating: Boolean,
     pois: List<Poi> = emptyList(),
     selectedPoiType: PoiType? = null,
+    preferredFuelType: FuelType = FuelType.DIESEL,
+    vehicleRangeKm: Int = 0,
     onMapClick: ((LatLng) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -426,8 +432,8 @@ fun MapViewComposable(
         }
     }
 
-    // POI Marker zeichnen
-    LaunchedEffect(pois, selectedPoiType, isMapReady, styleVersion) {
+    // POI Marker zeichnen (mit Preisen für Tankstellen)
+    LaunchedEffect(pois, selectedPoiType, preferredFuelType, vehicleRangeKm, isMapReady, styleVersion) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
 
@@ -437,12 +443,35 @@ fun MapViewComposable(
                     // Vorherige POI-Marker entfernen
                     try {
                         style.removeLayer("poi-layer")
+                        style.removeLayer("poi-cheapest-layer")
                         style.removeSource("poi-source")
+                        style.removeSource("poi-cheapest-source")
                     } catch (e: Exception) {
                         // Layer existiert nicht
                     }
 
                     if (pois.isNotEmpty() && selectedPoiType != null) {
+                        // Filter POIs nach Reichweite (wenn gesetzt)
+                        val filteredPois = if (vehicleRangeKm > 0) {
+                            pois.filter { it.distanceKm <= vehicleRangeKm }
+                        } else {
+                            pois
+                        }
+
+                        if (filteredPois.isEmpty()) {
+                            CrashLogger.log("MapView: No POIs within range")
+                            return@getStyle
+                        }
+
+                        // Günstigste Tankstelle finden (nur für Tankstellen)
+                        val cheapestPoi = if (selectedPoiType == PoiType.GAS_STATION) {
+                            filteredPois.filter { poi ->
+                                poi.fuelPrices?.getPriceForType(preferredFuelType) != null
+                            }.minByOrNull { poi ->
+                                poi.fuelPrices?.getPriceForType(preferredFuelType) ?: Double.MAX_VALUE
+                            }
+                        } else null
+
                         // Icon zum Style hinzufügen
                         val iconName = when (selectedPoiType) {
                             PoiType.GAS_STATION -> "poi-gas-station"
@@ -468,27 +497,76 @@ fun MapViewComposable(
                             }
                         }
 
-                        // POIs als FeatureCollection
-                        val features = pois.mapIndexed { index, poi ->
-                            """{"type":"Feature","id":$index,"geometry":{"type":"Point","coordinates":[${poi.lng},${poi.lat}]},"properties":{"name":"${poi.name.replace("\"", "\\\"")}"}}"""
-                        }.joinToString(",")
-                        val geoJson = """{"type":"FeatureCollection","features":[$features]}"""
-
-                        val source = GeoJsonSource("poi-source", geoJson)
-                        style.addSource(source)
-
-                        val poiLayer = SymbolLayer("poi-layer", "poi-source").apply {
-                            setProperties(
-                                PropertyFactory.iconImage(iconName),
-                                PropertyFactory.iconSize(0.6f),
-                                PropertyFactory.iconAllowOverlap(true),
-                                PropertyFactory.iconIgnorePlacement(true),
-                                PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER)
-                            )
+                        // Preis-Label Icons für Tankstellen erstellen
+                        if (selectedPoiType == PoiType.GAS_STATION) {
+                            filteredPois.forEachIndexed { index, poi ->
+                                val price = poi.fuelPrices?.getPriceForType(preferredFuelType)
+                                if (price != null) {
+                                    val isCheapest = poi == cheapestPoi
+                                    val priceIconName = "price-label-$index"
+                                    val priceBitmap = createPriceLabelBitmap(price, isCheapest)
+                                    style.addImage(priceIconName, priceBitmap)
+                                }
+                            }
                         }
-                        style.addLayer(poiLayer)
 
-                        CrashLogger.log("MapView: Drew ${pois.size} POI markers")
+                        // Normale POIs (nicht die günstigste)
+                        val normalPois = if (cheapestPoi != null) {
+                            filteredPois.filter { it != cheapestPoi }
+                        } else {
+                            filteredPois
+                        }
+
+                        if (normalPois.isNotEmpty()) {
+                            // POIs als FeatureCollection mit Preis-Infos
+                            val features = normalPois.mapIndexed { index, poi ->
+                                val priceIconName = if (selectedPoiType == PoiType.GAS_STATION &&
+                                    poi.fuelPrices?.getPriceForType(preferredFuelType) != null) {
+                                    "price-label-${filteredPois.indexOf(poi)}"
+                                } else {
+                                    iconName
+                                }
+                                """{"type":"Feature","id":$index,"geometry":{"type":"Point","coordinates":[${poi.lng},${poi.lat}]},"properties":{"name":"${poi.name.replace("\"", "\\\"")}", "icon":"$priceIconName"}}"""
+                            }.joinToString(",")
+                            val geoJson = """{"type":"FeatureCollection","features":[$features]}"""
+
+                            val source = GeoJsonSource("poi-source", geoJson)
+                            style.addSource(source)
+
+                            val poiLayer = SymbolLayer("poi-layer", "poi-source").apply {
+                                setProperties(
+                                    PropertyFactory.iconImage("{icon}"),
+                                    PropertyFactory.iconSize(1.0f),
+                                    PropertyFactory.iconAllowOverlap(true),
+                                    PropertyFactory.iconIgnorePlacement(true),
+                                    PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER)
+                                )
+                            }
+                            style.addLayer(poiLayer)
+                        }
+
+                        // Günstigste Tankstelle separat (obendrauf)
+                        if (cheapestPoi != null) {
+                            val cheapestIndex = filteredPois.indexOf(cheapestPoi)
+                            val priceIconName = "price-label-$cheapestIndex"
+                            val geoJson = """{"type":"Feature","geometry":{"type":"Point","coordinates":[${cheapestPoi.lng},${cheapestPoi.lat}]},"properties":{"icon":"$priceIconName"}}"""
+
+                            val source = GeoJsonSource("poi-cheapest-source", geoJson)
+                            style.addSource(source)
+
+                            val cheapestLayer = SymbolLayer("poi-cheapest-layer", "poi-cheapest-source").apply {
+                                setProperties(
+                                    PropertyFactory.iconImage("{icon}"),
+                                    PropertyFactory.iconSize(1.2f),  // Etwas größer
+                                    PropertyFactory.iconAllowOverlap(true),
+                                    PropertyFactory.iconIgnorePlacement(true),
+                                    PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER)
+                                )
+                            }
+                            style.addLayer(cheapestLayer)
+                        }
+
+                        CrashLogger.log("MapView: Drew ${filteredPois.size} POI markers, cheapest: ${cheapestPoi?.name}")
 
                         // Kamera auf Route + POIs zoomen (wenn nicht navigierend)
                         if (!isNavigating && route != null && route.geometry.isNotEmpty()) {
@@ -508,7 +586,7 @@ fun MapViewComposable(
                                 }
 
                                 // POI-Punkte hinzufügen
-                                pois.forEach { poi ->
+                                filteredPois.forEach { poi ->
                                     if (poi.lat >= -90 && poi.lat <= 90 &&
                                         poi.lng >= -180 && poi.lng <= 180) {
                                         bounds.include(
@@ -540,6 +618,54 @@ fun MapViewComposable(
             CrashLogger.logError("MapView", "getStyle failed for POIs", e)
         }
     }
+}
+
+/**
+ * Erstellt ein Bitmap mit Preis-Label für die Karte
+ */
+private fun createPriceLabelBitmap(price: Double, isCheapest: Boolean): Bitmap {
+    val priceText = String.format("%.2f€", price)
+
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 36f
+        typeface = Typeface.DEFAULT_BOLD
+        color = Color.WHITE
+    }
+
+    val textBounds = Rect()
+    paint.getTextBounds(priceText, 0, priceText.length, textBounds)
+
+    val padding = 16
+    val width = textBounds.width() + padding * 2
+    val height = textBounds.height() + padding * 2
+
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+
+    // Hintergrund (grün für günstigste, grau für andere)
+    val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = if (isCheapest) Color.parseColor("#4CAF50") else Color.parseColor("#424242")
+        style = Paint.Style.FILL
+    }
+    canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 8f, 8f, bgPaint)
+
+    // Rand
+    val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+    canvas.drawRoundRect(1f, 1f, width.toFloat() - 1f, height.toFloat() - 1f, 8f, 8f, borderPaint)
+
+    // Text
+    canvas.drawText(
+        priceText,
+        padding.toFloat(),
+        height.toFloat() - padding,
+        paint
+    )
+
+    return bitmap
 }
 
 /**

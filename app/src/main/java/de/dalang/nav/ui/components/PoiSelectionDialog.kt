@@ -20,6 +20,7 @@ import androidx.compose.ui.window.Dialog
 import de.dalang.nav.navigation.FuelPrices
 import de.dalang.nav.navigation.Poi
 import de.dalang.nav.navigation.PoiType
+import de.dalang.nav.settings.FuelType
 
 @Composable
 fun PoiSelectionDialog(
@@ -27,9 +28,18 @@ fun PoiSelectionDialog(
     pois: List<Poi>,
     isLoading: Boolean,
     isAlongRoute: Boolean = false,
+    preferredFuelType: FuelType = FuelType.DIESEL,
     onSelect: (Poi) -> Unit,
     onDismiss: () -> Unit
 ) {
+    // Günstigste Tankstelle finden
+    val cheapestPoi = if (poiType == PoiType.GAS_STATION) {
+        pois.filter { poi ->
+            poi.fuelPrices?.getPriceForType(preferredFuelType) != null
+        }.minByOrNull { poi ->
+            poi.fuelPrices?.getPriceForType(preferredFuelType) ?: Double.MAX_VALUE
+        }
+    } else null
     val locationText = if (isAlongRoute) "entlang der Route" else "in der Nähe"
     Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -102,6 +112,8 @@ fun PoiSelectionDialog(
                         ) { _, poi ->
                             PoiListItem(
                                 poi = poi,
+                                preferredFuelType = preferredFuelType,
+                                isCheapest = poi == cheapestPoi,
                                 onClick = { onSelect(poi) }
                             )
                         }
@@ -129,13 +141,21 @@ fun PoiSelectionDialog(
 @Composable
 private fun PoiListItem(
     poi: Poi,
+    preferredFuelType: FuelType = FuelType.DIESEL,
+    isCheapest: Boolean = false,
     onClick: () -> Unit
 ) {
+    val backgroundColor = if (isCheapest) {
+        Color(0xFF4CAF50).copy(alpha = 0.2f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(backgroundColor)
             .clickable { onClick() }
             .padding(16.dp)
     ) {
@@ -147,14 +167,30 @@ private fun PoiListItem(
             Column(
                 modifier = Modifier.weight(1f)
             ) {
-                Text(
-                    text = poi.name,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = poi.name,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (isCheapest) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Günstigste",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF4CAF50),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF4CAF50).copy(alpha = 0.2f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
 
                 if (!poi.address.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(2.dp))
@@ -188,10 +224,17 @@ private fun PoiListItem(
             }
         }
 
-        // Kraftstoffpreise anzeigen (nur für Tankstellen)
+        // Kraftstoffpreis anzeigen (nur für Tankstellen, nur ausgewählter Typ)
         poi.fuelPrices?.let { prices ->
-            Spacer(modifier = Modifier.height(8.dp))
-            FuelPricesRow(prices)
+            val price = prices.getPriceForType(preferredFuelType)
+            if (price != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                FuelPriceChip(
+                    label = preferredFuelType.displayName,
+                    price = price,
+                    isCheapest = isCheapest
+                )
+            }
         }
     }
 }
@@ -212,25 +255,36 @@ private fun FuelPricesRow(prices: FuelPrices) {
 }
 
 @Composable
-private fun FuelPriceChip(label: String, price: Double) {
+private fun FuelPriceChip(label: String, price: Double, isCheapest: Boolean = false) {
+    val chipBackground = if (isCheapest) {
+        Color(0xFF4CAF50)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val textColor = if (isCheapest) {
+        Color.White
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.surface)
+            .background(chipBackground)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = textColor.copy(alpha = 0.8f)
         )
         Spacer(modifier = Modifier.width(4.dp))
         Text(
             text = String.format("%.2f€", price),
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = textColor
         )
     }
 }

@@ -17,7 +17,17 @@ data class FuelPrices(
     val diesel: Double?,  // Preis in Euro
     val e5: Double?,      // Super E5
     val e10: Double?      // Super E10
-)
+) {
+    /**
+     * Gibt den Preis für den angegebenen Kraftstofftyp zurück
+     */
+    fun getPriceForType(fuelType: de.dalang.nav.settings.FuelType): Double? {
+        return when (fuelType) {
+            de.dalang.nav.settings.FuelType.DIESEL -> diesel
+            de.dalang.nav.settings.FuelType.SUPER -> e5 ?: e10
+        }
+    }
+}
 
 /**
  * POI (Point of Interest) Daten

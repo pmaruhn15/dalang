@@ -8,6 +8,14 @@ import java.util.Date
 import java.util.Locale
 
 /**
+ * Kraftstofftyp für die Preisanzeige
+ */
+enum class FuelType(val displayName: String) {
+    DIESEL("Diesel"),
+    SUPER("Super")
+}
+
+/**
  * API Usage Info für Fortschrittsanzeige
  */
 data class ApiUsageInfo(
@@ -47,6 +55,23 @@ class SettingsRepository(context: Context) {
     var voiceEnabled: Boolean
         get() = prefs.getBoolean(KEY_VOICE_ENABLED, true)
         set(value) = prefs.edit { putBoolean(KEY_VOICE_ENABLED, value) }
+
+    // Kraftstofftyp für Preisanzeige (Diesel oder Super)
+    var preferredFuelType: FuelType
+        get() {
+            val stored = prefs.getString(KEY_FUEL_TYPE, FuelType.DIESEL.name) ?: FuelType.DIESEL.name
+            return try {
+                FuelType.valueOf(stored)
+            } catch (e: Exception) {
+                FuelType.DIESEL
+            }
+        }
+        set(value) = prefs.edit { putString(KEY_FUEL_TYPE, value.name) }
+
+    // Fahrzeug-Reichweite in km (für Tankstellen-Filterung)
+    var vehicleRangeKm: Int
+        get() = prefs.getInt(KEY_VEHICLE_RANGE_KM, 0) // 0 = nicht gesetzt/unbegrenzt
+        set(value) = prefs.edit { putInt(KEY_VEHICLE_RANGE_KM, value) }
 
     // HERE API - Monatliches Limit (Free Tier: 250.000/Monat)
     var hereMonthlyLimit: Int
@@ -172,6 +197,8 @@ class SettingsRepository(context: Context) {
         private const val PREFS_NAME = "dalang_settings"
         private const val KEY_HERE_API_KEY = "here_api_key"
         private const val KEY_VOICE_ENABLED = "voice_enabled"
+        private const val KEY_FUEL_TYPE = "preferred_fuel_type"
+        private const val KEY_VEHICLE_RANGE_KM = "vehicle_range_km"
 
         // HERE Usage Tracking (monatlich)
         private const val KEY_HERE_MONTHLY_LIMIT = "here_monthly_limit"

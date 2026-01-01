@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import de.dalang.nav.config.HereConfig
 import de.dalang.nav.settings.ApiUsageInfo
+import de.dalang.nav.settings.FuelType
 import de.dalang.nav.settings.PeriodType
 import de.dalang.nav.settings.SettingsRepository
 import de.dalang.nav.settings.UsageStatus
@@ -42,6 +43,8 @@ fun HereSettingsDialog(
     var hereApiKey by remember { mutableStateOf(HereConfig.getApiKey()) }
     var showApiKey by remember { mutableStateOf(false) }
     var monthlyLimit by remember { mutableStateOf(settingsRepository.hereMonthlyLimit.toString()) }
+    var selectedFuelType by remember { mutableStateOf(settingsRepository.preferredFuelType) }
+    var vehicleRangeKm by remember { mutableStateOf(settingsRepository.vehicleRangeKm.let { if (it == 0) "" else it.toString() }) }
 
     val usageInfos = remember { settingsRepository.getAllApiUsageInfos() }
     val numberFormat = remember { NumberFormat.getNumberInstance(Locale.GERMANY) }
@@ -133,6 +136,94 @@ fun HereSettingsDialog(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "platform.here.com → Projects → API Keys",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Kraftstoff-Einstellungen
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Tankstellen",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Kraftstofftyp",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FuelType.entries.forEach { fuelType ->
+                    FilterChip(
+                        selected = selectedFuelType == fuelType,
+                        onClick = { selectedFuelType = fuelType },
+                        label = { Text(fuelType.displayName) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Wird auf der Karte und im Dialog angezeigt",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Reichweite (km)",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(12.dp)
+            ) {
+                if (vehicleRangeKm.isEmpty()) {
+                    Text(
+                        text = "z.B. 500",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 14.sp
+                    )
+                }
+
+                BasicTextField(
+                    value = vehicleRangeKm,
+                    onValueChange = { vehicleRangeKm = it.filter { c -> c.isDigit() } },
+                    textStyle = TextStyle(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 14.sp
+                    ),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Leer lassen für unbegrenzt",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -253,6 +344,8 @@ fun HereSettingsDialog(
                         monthlyLimit.toIntOrNull()?.let {
                             settingsRepository.hereMonthlyLimit = it
                         }
+                        settingsRepository.preferredFuelType = selectedFuelType
+                        settingsRepository.vehicleRangeKm = vehicleRangeKm.toIntOrNull() ?: 0
                         onSave()
                         onDismiss()
                     },

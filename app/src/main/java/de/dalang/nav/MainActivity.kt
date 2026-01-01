@@ -34,6 +34,8 @@ import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.navigation.Poi
 import de.dalang.nav.navigation.PoiRepository
 import de.dalang.nav.navigation.PoiType
+import de.dalang.nav.settings.FuelType
+import de.dalang.nav.settings.SettingsRepository
 import de.dalang.nav.ui.components.HereSettingsDialog
 import de.dalang.nav.ui.components.MapViewComposable
 import de.dalang.nav.ui.components.NavigationPanel
@@ -174,6 +176,12 @@ fun DaLangApp(viewModel: MainViewModel) {
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // Settings
+    val settingsRepository = remember { SettingsRepository(context) }
+    var preferredFuelType by remember { mutableStateOf(settingsRepository.preferredFuelType) }
+    var vehicleRangeKm by remember { mutableStateOf(settingsRepository.vehicleRangeKm) }
 
     // POI Search State
     val poiRepository = remember { PoiRepository() }
@@ -274,6 +282,8 @@ fun DaLangApp(viewModel: MainViewModel) {
             isNavigating = navigationState.isNavigating,
             pois = poiResults,
             selectedPoiType = selectedPoiType,
+            preferredFuelType = preferredFuelType,
+            vehicleRangeKm = vehicleRangeKm,
             onMapClick = { location ->
                 // Nur reagieren wenn keine Navigation aktiv und keine Route geplant
                 if (!navigationState.isNavigating && navigationState.route == null) {
@@ -327,6 +337,7 @@ fun DaLangApp(viewModel: MainViewModel) {
                 pois = poiResults,
                 isLoading = isSearchingPoi,
                 isAlongRoute = navigationState.route != null,
+                preferredFuelType = preferredFuelType,
                 onSelect = { poi ->
                     // POI als Zwischenstopp zur Route hinzufügen
                     viewModel.addWaypoint(LatLng(poi.lat, poi.lng))
@@ -524,7 +535,11 @@ fun DrawerContent(
     if (showHereSettings) {
         HereSettingsDialog(
             onDismiss = { showHereSettings = false },
-            onSave = { }
+            onSave = {
+                // Settings aktualisieren
+                preferredFuelType = settingsRepository.preferredFuelType
+                vehicleRangeKm = settingsRepository.vehicleRangeKm
+            }
         )
     }
 
