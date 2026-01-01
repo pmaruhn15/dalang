@@ -144,13 +144,12 @@ private fun ActiveNavigationContent(
                 Image(
                     painter = painterResource(id = R.drawable.ic_mcdonalds),
                     contentDescription = "McDonald's",
-                    modifier = Modifier.size(24.dp),
-                    colorFilter = ColorFilter.tint(if (showMcDonaldsOverview) Color.White else Color.Black)
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(16.dp))
 
         // Tankstelle Button
         IconButton(
