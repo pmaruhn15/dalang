@@ -1,5 +1,6 @@
 package de.dalang.nav.ui.components
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -28,6 +29,7 @@ import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
@@ -36,11 +38,25 @@ import org.maplibre.android.style.sources.GeoJsonSource
 
 // Fallback styles (OpenFreeMap - kostenlos, kein API Key)
 private const val OPENFREEMAP_LIGHT = "https://tiles.openfreemap.org/styles/positron"
-private const val OPENFREEMAP_DARK = "https://tiles.openfreemap.org/styles/positron"  // Kein echter Dark-Style verfügbar
+
+// Custom Dark Style aus Assets laden
+private const val CUSTOM_DARK_STYLE_ASSET = "map_style_dark.json"
 
 // MapTiler styles (mit API Key)
 private fun mapTilerStyle(style: String, apiKey: String) =
     "https://api.maptiler.com/maps/$style/style.json?key=$apiKey"
+
+/**
+ * Lädt einen Map-Style aus den Assets als JSON-String
+ */
+private fun loadStyleFromAssets(context: Context, assetName: String): String? {
+    return try {
+        context.assets.open(assetName).bufferedReader().use { it.readText() }
+    } catch (e: Exception) {
+        CrashLogger.logError("MapView", "Failed to load style from assets: $assetName", e)
+        null
+    }
+}
 
 @Composable
 fun MapViewComposable(
@@ -78,7 +94,15 @@ fun MapViewComposable(
     // POIs für Klick-Erkennung merken
     val currentPois = remember(pois) { pois }
 
-    // Style-URL: MapTiler wenn Key vorhanden, sonst OpenFreeMap Fallback
+    // Custom Dark Style aus Assets laden (nur einmal)
+    val customDarkStyleJson = remember {
+        if (mapTilerKey.isBlank()) {
+            loadStyleFromAssets(context, CUSTOM_DARK_STYLE_ASSET)
+        } else null
+    }
+
+    // Style-Konfiguration: MapTiler wenn Key vorhanden, sonst Custom/OpenFreeMap
+    val useCustomDarkStyle = isDarkTheme && mapTilerKey.isBlank() && customDarkStyleJson != null
     val styleUrl = if (mapTilerKey.isNotBlank()) {
         if (isDarkTheme) {
             mapTilerStyle("streets-v2-dark", mapTilerKey)
@@ -86,8 +110,8 @@ fun MapViewComposable(
             mapTilerStyle("streets-v2-light", mapTilerKey)
         }
     } else {
-        // Fallback ohne API Key
-        if (isDarkTheme) OPENFREEMAP_DARK else OPENFREEMAP_LIGHT
+        // Fallback ohne API Key - Light Style als URL
+        OPENFREEMAP_LIGHT
     }
 
     AndroidView(
@@ -101,7 +125,16 @@ fun MapViewComposable(
                         mapLibreMap = map
 
                         try {
-                            map.setStyle(styleUrl) { style ->
+                            // Style laden: Custom JSON für Dark Mode, URL für Light Mode
+                            val styleBuilder = if (useCustomDarkStyle && customDarkStyleJson != null) {
+                                CrashLogger.log("MapView: Loading custom dark style from assets")
+                                Style.Builder().fromJson(customDarkStyleJson)
+                            } else {
+                                CrashLogger.log("MapView: Loading style from URL: $styleUrl")
+                                Style.Builder().fromUri(styleUrl)
+                            }
+
+                            map.setStyle(styleBuilder) { style ->
                                 CrashLogger.log("MapView: Style loaded with ${style.sources.size} sources, ${style.layers.size} layers")
                                 style.sources.forEach { source ->
                                     CrashLogger.log("MapView: Source: ${source.id}")
@@ -249,13 +282,20 @@ fun MapViewComposable(
     }
 
     // Style-Wechsel bei Änderung (Auto-Switch oder Settings)
-    LaunchedEffect(styleUrl, isMapReady) {
+    LaunchedEffect(styleUrl, useCustomDarkStyle, isMapReady) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
 
         try {
-            CrashLogger.log("MapView: Switching to style $styleUrl")
-            map.setStyle(styleUrl) { _ ->
+            val styleBuilder = if (useCustomDarkStyle && customDarkStyleJson != null) {
+                CrashLogger.log("MapView: Switching to custom dark style from assets")
+                Style.Builder().fromJson(customDarkStyleJson)
+            } else {
+                CrashLogger.log("MapView: Switching to style $styleUrl")
+                Style.Builder().fromUri(styleUrl)
+            }
+
+            map.setStyle(styleBuilder) { _ ->
                 CrashLogger.log("MapView: Style switched successfully")
                 styleVersion++  // Trigger redraw of markers
             }
