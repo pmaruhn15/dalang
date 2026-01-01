@@ -663,13 +663,17 @@ fun MapViewComposable(
         }
     }
 
-    // Zoom auf Route wenn POI-Übersicht aktiv ist
-    LaunchedEffect(showPoiOverview, isMapReady, route) {
+    // Track previous overview state for detecting toggle off
+    var wasShowingOverview by remember { mutableStateOf(false) }
+
+    // Zoom auf Route wenn POI-Übersicht aktiv ist, oder zurück zum Fahrzeug wenn deaktiviert
+    LaunchedEffect(showPoiOverview, isMapReady, route, currentLocation, bearing) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
 
         if (showPoiOverview && route != null && route.geometry.isNotEmpty()) {
-            // Zoom auf gesamte Route
+            // POI-Übersicht aktiv: Zoom auf gesamte Route, Nord-ausgerichtet
+            wasShowingOverview = true
             try {
                 val bounds = LatLngBounds.Builder()
                 var validPoints = 0
@@ -696,6 +700,7 @@ fun MapViewComposable(
                 }
 
                 if (validPoints >= 2) {
+                    // Nord-ausgerichtet (bearing = 0), kein Tilt
                     map.animateCamera(
                         CameraUpdateFactory.newLatLngBounds(
                             bounds.build(),
@@ -703,10 +708,43 @@ fun MapViewComposable(
                         ),
                         500
                     )
-                    CrashLogger.log("MapView: Zoomed to route overview for POIs")
+                    // Bearing auf Nord setzen
+                    map.animateCamera(
+                        CameraUpdateFactory.newCameraPosition(
+                            CameraPosition.Builder()
+                                .bearing(0.0)  // Nord
+                                .tilt(0.0)     // Kein Tilt
+                                .build()
+                        ),
+                        300
+                    )
+                    CrashLogger.log("MapView: Zoomed to route overview (north-facing)")
                 }
             } catch (e: Exception) {
                 CrashLogger.logError("MapView", "POI overview zoom failed", e)
+            }
+        } else if (!showPoiOverview && wasShowingOverview && currentLocation != null) {
+            // POI-Übersicht wurde deaktiviert: Zurück zum Fahrzeug mit Fahrtrichtung
+            wasShowingOverview = false
+            try {
+                val pos = org.maplibre.android.geometry.LatLng(
+                    currentLocation.lat,
+                    currentLocation.lng
+                )
+                map.animateCamera(
+                    CameraUpdateFactory.newCameraPosition(
+                        CameraPosition.Builder()
+                            .target(pos)
+                            .zoom(16.0)
+                            .bearing(bearing.toDouble())  // Fahrtrichtung
+                            .tilt(60.0)  // Navigation-Tilt
+                            .build()
+                    ),
+                    500
+                )
+                CrashLogger.log("MapView: Zoomed back to vehicle (driving direction)")
+            } catch (e: Exception) {
+                CrashLogger.logError("MapView", "Zoom back to vehicle failed", e)
             }
         }
     }

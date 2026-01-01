@@ -31,6 +31,8 @@ fun NavigationPanel(
     onStopNavigation: () -> Unit,
     onMcDonaldsClick: () -> Unit = {},
     onGasStationClick: () -> Unit = {},
+    isMcDonaldsLoading: Boolean = false,
+    showMcDonaldsOverview: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     // Get navigation bar height for bottom padding
@@ -56,7 +58,9 @@ fun NavigationPanel(
                     state = state,
                     onStop = onStopNavigation,
                     onMcDonaldsClick = onMcDonaldsClick,
-                    onGasStationClick = onGasStationClick
+                    onGasStationClick = onGasStationClick,
+                    isMcDonaldsLoading = isMcDonaldsLoading,
+                    showMcDonaldsOverview = showMcDonaldsOverview
                 )
             } else {
                 // Routenvorschau
@@ -74,7 +78,9 @@ private fun ActiveNavigationContent(
     state: NavigationState,
     onStop: () -> Unit,
     onMcDonaldsClick: () -> Unit,
-    onGasStationClick: () -> Unit
+    onGasStationClick: () -> Unit,
+    isMcDonaldsLoading: Boolean = false,
+    showMcDonaldsOverview: Boolean = false
 ) {
     val currentStep = state.currentStep
 
@@ -83,20 +89,36 @@ private fun ActiveNavigationContent(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End
     ) {
-        // McDonald's Button
+        // McDonald's Button - mit Lade-Spinner oder aktivem Zustand
         IconButton(
             onClick = onMcDonaldsClick,
+            enabled = !isMcDonaldsLoading,
             modifier = Modifier
                 .size(40.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color.White)
+                .background(if (showMcDonaldsOverview) Color(0xFF1A1A1A) else Color.White)
+                .then(
+                    if (showMcDonaldsOverview) {
+                        Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                    } else {
+                        Modifier
+                    }
+                )
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.ic_mcdonalds),
-                contentDescription = "McDonald's",
-                modifier = Modifier.size(24.dp),
-                colorFilter = ColorFilter.tint(Color.Black)
-            )
+            if (isMcDonaldsLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = Color.Black,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Image(
+                    painter = painterResource(id = R.drawable.ic_mcdonalds),
+                    contentDescription = "McDonald's",
+                    modifier = Modifier.size(24.dp),
+                    colorFilter = ColorFilter.tint(if (showMcDonaldsOverview) Color.White else Color.Black)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.width(16.dp))

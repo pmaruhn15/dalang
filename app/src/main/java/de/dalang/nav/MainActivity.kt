@@ -357,6 +357,8 @@ fun DaLangApp(viewModel: MainViewModel) {
             onStopNavigation = viewModel::stopNavigation,
             onMcDonaldsClick = { toggleMcDonalds() },
             onGasStationClick = { searchPoi(PoiType.GAS_STATION) },
+            isMcDonaldsLoading = isSearchingPoi && selectedPoiType == PoiType.MCDONALDS,
+            showMcDonaldsOverview = showMcDonaldsOverview,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
         )
