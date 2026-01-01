@@ -34,8 +34,9 @@ import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 
 private const val STYLE_LIGHT = "https://tiles.openfreemap.org/styles/positron"
-// Dark style aus lokaler Asset-Datei laden (kann im Repo bearbeitet werden)
-private const val STYLE_DARK = "asset://map_style_dark.json"
+// Dark style: Nutze erstmal Remote-Style zum Testen ob Tiles laden
+// TODO: Lokalen Style fixen: "asset://map_style_dark.json"
+private const val STYLE_DARK = "https://tiles.openfreemap.org/styles/positron"
 
 @Composable
 fun MapViewComposable(
@@ -84,7 +85,10 @@ fun MapViewComposable(
 
                         try {
                             map.setStyle(styleUrl) { style ->
-                                CrashLogger.log("MapView: Style loaded")
+                                CrashLogger.log("MapView: Style loaded with ${style.sources.size} sources, ${style.layers.size} layers")
+                                style.sources.forEach { source ->
+                                    CrashLogger.log("MapView: Source: ${source.id}")
+                                }
                                 try {
                                     map.uiSettings.apply {
                                         isCompassEnabled = true
