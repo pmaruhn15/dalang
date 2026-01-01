@@ -195,22 +195,7 @@ class RouteRepository {
             // Geometrie dekodieren (HERE Flexible Polyline)
             val polyline = section.getString("polyline")
             CrashLogger.log("RouteRepository: Polyline length: ${polyline.length}")
-            val decodedGeometry = FlexiblePolyline.decode(polyline)
-
-            // Fix: HERE polyline encoding has a bug where first point's longitude is nearly 0
-            // If first point's longitude is clearly wrong, use origin coordinates
-            val geometry = if (decodedGeometry.isNotEmpty()) {
-                val first = decodedGeometry.first()
-                if (Math.abs(first.lng) < 1.0 && decodedGeometry.size > 1) {
-                    // First point longitude is wrong, use origin
-                    CrashLogger.log("RouteRepository: Fixing first point longitude from ${first.lng} to ${origin.lng}")
-                    listOf(LatLng(first.lat, origin.lng)) + decodedGeometry.drop(1)
-                } else {
-                    decodedGeometry
-                }
-            } else {
-                decodedGeometry
-            }
+            val geometry = FlexiblePolyline.decode(polyline)
 
             CrashLogger.log("RouteRepository: HERE route decoded with ${geometry.size} points")
 

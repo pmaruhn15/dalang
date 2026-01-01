@@ -47,14 +47,14 @@ object FlexiblePolyline {
             var lastZ = 0L
 
             while (decoder.hasMore()) {
-                // HERE API scheint lng,lat Reihenfolge zu verwenden (nicht lat,lng)
-                val lngDelta = decoder.decodeSignedValue()
-                lastLng += lngDelta
+                // HERE Flexible Polyline Format: lat zuerst, dann lng
+                val latDelta = decoder.decodeSignedValue()
+                lastLat += latDelta
 
                 if (!decoder.hasMore()) break
 
-                val latDelta = decoder.decodeSignedValue()
-                lastLat += latDelta
+                val lngDelta = decoder.decodeSignedValue()
+                lastLng += lngDelta
 
                 // Third dimension (Altitude) falls vorhanden
                 if (thirdDim != 0 && decoder.hasMore()) {
