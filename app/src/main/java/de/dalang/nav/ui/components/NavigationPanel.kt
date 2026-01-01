@@ -101,7 +101,7 @@ private fun ActiveNavigationContent(
                 painter = painterResource(id = getTurnIconRes(currentStep)),
                 contentDescription = "Richtung",
                 modifier = Modifier.size(64.dp),
-                colorFilter = ColorFilter.tint(Color.White)
+                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
             )
         }
 
@@ -119,16 +119,18 @@ private fun ActiveNavigationContent(
 
         // POI-Buttons rechts in der gleichen Zeile
         // McDonald's Button - mit Lade-Spinner oder aktivem Zustand
+        val buttonBg = MaterialTheme.colorScheme.onSurface
+        val buttonFg = MaterialTheme.colorScheme.surface
         IconButton(
             onClick = onMcDonaldsClick,
             enabled = !isMcDonaldsLoading,
             modifier = Modifier
                 .size(40.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(if (showMcDonaldsOverview) Color(0xFF1A1A1A) else Color.White)
+                .background(if (showMcDonaldsOverview) MaterialTheme.colorScheme.surface else buttonBg)
                 .then(
                     if (showMcDonaldsOverview) {
-                        Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                        Modifier.border(2.dp, buttonBg, RoundedCornerShape(8.dp))
                     } else {
                         Modifier
                     }
@@ -137,7 +139,7 @@ private fun ActiveNavigationContent(
             if (isMcDonaldsLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
-                    color = Color.Black,
+                    color = buttonFg,
                     strokeWidth = 2.dp
                 )
             } else {
@@ -157,13 +159,13 @@ private fun ActiveNavigationContent(
             modifier = Modifier
                 .size(40.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color.White)
+                .background(buttonBg)
         ) {
             Image(
                 painter = painterResource(id = R.drawable.ic_gas_station),
                 contentDescription = "Tankstelle",
                 modifier = Modifier.size(24.dp),
-                colorFilter = ColorFilter.tint(Color.Black)
+                colorFilter = ColorFilter.tint(buttonFg)
             )
         }
     }
@@ -204,12 +206,12 @@ private fun ActiveNavigationContent(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // Stop-Button - weiß mit schwarzer Schrift
+    // Stop-Button - Farben passen sich an Theme an
     Button(
         onClick = onStop,
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White,
-            contentColor = Color.Black
+            containerColor = MaterialTheme.colorScheme.onSurface,
+            contentColor = MaterialTheme.colorScheme.surface
         ),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth()
@@ -283,19 +285,19 @@ private fun RoutePreviewContent(
             Text(
                 text = if (delayMinutes > 0) "+$delayMinutes" else "+0",
                 fontSize = 14.sp,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // Start-Button - weiß mit schwarzer Schrift
+    // Start-Button - Farben passen sich an Theme an
     Button(
         onClick = onStart,
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White,
-            contentColor = Color.Black
+            containerColor = MaterialTheme.colorScheme.onSurface,
+            contentColor = MaterialTheme.colorScheme.surface
         ),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth()
@@ -329,7 +331,7 @@ private fun LaneGuidancePanel(
                     modifier = Modifier
                         .width(1.dp)
                         .height(40.dp)
-                        .background(Color.White.copy(alpha = 0.2f))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
                 )
             }
         }
@@ -342,10 +344,11 @@ private fun LaneIndicator(
     lane: Lane,
     modifier: Modifier = Modifier
 ) {
-    // Empfohlene Spur: größer, weiß, voll sichtbar
+    // Empfohlene Spur: größer, voll sichtbar
     // Andere Spuren: kleiner, transparent
     val iconSize = if (lane.isRecommended) 44.dp else 32.dp
     val iconAlpha = if (lane.isRecommended) 1f else 0.4f
+    val iconColor = MaterialTheme.colorScheme.onSurface
 
     Box(
         modifier = modifier
@@ -357,7 +360,7 @@ private fun LaneIndicator(
             painter = painterResource(id = getLaneIconRes(lane.direction)),
             contentDescription = lane.direction,
             modifier = Modifier.size(iconSize),
-            colorFilter = ColorFilter.tint(Color.White.copy(alpha = iconAlpha))
+            colorFilter = ColorFilter.tint(iconColor.copy(alpha = iconAlpha))
         )
     }
 }

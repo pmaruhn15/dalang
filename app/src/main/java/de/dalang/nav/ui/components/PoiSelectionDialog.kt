@@ -71,7 +71,7 @@ fun PoiSelectionDialog(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             CircularProgressIndicator(
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(32.dp)
                             )
                             Spacer(modifier = Modifier.height(8.dp))
@@ -127,8 +127,8 @@ fun PoiSelectionDialog(
             Button(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color.Black
+                    containerColor = MaterialTheme.colorScheme.onSurface,
+                    contentColor = MaterialTheme.colorScheme.surface
                 ),
                 modifier = Modifier.fillMaxWidth().height(40.dp)
             ) {
@@ -268,6 +268,7 @@ private fun FuelPriceChip(label: String, price: Double, isCheapest: Boolean = fa
     } else {
         MaterialTheme.colorScheme.surface
     }
+    // Günstigste immer weiß auf grün, sonst theme-aware
     val textColor = if (isCheapest) {
         Color.White
     } else {

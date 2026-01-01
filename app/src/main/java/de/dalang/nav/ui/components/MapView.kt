@@ -23,6 +23,7 @@ import de.dalang.nav.navigation.PoiType
 import de.dalang.nav.navigation.Route
 import de.dalang.nav.settings.FuelType
 import de.dalang.nav.settings.SettingsRepository
+import de.dalang.nav.ui.theme.MapColors
 import de.dalang.nav.util.CrashLogger
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -412,7 +413,7 @@ fun MapViewComposable(
 
                         val lineLayer = LineLayer("route-layer", "route-source").apply {
                             setProperties(
-                                PropertyFactory.lineColor(Color.WHITE),
+                                PropertyFactory.lineColor(MapColors.routeColor(isDarkTheme)),
                                 PropertyFactory.lineWidth(6f),
                                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
@@ -598,7 +599,7 @@ fun MapViewComposable(
                                 if (price != null) {
                                     val isCheapest = poi == cheapestPoi
                                     val priceIconName = "price-label-$index"
-                                    val priceBitmap = createPriceLabelBitmap(price, isCheapest)
+                                    val priceBitmap = createPriceLabelBitmap(price, isCheapest, isDarkTheme)
                                     style.addImage(priceIconName, priceBitmap)
                                 }
                             }
@@ -610,7 +611,8 @@ fun MapViewComposable(
                                 val mcLabelName = "mc-label-$index"
                                 val mcBitmap = createMcDonaldsLabelBitmap(
                                     poi.estimatedArrivalMinutes,
-                                    poi.detourMinutes
+                                    poi.detourMinutes,
+                                    isDarkTheme
                                 )
                                 style.addImage(mcLabelName, mcBitmap)
                             }
@@ -818,22 +820,22 @@ fun MapViewComposable(
 
 /**
  * Erstellt ein Bitmap mit McDonald's Zeit-Label für die Karte
- * Zeigt Ankunftszeit und Umwegzeit in Schwarz-Weiß
+ * Zeigt Ankunftszeit und Umwegzeit - Farben passen sich an Light/Dark Mode an
  */
-private fun createMcDonaldsLabelBitmap(arrivalMinutes: Int, detourMinutes: Int): Bitmap {
+private fun createMcDonaldsLabelBitmap(arrivalMinutes: Int, detourMinutes: Int, isDarkTheme: Boolean): Bitmap {
     val arrivalText = "${arrivalMinutes}min"
     val detourText = "+${detourMinutes}min"
 
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 32f
         typeface = Typeface.DEFAULT_BOLD
-        color = Color.WHITE
+        color = MapColors.labelText(isDarkTheme)
     }
 
     val smallPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 24f
         typeface = Typeface.DEFAULT
-        color = Color.LTGRAY  // Hellgrau für Umweg
+        color = MapColors.labelSecondaryText(isDarkTheme)
     }
 
     val arrivalBounds = Rect()
@@ -849,22 +851,22 @@ private fun createMcDonaldsLabelBitmap(arrivalMinutes: Int, detourMinutes: Int):
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
-    // Hintergrund (Schwarz)
+    // Hintergrund
     val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#1A1A1A")
+        color = MapColors.labelBackground(isDarkTheme)
         style = Paint.Style.FILL
     }
     canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 8f, 8f, bgPaint)
 
-    // Rand (Weiß)
+    // Rand
     val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = MapColors.labelBorder(isDarkTheme)
         style = Paint.Style.STROKE
         strokeWidth = 2f
     }
     canvas.drawRoundRect(1f, 1f, width.toFloat() - 1f, height.toFloat() - 1f, 8f, 8f, borderPaint)
 
-    // Ankunftszeit (weiß)
+    // Ankunftszeit
     canvas.drawText(
         arrivalText,
         (width - arrivalBounds.width()) / 2f,
@@ -872,7 +874,7 @@ private fun createMcDonaldsLabelBitmap(arrivalMinutes: Int, detourMinutes: Int):
         paint
     )
 
-    // Umwegzeit (hellgrau, kleiner)
+    // Umwegzeit (kleiner)
     canvas.drawText(
         detourText,
         (width - detourBounds.width()) / 2f,
@@ -885,14 +887,16 @@ private fun createMcDonaldsLabelBitmap(arrivalMinutes: Int, detourMinutes: Int):
 
 /**
  * Erstellt ein Bitmap mit Preis-Label für die Karte
+ * Farben passen sich an Light/Dark Mode an (außer grün für günstigste)
  */
-private fun createPriceLabelBitmap(price: Double, isCheapest: Boolean): Bitmap {
+private fun createPriceLabelBitmap(price: Double, isCheapest: Boolean, isDarkTheme: Boolean): Bitmap {
     val priceText = String.format("%.2f€", price)
 
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 36f
         typeface = Typeface.DEFAULT_BOLD
-        color = Color.WHITE
+        // Bei günstigster immer weiß (auf grünem Hintergrund), sonst theme-aware
+        color = if (isCheapest) Color.WHITE else MapColors.labelText(isDarkTheme)
     }
 
     val textBounds = Rect()
@@ -905,16 +909,16 @@ private fun createPriceLabelBitmap(price: Double, isCheapest: Boolean): Bitmap {
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
-    // Hintergrund (grün für günstigste, grau für andere)
+    // Hintergrund (grün für günstigste, sonst theme-aware)
     val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = if (isCheapest) Color.parseColor("#4CAF50") else Color.parseColor("#424242")
+        color = if (isCheapest) Color.parseColor("#4CAF50") else MapColors.labelBackground(isDarkTheme)
         style = Paint.Style.FILL
     }
     canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 8f, 8f, bgPaint)
 
     // Rand
     val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = MapColors.labelBorder(isDarkTheme)
         style = Paint.Style.STROKE
         strokeWidth = 2f
     }

@@ -75,7 +75,7 @@ fun UpdateDialog(
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            CircularProgressIndicator(color = Color.White)
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.onSurface)
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
                                 text = "Suche nach Updates...",
@@ -146,8 +146,8 @@ fun UpdateDialog(
                         onDismiss()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color.Black
+                        containerColor = MaterialTheme.colorScheme.onSurface,
+                        contentColor = MaterialTheme.colorScheme.surface
                     ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -210,8 +210,8 @@ private fun UpdateAvailableContent(
         Button(
             onClick = onDownload,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color.White,
-                contentColor = Color.Black
+                containerColor = MaterialTheme.colorScheme.onSurface,
+                contentColor = MaterialTheme.colorScheme.surface
             ),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -244,7 +244,7 @@ private fun DownloadingContent(progress: Int) {
                 .fillMaxWidth()
                 .height(8.dp)
                 .clip(RoundedCornerShape(4.dp)),
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             trackColor = MaterialTheme.colorScheme.surface
         )
 
@@ -289,8 +289,8 @@ private fun ReadyToInstallContent(
         Button(
             onClick = onInstall,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color.White,
-                contentColor = Color.Black
+                containerColor = MaterialTheme.colorScheme.onSurface,
+                contentColor = MaterialTheme.colorScheme.surface
             ),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -330,8 +330,8 @@ private fun ErrorContent(
         Button(
             onClick = onRetry,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color.White,
-                contentColor = Color.Black
+                containerColor = MaterialTheme.colorScheme.onSurface,
+                contentColor = MaterialTheme.colorScheme.surface
             ),
             modifier = Modifier.fillMaxWidth()
         ) {

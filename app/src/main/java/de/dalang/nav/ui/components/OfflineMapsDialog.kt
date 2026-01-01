@@ -107,8 +107,8 @@ fun OfflineMapsDialog(
             Button(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color.Black
+                    containerColor = MaterialTheme.colorScheme.onSurface,
+                    contentColor = MaterialTheme.colorScheme.surface
                 ),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -147,12 +147,14 @@ private fun RegionItem(
                     )
                 }
 
+                val buttonContainerColor = MaterialTheme.colorScheme.onSurface
+                val buttonContentColor = MaterialTheme.colorScheme.surface
                 when {
                     isDownloading -> Button(
                         onClick = onCancel,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = Color.Black
+                            containerColor = buttonContainerColor,
+                            contentColor = buttonContentColor
                         )
                     ) {
                         Text("Abbrechen")
@@ -160,8 +162,8 @@ private fun RegionItem(
                     isDownloaded -> Button(
                         onClick = onDelete,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = Color.Black
+                            containerColor = buttonContainerColor,
+                            contentColor = buttonContentColor
                         )
                     ) {
                         Text("Löschen")
@@ -169,8 +171,8 @@ private fun RegionItem(
                     else -> Button(
                         onClick = onDownload,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = Color.Black
+                            containerColor = buttonContainerColor,
+                            contentColor = buttonContentColor
                         )
                     ) {
                         Text("Laden")

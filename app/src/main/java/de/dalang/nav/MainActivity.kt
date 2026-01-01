@@ -349,7 +349,7 @@ fun DaLangApp(viewModel: MainViewModel) {
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black)
+                    .background(MaterialTheme.colorScheme.onSurface)
                     .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
                 Row(
@@ -358,12 +358,12 @@ fun DaLangApp(viewModel: MainViewModel) {
                 ) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.surface,
                         strokeWidth = 2.dp
                     )
                     Text(
                         text = "Route wird neu berechnet...",
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.surface,
                         fontSize = 14.sp
                     )
                 }
@@ -474,8 +474,8 @@ fun MapClickDialog(
                 Button(
                     onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color.Black
+                        containerColor = MaterialTheme.colorScheme.onSurface,
+                        contentColor = MaterialTheme.colorScheme.surface
                     ),
                     modifier = Modifier.weight(1f)
                 ) {
@@ -485,8 +485,8 @@ fun MapClickDialog(
                 Button(
                     onClick = onNavigate,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color.Black
+                        containerColor = MaterialTheme.colorScheme.onSurface,
+                        contentColor = MaterialTheme.colorScheme.surface
                     ),
                     modifier = Modifier.weight(1f)
                 ) {
@@ -678,8 +678,8 @@ fun DrawerContent(
                 Button(
                     onClick = { showAbout = false },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color.Black
+                        containerColor = MaterialTheme.colorScheme.onSurface,
+                        contentColor = MaterialTheme.colorScheme.surface
                     ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -749,6 +749,8 @@ fun DebugLogDialog(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            val buttonContainerColor = MaterialTheme.colorScheme.onSurface
+            val buttonContentColor = MaterialTheme.colorScheme.surface
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -761,8 +763,8 @@ fun DebugLogDialog(
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color.Black
+                        containerColor = buttonContainerColor,
+                        contentColor = buttonContentColor
                     ),
                     modifier = Modifier.weight(1f)
                 ) {
@@ -775,8 +777,8 @@ fun DebugLogDialog(
                         onDismiss()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color.Black
+                        containerColor = buttonContainerColor,
+                        contentColor = buttonContentColor
                     ),
                     modifier = Modifier.weight(1f)
                 ) {
@@ -789,8 +791,8 @@ fun DebugLogDialog(
             Button(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color.Black
+                    containerColor = buttonContainerColor,
+                    contentColor = buttonContentColor
                 ),
                 modifier = Modifier.fillMaxWidth()
             ) {

@@ -186,10 +186,10 @@ fun HereSettingsDialog(
                     checked = hereApiEnabled,
                     onCheckedChange = { hereApiEnabled = it },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                         checkedTrackColor = Color(0xFF4CAF50),
-                        uncheckedThumbColor = Color.White,
-                        uncheckedTrackColor = Color.Gray
+                        uncheckedThumbColor = MaterialTheme.colorScheme.surface,
+                        uncheckedTrackColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 )
             }
@@ -274,15 +274,15 @@ fun HereSettingsDialog(
                     onClick = { testFuelPricesApi() },
                     enabled = !isTesting && hereApiKey.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color.Black
+                        containerColor = MaterialTheme.colorScheme.onSurface,
+                        contentColor = MaterialTheme.colorScheme.surface
                     ),
                     modifier = Modifier.weight(1f)
                 ) {
                     if (isTesting) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
-                            color = Color.Black,
+                            color = MaterialTheme.colorScheme.surface,
                             strokeWidth = 2.dp
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -599,8 +599,8 @@ fun HereSettingsDialog(
                 Button(
                     onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color.Black
+                        containerColor = MaterialTheme.colorScheme.onSurface,
+                        contentColor = MaterialTheme.colorScheme.surface
                     ),
                     modifier = Modifier.weight(1f)
                 ) {
@@ -621,8 +621,8 @@ fun HereSettingsDialog(
                         onDismiss()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color.Black
+                        containerColor = MaterialTheme.colorScheme.onSurface,
+                        contentColor = MaterialTheme.colorScheme.surface
                     ),
                     modifier = Modifier.weight(1f)
                 ) {

@@ -23,6 +23,32 @@ private val OnSurfaceDark = Color(0xFFE0E0E0)
 private val Background = Color(0xFFF5F5F5)
 private val BackgroundDark = Color(0xFF1A1A1A)
 
+/**
+ * Theme-aware Farben für Map-Elemente (Route, Marker-Labels, etc.)
+ * Diese werden außerhalb von Compose verwendet (Canvas/Bitmaps)
+ */
+object MapColors {
+    // Route-Farbe: Weiß auf dunkler Karte, Schwarz auf heller Karte
+    fun routeColor(isDark: Boolean): Int =
+        if (isDark) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+
+    // Label-Hintergrund: Dunkel auf dunkler Karte, Hell auf heller Karte
+    fun labelBackground(isDark: Boolean): Int =
+        if (isDark) android.graphics.Color.parseColor("#1A1A1A") else android.graphics.Color.parseColor("#FFFFFF")
+
+    // Label-Text: Weiß auf dunkler Karte, Schwarz auf heller Karte
+    fun labelText(isDark: Boolean): Int =
+        if (isDark) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+
+    // Label-Rand: Weiß auf dunkler Karte, Dunkelgrau auf heller Karte
+    fun labelBorder(isDark: Boolean): Int =
+        if (isDark) android.graphics.Color.WHITE else android.graphics.Color.parseColor("#424242")
+
+    // Sekundärer Text (z.B. Umwegzeit): Hellgrau auf dunkler Karte, Dunkelgrau auf heller Karte
+    fun labelSecondaryText(isDark: Boolean): Int =
+        if (isDark) android.graphics.Color.LTGRAY else android.graphics.Color.DKGRAY
+}
+
 private val LightColorScheme = lightColorScheme(
     primary = Primary,
     onPrimary = OnPrimary,
