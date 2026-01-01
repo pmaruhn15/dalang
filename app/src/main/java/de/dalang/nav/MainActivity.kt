@@ -215,6 +215,14 @@ fun DaLangApp(viewModel: MainViewModel) {
         }
     }
 
+    // POI-Marker ausblenden wenn Navigation startet
+    LaunchedEffect(navigationState.isNavigating) {
+        if (navigationState.isNavigating) {
+            selectedPoiType = null
+            poiResults = emptyList()
+        }
+    }
+
     // Fehler als Snackbar anzeigen
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -323,11 +331,11 @@ fun DaLangApp(viewModel: MainViewModel) {
                     // POI als Zwischenstopp zur Route hinzufügen
                     viewModel.addWaypoint(LatLng(poi.lat, poi.lng))
                     showPoiDialog = false
-                    selectedPoiType = null
+                    // selectedPoiType bleibt erhalten, damit Marker auf der Karte bleiben
                 },
                 onDismiss = {
                     showPoiDialog = false
-                    selectedPoiType = null
+                    // selectedPoiType bleibt erhalten, damit Marker auf der Karte bleiben
                 }
             )
         }

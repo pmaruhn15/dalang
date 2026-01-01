@@ -222,22 +222,28 @@ class PoiRepository {
             CrashLogger.log("PoiRepository: HERE Fuel usage: ${HereConfig.getMonthlyUsage()}/${HereConfig.getMonthlyLimit()}")
 
             val json = JSONObject(response)
-            val stationsObj = json.optJSONObject("stations")
-            if (stationsObj == null) {
-                CrashLogger.log("PoiRepository: HERE Fuel Prices - no stations object in response")
+
+            // HERE Fuel Prices API v2 Response Format:
+            // { "fuelStations": { "fuelStation": [...] } }
+            val fuelStationsObj = json.optJSONObject("fuelStations")
+            if (fuelStationsObj == null) {
+                CrashLogger.log("PoiRepository: HERE Fuel Prices - no fuelStations object in response")
+                CrashLogger.log("PoiRepository: Response keys: ${json.keys().asSequence().toList()}")
                 return@withContext searchWithNominatim(PoiType.GAS_STATION, center, radiusKm)
             }
 
-            val stationsArray = stationsObj.optJSONArray("items") ?: return@withContext emptyList()
+            val stationsArray = fuelStationsObj.optJSONArray("fuelStation") ?: return@withContext emptyList()
             val results = mutableListOf<Poi>()
+
+            CrashLogger.log("PoiRepository: Found ${stationsArray.length()} stations in HERE response")
 
             for (i in 0 until stationsArray.length()) {
                 val station = stationsArray.getJSONObject(i)
 
-                // Position
-                val posArray = station.optJSONArray("position")
-                val lat = posArray?.optDouble(0, 0.0) ?: 0.0
-                val lng = posArray?.optDouble(1, 0.0) ?: 0.0
+                // Position - HERE verwendet latitude/longitude
+                val positionObj = station.optJSONObject("position")
+                val lat = positionObj?.optDouble("latitude", 0.0) ?: 0.0
+                val lng = positionObj?.optDouble("longitude", 0.0) ?: 0.0
 
                 val brand = station.optString("brand", "Tankstelle")
                 val name = station.optString("name", brand)
@@ -246,12 +252,12 @@ class PoiRepository {
                 val addressObj = station.optJSONObject("address")
                 val address = if (addressObj != null) {
                     val street = addressObj.optString("street", "")
-                    val houseNumber = addressObj.optString("houseNumber", "")
+                    val streetNumber = addressObj.optString("streetNumber", "")
                     val city = addressObj.optString("city", "")
                     buildString {
                         if (street.isNotEmpty()) {
                             append(street)
-                            if (houseNumber.isNotEmpty()) append(" $houseNumber")
+                            if (streetNumber.isNotEmpty()) append(" $streetNumber")
                         }
                         if (city.isNotEmpty()) {
                             if (isNotEmpty()) append(", ")
@@ -263,21 +269,21 @@ class PoiRepository {
                 val distance = calculateDistance(center.lat, center.lng, lat, lng)
                 val arrivalMinutes = estimateArrivalTime(distance)
 
-                // Kraftstoffpreise
+                // Kraftstoffpreise - HERE verwendet fuelPrice Array
                 var diesel: Double? = null
                 var e5: Double? = null
 
-                val fuelTypesArray = station.optJSONArray("fuelTypes")
-                if (fuelTypesArray != null) {
-                    for (j in 0 until fuelTypesArray.length()) {
-                        val fuelType = fuelTypesArray.getJSONObject(j)
-                        val fuelName = fuelType.optString("name", "").lowercase()
-                        val price = fuelType.optDouble("price", Double.NaN).takeIf { !it.isNaN() }
+                val fuelPriceArray = station.optJSONArray("fuelPrice")
+                if (fuelPriceArray != null) {
+                    for (j in 0 until fuelPriceArray.length()) {
+                        val fuelPrice = fuelPriceArray.getJSONObject(j)
+                        // fuelType: 1=Diesel, 2=Super, 3=Super Plus, etc.
+                        val fuelTypeCode = fuelPrice.optString("fuelType", "")
+                        val price = fuelPrice.optDouble("price", Double.NaN).takeIf { !it.isNaN() }
 
-                        when {
-                            fuelName.contains("diesel") -> diesel = price
-                            fuelName.contains("super") || fuelName.contains("e5") ||
-                                fuelName.contains("95") || fuelName.contains("benzin") -> e5 = price
+                        when (fuelTypeCode) {
+                            "1" -> diesel = price  // Diesel
+                            "2", "3" -> if (e5 == null) e5 = price  // Super/Super Plus
                         }
                     }
                 }
@@ -288,7 +294,7 @@ class PoiRepository {
 
                 results.add(
                     Poi(
-                        name = if (brand.isNotEmpty() && brand != name) "$brand" else name,
+                        name = brand.ifEmpty { name },
                         lat = lat,
                         lng = lng,
                         address = address,
@@ -299,7 +305,7 @@ class PoiRepository {
                 )
             }
 
-            CrashLogger.log("PoiRepository: HERE Fuel Prices returned ${results.size} stations")
+            CrashLogger.log("PoiRepository: HERE Fuel Prices returned ${results.size} stations with prices")
             results
 
         } catch (e: Exception) {
