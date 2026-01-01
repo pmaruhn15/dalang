@@ -37,27 +37,13 @@ import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 
-// Fallback styles (OpenFreeMap - kostenlos, kein API Key)
+// OpenFreeMap styles (kostenlos, kein API Key)
 private const val OPENFREEMAP_LIGHT = "https://tiles.openfreemap.org/styles/positron"
-
-// Custom Dark Style aus Assets laden
-private const val CUSTOM_DARK_STYLE_ASSET = "map_style_dark.json"
+private const val OPENFREEMAP_DARK = "https://tiles.openfreemap.org/styles/dark"
 
 // MapTiler styles (mit API Key)
 private fun mapTilerStyle(style: String, apiKey: String) =
     "https://api.maptiler.com/maps/$style/style.json?key=$apiKey"
-
-/**
- * Lädt einen Map-Style aus den Assets als JSON-String
- */
-private fun loadStyleFromAssets(context: Context, assetName: String): String? {
-    return try {
-        context.assets.open(assetName).bufferedReader().use { it.readText() }
-    } catch (e: Exception) {
-        CrashLogger.logError("MapView", "Failed to load style from assets: $assetName", e)
-        null
-    }
-}
 
 @Composable
 fun MapViewComposable(
@@ -95,15 +81,7 @@ fun MapViewComposable(
     // POIs für Klick-Erkennung merken
     val currentPois = remember(pois) { pois }
 
-    // Custom Dark Style aus Assets laden (nur einmal)
-    val customDarkStyleJson = remember {
-        if (mapTilerKey.isBlank()) {
-            loadStyleFromAssets(context, CUSTOM_DARK_STYLE_ASSET)
-        } else null
-    }
-
-    // Style-Konfiguration: MapTiler wenn Key vorhanden, sonst Custom/OpenFreeMap
-    val useCustomDarkStyle = isDarkTheme && mapTilerKey.isBlank() && customDarkStyleJson != null
+    // Style-Konfiguration: MapTiler wenn Key vorhanden, sonst OpenFreeMap
     val styleUrl = if (mapTilerKey.isNotBlank()) {
         if (isDarkTheme) {
             mapTilerStyle("streets-v2-dark", mapTilerKey)
@@ -111,8 +89,8 @@ fun MapViewComposable(
             mapTilerStyle("streets-v2-light", mapTilerKey)
         }
     } else {
-        // Fallback ohne API Key - Light Style als URL
-        OPENFREEMAP_LIGHT
+        // OpenFreeMap (kostenlos) - Light oder Dark je nach Theme
+        if (isDarkTheme) OPENFREEMAP_DARK else OPENFREEMAP_LIGHT
     }
 
     AndroidView(
@@ -126,19 +104,28 @@ fun MapViewComposable(
                         mapLibreMap = map
 
                         try {
-                            // Style laden: Custom JSON für Dark Mode, URL für Light Mode
-                            val styleBuilder = if (useCustomDarkStyle && customDarkStyleJson != null) {
-                                CrashLogger.log("MapView: Loading custom dark style from assets")
-                                Style.Builder().fromJson(customDarkStyleJson)
-                            } else {
-                                CrashLogger.log("MapView: Loading style from URL: $styleUrl")
-                                Style.Builder().fromUri(styleUrl)
-                            }
+                            // Style laden: Immer von URL (OpenFreeMap oder MapTiler)
+                            CrashLogger.log("MapView: Loading style from URL: $styleUrl")
+                            val styleBuilder = Style.Builder().fromUri(styleUrl)
 
                             map.setStyle(styleBuilder) { style ->
                                 CrashLogger.log("MapView: Style loaded with ${style.sources.size} sources, ${style.layers.size} layers")
                                 style.sources.forEach { source ->
-                                    CrashLogger.log("MapView: Source: ${source.id}")
+                                    CrashLogger.log("MapView: Source: ${source.id}, type: ${source.javaClass.simpleName}")
+                                    // Versuche mehr Details über die Source zu loggen
+                                    try {
+                                        val attribution = source.attribution
+                                        if (!attribution.isNullOrBlank()) {
+                                            CrashLogger.log("MapView: Source ${source.id} attribution: $attribution")
+                                        }
+                                    } catch (e: Exception) {
+                                        CrashLogger.log("MapView: Could not get source details: ${e.message}")
+                                    }
+                                }
+
+                                // Listener für fehlende Bilder (sprites)
+                                map.addOnStyleImageMissingListener { id ->
+                                    CrashLogger.log("MapView: Missing style image: $id")
                                 }
                                 try {
                                     map.uiSettings.apply {
@@ -282,19 +269,14 @@ fun MapViewComposable(
         }
     }
 
-    // Style-Wechsel bei Änderung (Auto-Switch oder Settings)
-    LaunchedEffect(styleUrl, useCustomDarkStyle, isMapReady) {
+    // Style-Wechsel bei Änderung (Theme oder Settings)
+    LaunchedEffect(styleUrl, isMapReady) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
 
         try {
-            val styleBuilder = if (useCustomDarkStyle && customDarkStyleJson != null) {
-                CrashLogger.log("MapView: Switching to custom dark style from assets")
-                Style.Builder().fromJson(customDarkStyleJson)
-            } else {
-                CrashLogger.log("MapView: Switching to style $styleUrl")
-                Style.Builder().fromUri(styleUrl)
-            }
+            CrashLogger.log("MapView: Switching to style $styleUrl")
+            val styleBuilder = Style.Builder().fromUri(styleUrl)
 
             map.setStyle(styleBuilder) { _ ->
                 CrashLogger.log("MapView: Style switched successfully")
@@ -309,8 +291,9 @@ fun MapViewComposable(
     // 5 km/h = 1.39 m/s
     val effectiveRotation = if (speed > 1.39f) bearing else heading
 
-    // Standort-Marker zeichnen (Pfeil mit Rotation)
-    LaunchedEffect(currentLocation, effectiveRotation, isMapReady, styleVersion) {
+    // Standort-Marker zeichnen (Pfeil mit Rotation) - Farbe passt sich an Theme an
+    val positionArrowColor = if (isDarkTheme) Color.WHITE else Color.BLACK
+    LaunchedEffect(currentLocation, effectiveRotation, isMapReady, styleVersion, isDarkTheme) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
         val location = currentLocation ?: return@LaunchedEffect
@@ -318,28 +301,28 @@ fun MapViewComposable(
         try {
             map.getStyle { style ->
                 try {
-                    // Vorherigen Marker entfernen
+                    // Vorherigen Marker entfernen (immer, da Farbe sich ändern kann)
                     try {
                         style.removeLayer("location-layer")
                         style.removeSource("location-source")
+                        style.removeImage("position-arrow")
                     } catch (e: Exception) {
-                        // Layer existiert nicht
+                        // Layer/Image existiert nicht
                     }
 
-                    // Icon zum Style hinzufügen (falls noch nicht vorhanden)
-                    if (style.getImage("position-arrow") == null) {
-                        val drawable = ContextCompat.getDrawable(context, R.drawable.ic_position_arrow)
-                        if (drawable != null) {
-                            val bitmap = Bitmap.createBitmap(
-                                drawable.intrinsicWidth,
-                                drawable.intrinsicHeight,
-                                Bitmap.Config.ARGB_8888
-                            )
-                            val canvas = Canvas(bitmap)
-                            drawable.setBounds(0, 0, canvas.width, canvas.height)
-                            drawable.draw(canvas)
-                            style.addImage("position-arrow", bitmap)
-                        }
+                    // Icon mit theme-abhängiger Farbe erstellen
+                    val drawable = ContextCompat.getDrawable(context, R.drawable.ic_position_arrow)?.mutate()
+                    if (drawable != null) {
+                        drawable.setTint(positionArrowColor)
+                        val bitmap = Bitmap.createBitmap(
+                            drawable.intrinsicWidth,
+                            drawable.intrinsicHeight,
+                            Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = Canvas(bitmap)
+                        drawable.setBounds(0, 0, canvas.width, canvas.height)
+                        drawable.draw(canvas)
+                        style.addImage("position-arrow", bitmap)
                     }
 
                     // Standort als GeoJSON Point
@@ -461,37 +444,38 @@ fun MapViewComposable(
         }
     }
 
-    // Ziel-Marker zeichnen
-    LaunchedEffect(destination, isMapReady, styleVersion) {
+    // Ziel-Marker zeichnen - Farbe passt sich an Theme an
+    val destinationMarkerColor = if (isDarkTheme) Color.WHITE else Color.BLACK
+    LaunchedEffect(destination, isMapReady, styleVersion, isDarkTheme) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
 
         try {
             map.getStyle { style ->
                 try {
-                    // Vorherigen Ziel-Marker entfernen
+                    // Vorherigen Ziel-Marker entfernen (immer, da Farbe sich ändern kann)
                     try {
                         style.removeLayer("destination-layer")
                         style.removeSource("destination-source")
+                        style.removeImage("destination-marker")
                     } catch (e: Exception) {
-                        // Layer existiert nicht
+                        // Layer/Image existiert nicht
                     }
 
                     if (destination != null) {
-                        // Icon zum Style hinzufügen (falls noch nicht vorhanden)
-                        if (style.getImage("destination-marker") == null) {
-                            val drawable = ContextCompat.getDrawable(context, R.drawable.ic_destination_marker)
-                            if (drawable != null) {
-                                val bitmap = Bitmap.createBitmap(
-                                    drawable.intrinsicWidth,
-                                    drawable.intrinsicHeight,
-                                    Bitmap.Config.ARGB_8888
-                                )
-                                val canvas = Canvas(bitmap)
-                                drawable.setBounds(0, 0, canvas.width, canvas.height)
-                                drawable.draw(canvas)
-                                style.addImage("destination-marker", bitmap)
-                            }
+                        // Icon mit theme-abhängiger Farbe erstellen
+                        val drawable = ContextCompat.getDrawable(context, R.drawable.ic_destination_marker)?.mutate()
+                        if (drawable != null) {
+                            drawable.setTint(destinationMarkerColor)
+                            val bitmap = Bitmap.createBitmap(
+                                drawable.intrinsicWidth,
+                                drawable.intrinsicHeight,
+                                Bitmap.Config.ARGB_8888
+                            )
+                            val canvas = Canvas(bitmap)
+                            drawable.setBounds(0, 0, canvas.width, canvas.height)
+                            drawable.draw(canvas)
+                            style.addImage("destination-marker", bitmap)
                         }
 
                         val geoJson = """
