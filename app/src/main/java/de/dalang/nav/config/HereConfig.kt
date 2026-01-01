@@ -32,7 +32,7 @@ object HereConfig {
 
     fun isConfigured(): Boolean = settingsRepository?.isHereConfigured() == true
 
-    // Usage Tracking (monatlich)
+    // Usage Tracking (monatlich) - HERE Routing API
     fun canMakeRequest(): Boolean = settingsRepository?.canMakeHereRequest() ?: false
 
     fun incrementUsage(): Int = settingsRepository?.incrementHereUsage() ?: 0
@@ -49,6 +49,15 @@ object HereConfig {
 
     fun getUsageStatus(): UsageStatus =
         settingsRepository?.getUsageStatus() ?: UsageStatus.OK
+
+    // Fuel Prices API Usage Tracking (separates Limit: 100/Monat)
+    fun canMakeFuelPricesRequest(): Boolean = settingsRepository?.canMakeFuelPricesRequest() ?: false
+
+    fun incrementFuelPricesUsage(): Int = settingsRepository?.incrementFuelPricesUsage() ?: 0
+
+    fun getFuelPricesMonthlyUsage(): Int = settingsRepository?.getFuelPricesMonthlyUsage() ?: 0
+
+    fun getFuelPricesMonthlyLimit(): Int = settingsRepository?.fuelPricesMonthlyLimit ?: SettingsRepository.DEFAULT_FUEL_PRICES_MONTHLY_LIMIT
 
     // Legacy methods for backward compatibility
     @Deprecated("Use getMonthlyUsage() instead", ReplaceWith("getMonthlyUsage()"))

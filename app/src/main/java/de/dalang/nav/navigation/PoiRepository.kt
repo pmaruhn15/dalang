@@ -215,6 +215,12 @@ class PoiRepository {
                 return@withContext searchWithNominatim(PoiType.GAS_STATION, center, radiusKm)
             }
 
+            // Prüfen ob Fuel Prices Limit erreicht ist (100/Monat)
+            if (!HereConfig.canMakeFuelPricesRequest()) {
+                CrashLogger.log("PoiRepository: Fuel Prices limit reached (${HereConfig.getFuelPricesMonthlyUsage()}/${HereConfig.getFuelPricesMonthlyLimit()}), falling back to Nominatim")
+                return@withContext searchWithNominatim(PoiType.GAS_STATION, center, radiusKm)
+            }
+
             val apiKey = HereConfig.getApiKey()
             // HERE Fuel Prices API v2 - radius in Metern
             val radiusMeters = (radiusKm * 1000).toInt().coerceAtMost(100000)
@@ -231,9 +237,9 @@ class PoiRepository {
 
             val response = connection.getInputStream().bufferedReader().readText()
 
-            // HERE Usage zählen
-            HereConfig.incrementUsage()
-            CrashLogger.log("PoiRepository: HERE Fuel usage: ${HereConfig.getMonthlyUsage()}/${HereConfig.getMonthlyLimit()}")
+            // Fuel Prices Usage zählen (separates Limit von 100/Monat)
+            HereConfig.incrementFuelPricesUsage()
+            CrashLogger.log("PoiRepository: Fuel Prices usage: ${HereConfig.getFuelPricesMonthlyUsage()}/${HereConfig.getFuelPricesMonthlyLimit()}")
 
             val json = JSONObject(response)
 

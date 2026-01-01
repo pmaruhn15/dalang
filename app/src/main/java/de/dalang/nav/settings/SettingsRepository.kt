@@ -151,6 +151,72 @@ class SettingsRepository(context: Context) {
         )
     }
 
+    // ========== HERE Fuel Prices API Usage Tracking (Monatlich, separates Limit) ==========
+
+    // Fuel Prices API - Monatliches Limit (Free Tier: 100/Monat)
+    var fuelPricesMonthlyLimit: Int
+        get() = prefs.getInt(KEY_FUEL_PRICES_MONTHLY_LIMIT, DEFAULT_FUEL_PRICES_MONTHLY_LIMIT)
+        set(value) = prefs.edit { putInt(KEY_FUEL_PRICES_MONTHLY_LIMIT, value) }
+
+    fun getFuelPricesMonthlyUsage(): Int {
+        val monthKey = getCurrentMonthKey()
+        val storedMonth = prefs.getString(KEY_FUEL_PRICES_USAGE_MONTH, "") ?: ""
+
+        // Reset counter if it's a new month
+        if (storedMonth != monthKey) {
+            prefs.edit {
+                putString(KEY_FUEL_PRICES_USAGE_MONTH, monthKey)
+                putInt(KEY_FUEL_PRICES_USAGE_COUNT, 0)
+            }
+            return 0
+        }
+
+        return prefs.getInt(KEY_FUEL_PRICES_USAGE_COUNT, 0)
+    }
+
+    fun incrementFuelPricesUsage(): Int {
+        val monthKey = getCurrentMonthKey()
+        val storedMonth = prefs.getString(KEY_FUEL_PRICES_USAGE_MONTH, "") ?: ""
+
+        val currentCount = if (storedMonth != monthKey) {
+            // New month, reset counter
+            0
+        } else {
+            prefs.getInt(KEY_FUEL_PRICES_USAGE_COUNT, 0)
+        }
+
+        val newCount = currentCount + 1
+        prefs.edit {
+            putString(KEY_FUEL_PRICES_USAGE_MONTH, monthKey)
+            putInt(KEY_FUEL_PRICES_USAGE_COUNT, newCount)
+        }
+
+        return newCount
+    }
+
+    fun canMakeFuelPricesRequest(): Boolean {
+        return getFuelPricesMonthlyUsage() < fuelPricesMonthlyLimit
+    }
+
+    fun getFuelPricesUsageInfo(): ApiUsageInfo {
+        val used = getFuelPricesMonthlyUsage()
+        val limit = fuelPricesMonthlyLimit
+        val status = when {
+            used >= limit -> UsageStatus.BLOCKED
+            used >= (limit * 0.8).toInt() -> UsageStatus.WARNING
+            else -> UsageStatus.OK
+        }
+
+        return ApiUsageInfo(
+            apiName = "HERE Fuel Prices",
+            used = used,
+            limit = limit,
+            periodType = PeriodType.MONTHLY,
+            periodStart = getCurrentMonthName(),
+            status = status
+        )
+    }
+
     // ========== Legacy methods for backward compatibility ==========
 
     @Deprecated("Use getHereMonthlyUsage() instead")
@@ -188,6 +254,7 @@ class SettingsRepository(context: Context) {
         // HERE nur anzeigen wenn konfiguriert
         if (isHereConfigured()) {
             list.add(getHereUsageInfo())
+            list.add(getFuelPricesUsageInfo())
         }
 
         return list
@@ -205,7 +272,15 @@ class SettingsRepository(context: Context) {
         private const val KEY_HERE_USAGE_MONTH = "here_usage_month"
         private const val KEY_HERE_USAGE_COUNT = "here_usage_count"
 
+        // HERE Fuel Prices Usage Tracking (monatlich, separates Limit)
+        private const val KEY_FUEL_PRICES_MONTHLY_LIMIT = "fuel_prices_monthly_limit"
+        private const val KEY_FUEL_PRICES_USAGE_MONTH = "fuel_prices_usage_month"
+        private const val KEY_FUEL_PRICES_USAGE_COUNT = "fuel_prices_usage_count"
+
         // HERE Free Tier: 250.000 Transaktionen/Monat
         const val DEFAULT_HERE_MONTHLY_LIMIT = 250_000
+
+        // HERE Fuel Prices Free Tier: 100 Transaktionen/Monat
+        const val DEFAULT_FUEL_PRICES_MONTHLY_LIMIT = 100
     }
 }

@@ -29,6 +29,11 @@ import de.dalang.nav.settings.FuelType
 import de.dalang.nav.settings.PeriodType
 import de.dalang.nav.settings.SettingsRepository
 import de.dalang.nav.settings.UsageStatus
+import de.dalang.nav.util.CrashLogger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.URL
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -46,8 +51,74 @@ fun HereSettingsDialog(
     var selectedFuelType by remember { mutableStateOf(settingsRepository.preferredFuelType) }
     var vehicleRangeKm by remember { mutableStateOf(settingsRepository.vehicleRangeKm.let { if (it == 0) "" else it.toString() }) }
 
-    val usageInfos = remember { settingsRepository.getAllApiUsageInfos() }
+    // Fuel Prices API Test State
+    var isTesting by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<String?>(null) }
+    var testSuccess by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    var usageInfos by remember { mutableStateOf(settingsRepository.getAllApiUsageInfos()) }
     val numberFormat = remember { NumberFormat.getNumberInstance(Locale.GERMANY) }
+
+    // Funktion zum Testen der Fuel Prices API
+    fun testFuelPricesApi() {
+        if (hereApiKey.isBlank()) {
+            testResult = "Kein API Key eingegeben"
+            testSuccess = false
+            return
+        }
+
+        if (!settingsRepository.canMakeFuelPricesRequest()) {
+            testResult = "Monatslimit erreicht (${settingsRepository.fuelPricesMonthlyLimit})"
+            testSuccess = false
+            return
+        }
+
+        isTesting = true
+        testResult = null
+
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    // Test mit München Koordinaten
+                    val url = "https://fuel-v2.cc.api.here.com/fuel/stations.json" +
+                            "?prox=48.1351,11.5820,5000" +
+                            "&apiKey=${hereApiKey.trim()}"
+
+                    CrashLogger.log("HereSettings: Testing Fuel Prices API...")
+                    val connection = URL(url).openConnection()
+                    connection.connectTimeout = 10000
+                    connection.readTimeout = 10000
+                    val response = connection.getInputStream().bufferedReader().readText()
+
+                    // Counter erhöhen
+                    settingsRepository.incrementFuelPricesUsage()
+
+                    // Prüfen ob Stationen gefunden wurden
+                    if (response.contains("\"stations\"")) {
+                        val stationCount = Regex("\"id\"\\s*:").findAll(response).count()
+                        "OK! $stationCount Tankstellen gefunden"
+                    } else {
+                        "API antwortet, aber keine Daten"
+                    }
+                }
+                testResult = result
+                testSuccess = true
+                usageInfos = settingsRepository.getAllApiUsageInfos()
+                CrashLogger.log("HereSettings: Fuel Prices API test successful: $result")
+            } catch (e: java.io.FileNotFoundException) {
+                testResult = "404 - API nicht aktiviert"
+                testSuccess = false
+                CrashLogger.logError("HereSettings", "Fuel Prices API 404", e)
+            } catch (e: Exception) {
+                testResult = "Fehler: ${e.message?.take(50)}"
+                testSuccess = false
+                CrashLogger.logError("HereSettings", "Fuel Prices API test failed", e)
+            } finally {
+                isTesting = false
+            }
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -139,6 +210,59 @@ fun HereSettingsDialog(
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            // Fuel Prices API Test
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Button(
+                    onClick = { testFuelPricesApi() },
+                    enabled = !isTesting && hereApiKey.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color.Black
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (isTesting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.Black,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Teste...")
+                    } else {
+                        Text("Fuel Prices API testen")
+                    }
+                }
+            }
+
+            // Test-Ergebnis anzeigen
+            testResult?.let { result ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (testSuccess) Color(0xFF4CAF50).copy(alpha = 0.2f)
+                            else Color(0xFFE53935).copy(alpha = 0.2f)
+                        )
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = result,
+                        fontSize = 13.sp,
+                        color = if (testSuccess) Color(0xFF4CAF50) else Color(0xFFE53935),
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
 
             // Kraftstoff-Einstellungen
             Spacer(modifier = Modifier.height(24.dp))
