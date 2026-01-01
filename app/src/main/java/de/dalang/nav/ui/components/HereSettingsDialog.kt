@@ -80,12 +80,13 @@ fun HereSettingsDialog(
         scope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    // Test mit München Koordinaten
-                    val url = "https://fuel-v2.cc.api.here.com/fuel/stations.json" +
-                            "?prox=48.1351,11.5820,5000" +
+                    // Test mit München Koordinaten - v3 API
+                    val url = "https://fuel.hereapi.com/v3/stations" +
+                            "?at=48.1351,11.5820" +
+                            "&radius=5000" +
                             "&apiKey=${hereApiKey.trim()}"
 
-                    CrashLogger.log("HereSettings: Testing Fuel Prices API...")
+                    CrashLogger.log("HereSettings: Testing Fuel Prices API v3: $url")
                     val connection = URL(url).openConnection()
                     connection.connectTimeout = 10000
                     connection.readTimeout = 10000
@@ -94,8 +95,8 @@ fun HereSettingsDialog(
                     // Counter erhöhen
                     settingsRepository.incrementFuelPricesUsage()
 
-                    // Prüfen ob Stationen gefunden wurden
-                    if (response.contains("\"stations\"")) {
+                    // Prüfen ob Stationen gefunden wurden (v3 Format)
+                    if (response.contains("\"items\"") || response.contains("\"stations\"")) {
                         val stationCount = Regex("\"id\"\\s*:").findAll(response).count()
                         "OK! $stationCount Tankstellen gefunden"
                     } else {
