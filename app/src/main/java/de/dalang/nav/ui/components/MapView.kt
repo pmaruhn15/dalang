@@ -1,6 +1,5 @@
 package de.dalang.nav.ui.components
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
