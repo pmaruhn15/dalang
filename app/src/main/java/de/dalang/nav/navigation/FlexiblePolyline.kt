@@ -47,14 +47,16 @@ object FlexiblePolyline {
             var lastZ = 0L
 
             while (decoder.hasMore()) {
-                // HERE Flexible Polyline Format: lat zuerst, dann lng
-                val latDelta = decoder.decodeSignedValue()
-                lastLat += latDelta
+                // HERE Routing API v8 kodiert: lng zuerst, dann lat (entgegen der Spec!)
+                // Beweis aus Debug-Log: raw=(11507733,48180270) für München (lat~48.18, lng~11.5)
+                // -> 11507733 ist lng (11.5), 48180270 ist lat (48.18)
+                val lngDelta = decoder.decodeSignedValue()
+                lastLng += lngDelta
 
                 if (!decoder.hasMore()) break
 
-                val lngDelta = decoder.decodeSignedValue()
-                lastLng += lngDelta
+                val latDelta = decoder.decodeSignedValue()
+                lastLat += latDelta
 
                 // Third dimension (Altitude) falls vorhanden
                 if (thirdDim != 0 && decoder.hasMore()) {
@@ -67,7 +69,7 @@ object FlexiblePolyline {
 
                 // Nur die ersten paar Punkte loggen
                 if (result.size < 3) {
-                    CrashLogger.log("FlexiblePolyline: Point ${result.size}: raw=($lastLat,$lastLng) -> ($lat,$lng)")
+                    CrashLogger.log("FlexiblePolyline: Point ${result.size}: raw=(lat=$lastLat,lng=$lastLng) -> ($lat,$lng)")
                 }
 
                 result.add(LatLng(lat, lng))
