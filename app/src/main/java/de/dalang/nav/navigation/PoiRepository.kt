@@ -6,6 +6,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import kotlin.math.*
@@ -70,7 +72,16 @@ class PoiRepository {
                 return@withContext emptyList()
             }
 
-            // Sample-Punkte entlang der Route (alle ~5km)
+            // Für Tankstellen: HERE Fuel Prices API mit Corridor-Suche (eine einzige Anfrage)
+            if (type == PoiType.GAS_STATION && HereConfig.isConfigured() && HereConfig.canMakeFuelPricesRequest()) {
+                val results = searchGasStationsAlongRoute(routeGeometry, currentLocation, maxDistanceFromRouteKm, limit)
+                if (results.isNotEmpty()) {
+                    return@withContext results
+                }
+                // Fallback auf alte Methode wenn Corridor-Suche fehlschlägt
+            }
+
+            // Fallback: Sample-Punkte entlang der Route (alle ~5km)
             val samplePoints = sampleRoutePoints(routeGeometry, 5.0)
             CrashLogger.log("PoiRepository: Using ${samplePoints.size} sample points along route")
 
@@ -201,7 +212,184 @@ class PoiRepository {
     }
 
     /**
-     * Sucht Tankstellen mit HERE Fuel Prices API v3 inkl. Spritpreise
+     * Sucht Tankstellen entlang einer Route mit HERE Fuel Prices API v3 Corridor-Suche
+     * POST https://fuel.hereapi.com/v3/stations mit corridor Body
+     * Effizient: Eine einzige Anfrage für die gesamte Route
+     */
+    private suspend fun searchGasStationsAlongRoute(
+        routeGeometry: List<LatLng>,
+        currentLocation: LatLng,
+        maxDistanceFromRouteKm: Double,
+        limit: Int
+    ): List<Poi> = withContext(Dispatchers.IO) {
+        try {
+            val apiKey = HereConfig.getApiKey()
+            val widthMeters = (maxDistanceFromRouteKm * 1000).toInt().coerceIn(50, 20000)
+
+            // Sample-Punkte für Corridor (max ~50 Punkte, alle ~2km)
+            val corridorPoints = sampleRoutePoints(routeGeometry, 2.0).take(50)
+            if (corridorPoints.size < 2) {
+                CrashLogger.log("PoiRepository: Not enough points for corridor search")
+                return@withContext emptyList()
+            }
+
+            // JSON Body für POST Request
+            val corridorArray = JSONArray()
+            for (point in corridorPoints) {
+                val pointObj = JSONObject()
+                pointObj.put("lat", point.lat)
+                pointObj.put("lng", point.lng)
+                corridorArray.put(pointObj)
+            }
+
+            val requestBody = JSONObject()
+            requestBody.put("corridor", corridorArray)
+            requestBody.put("width", widthMeters)
+
+            CrashLogger.log("PoiRepository: HERE Fuel Prices v3 corridor search with ${corridorPoints.size} points, width=${widthMeters}m")
+
+            val url = URL("https://fuel.hereapi.com/v3/stations?apiKey=$apiKey")
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("User-Agent", "DaLang Navigation App")
+            connection.connectTimeout = 15000
+            connection.readTimeout = 15000
+            connection.doOutput = true
+
+            // Request Body schreiben
+            OutputStreamWriter(connection.outputStream).use { writer ->
+                writer.write(requestBody.toString())
+                writer.flush()
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode != 200) {
+                CrashLogger.logError("PoiRepository", "Corridor search failed with code $responseCode")
+                return@withContext emptyList()
+            }
+
+            val response = connection.inputStream.bufferedReader().readText()
+
+            // Fuel Prices Usage zählen
+            HereConfig.incrementFuelPricesUsage()
+            CrashLogger.log("PoiRepository: Fuel Prices usage: ${HereConfig.getFuelPricesMonthlyUsage()}/${HereConfig.getFuelPricesMonthlyLimit()}")
+
+            val json = JSONObject(response)
+            val stationsArray = json.optJSONArray("stations")
+
+            if (stationsArray == null) {
+                CrashLogger.log("PoiRepository: Corridor search - no stations in response")
+                return@withContext emptyList()
+            }
+
+            CrashLogger.log("PoiRepository: Corridor search found ${stationsArray.length()} stations")
+
+            val results = mutableListOf<Poi>()
+            for (i in 0 until stationsArray.length()) {
+                val station = stationsArray.getJSONObject(i)
+                val poi = parseStationToPoi(station, currentLocation, routeGeometry)
+                if (poi != null) {
+                    results.add(poi)
+                }
+            }
+
+            // Nach Entfernung sortieren und limitieren
+            val sortedResults = results.sortedBy { it.distanceKm }.take(limit)
+            CrashLogger.log("PoiRepository: Corridor search returned ${sortedResults.size} stations")
+            sortedResults
+
+        } catch (e: Exception) {
+            CrashLogger.logError("PoiRepository", "Corridor search failed", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Parst ein Station-JSON-Objekt zu einem Poi
+     */
+    private fun parseStationToPoi(
+        station: JSONObject,
+        currentLocation: LatLng,
+        routeGeometry: List<LatLng>? = null
+    ): Poi? {
+        try {
+            val positionObj = station.optJSONObject("position") ?: return null
+            val lat = positionObj.optDouble("lat", Double.NaN)
+            val lng = positionObj.optDouble("lng", Double.NaN)
+            if (lat.isNaN() || lng.isNaN()) return null
+
+            val brand = station.optString("brand", "").ifEmpty { "Tankstelle" }
+            val name = station.optString("name", brand)
+
+            // Adresse
+            val addressObj = station.optJSONObject("address")
+            val address = if (addressObj != null) {
+                val street = addressObj.optString("street", "")
+                val houseNumber = addressObj.optString("houseNumber", "")
+                val city = addressObj.optString("city", "")
+                buildString {
+                    if (street.isNotEmpty()) {
+                        append(street)
+                        if (houseNumber.isNotEmpty()) append(" $houseNumber")
+                    }
+                    if (city.isNotEmpty()) {
+                        if (isNotEmpty()) append(", ")
+                        append(city)
+                    }
+                }.ifEmpty { null }
+            } else null
+
+            val distanceFromCurrent = calculateDistance(currentLocation.lat, currentLocation.lng, lat, lng)
+            val arrivalMinutes = estimateArrivalTime(distanceFromCurrent)
+
+            // Umweg berechnen wenn Route vorhanden
+            val detourMinutes = if (routeGeometry != null && routeGeometry.isNotEmpty()) {
+                val distanceToRoute = minDistanceToRoute(lat, lng, routeGeometry)
+                estimateDetourTime(distanceToRoute)
+            } else 0
+
+            // Kraftstoffpreise
+            var diesel: Double? = null
+            var e5: Double? = null
+
+            val pricesArray = station.optJSONArray("prices")
+            if (pricesArray != null) {
+                for (j in 0 until pricesArray.length()) {
+                    val priceObj = pricesArray.getJSONObject(j)
+                    val fuelTypeId = priceObj.optInt("fuelType", -1)
+                    val price = priceObj.optDouble("price", Double.NaN).takeIf { !it.isNaN() }
+
+                    when (fuelTypeId) {
+                        1 -> diesel = price  // Diesel
+                        53 -> e5 = price     // Super E5
+                        54 -> if (e5 == null) e5 = price  // Super E10 als Fallback
+                        2 -> if (e5 == null) e5 = price   // Regular als Fallback
+                    }
+                }
+            }
+
+            val fuelPrices = if (diesel != null || e5 != null) {
+                FuelPrices(diesel = diesel, e5 = e5, e10 = null)
+            } else null
+
+            return Poi(
+                name = brand.ifEmpty { name },
+                lat = lat,
+                lng = lng,
+                address = address,
+                distanceKm = distanceFromCurrent,
+                estimatedArrivalMinutes = arrivalMinutes,
+                detourMinutes = detourMinutes,
+                fuelPrices = fuelPrices
+            )
+        } catch (e: Exception) {
+            return null
+        }
+    }
+
+    /**
+     * Sucht Tankstellen mit HERE Fuel Prices API v3 inkl. Spritpreise (Circle Search)
      * API: https://fuel.hereapi.com/v3/stations
      * Docs: https://developer.here.com/documentation/fuel-prices
      */
