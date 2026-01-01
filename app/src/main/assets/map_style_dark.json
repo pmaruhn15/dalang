@@ -25,7 +25,8 @@
   "sources": {
     "openmaptiles": {
       "type": "vector",
-      "url": "https://tiles.openfreemap.org/planet"
+      "tiles": ["https://tiles.openfreemap.org/planet/{z}/{x}/{y}.pbf"],
+      "maxzoom": 14
     }
   },
   "sprite": "https://openmaptiles.github.io/dark-matter-gl-style/sprite",
