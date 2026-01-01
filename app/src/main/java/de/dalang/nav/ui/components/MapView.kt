@@ -50,7 +50,9 @@ fun MapViewComposable(
     selectedPoiType: PoiType? = null,
     preferredFuelType: FuelType = FuelType.DIESEL,
     vehicleRangeKm: Int = 0,
+    showPoiOverview: Boolean = false,  // Zeigt POI-Übersicht mit Zoom auf Route
     onMapClick: ((LatLng) -> Unit)? = null,
+    onPoiClick: ((Poi) -> Unit)? = null,  // Callback wenn POI-Marker geklickt wird
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -62,6 +64,9 @@ fun MapViewComposable(
     var isMapReady by remember { mutableStateOf(false) }
     var hasCenteredOnLocation by remember { mutableStateOf(false) }
     var styleVersion by remember { mutableIntStateOf(0) }
+
+    // POIs für Klick-Erkennung merken
+    val currentPois = remember(pois) { pois }
 
     // Auto Light/Dark basierend auf System-Theme
     val styleUrl = if (isDarkTheme) STYLE_DARK else STYLE_LIGHT
@@ -99,9 +104,32 @@ fun MapViewComposable(
                                         .zoom(if (currentLocation != null) 15.0 else 5.0)
                                         .build()
 
-                                    // Klick-Handler fuer Kartenklicks
+                                    // Klick-Handler fuer Kartenklicks (inkl. POI-Erkennung)
                                     map.addOnMapClickListener { point ->
                                         CrashLogger.log("MapView: Map clicked at ${point.latitude}, ${point.longitude}")
+
+                                        // Prüfe ob POI-Marker geklickt wurde
+                                        val screenPoint = map.projection.toScreenLocation(point)
+                                        val poiFeatures = map.queryRenderedFeatures(screenPoint, "poi-layer")
+                                        val poiCheapestFeatures = map.queryRenderedFeatures(screenPoint, "poi-cheapest-layer")
+
+                                        val allPoiFeatures = poiFeatures + poiCheapestFeatures
+                                        if (allPoiFeatures.isNotEmpty() && currentPois.isNotEmpty()) {
+                                            // POI-Marker wurde geklickt - finde den nächsten POI
+                                            val clickedLat = point.latitude
+                                            val clickedLng = point.longitude
+                                            val nearestPoi = currentPois.minByOrNull { poi ->
+                                                val dlat = poi.lat - clickedLat
+                                                val dlng = poi.lng - clickedLng
+                                                dlat * dlat + dlng * dlng
+                                            }
+                                            if (nearestPoi != null) {
+                                                CrashLogger.log("MapView: POI clicked: ${nearestPoi.name}")
+                                                onPoiClick?.invoke(nearestPoi)
+                                                return@addOnMapClickListener true
+                                            }
+                                        }
+
                                         onMapClick?.invoke(LatLng(point.latitude, point.longitude))
                                         true
                                     }
@@ -634,11 +662,59 @@ fun MapViewComposable(
             CrashLogger.logError("MapView", "getStyle failed for POIs", e)
         }
     }
+
+    // Zoom auf Route wenn POI-Übersicht aktiv ist
+    LaunchedEffect(showPoiOverview, isMapReady, route) {
+        if (!isMapReady) return@LaunchedEffect
+        val map = mapLibreMap ?: return@LaunchedEffect
+
+        if (showPoiOverview && route != null && route.geometry.isNotEmpty()) {
+            // Zoom auf gesamte Route
+            try {
+                val bounds = LatLngBounds.Builder()
+                var validPoints = 0
+
+                route.geometry.forEach { point ->
+                    if (point.lat >= -90 && point.lat <= 90 &&
+                        point.lng >= -180 && point.lng <= 180) {
+                        bounds.include(
+                            org.maplibre.android.geometry.LatLng(point.lat, point.lng)
+                        )
+                        validPoints++
+                    }
+                }
+
+                // POIs auch einbeziehen
+                pois.forEach { poi ->
+                    if (poi.lat >= -90 && poi.lat <= 90 &&
+                        poi.lng >= -180 && poi.lng <= 180) {
+                        bounds.include(
+                            org.maplibre.android.geometry.LatLng(poi.lat, poi.lng)
+                        )
+                        validPoints++
+                    }
+                }
+
+                if (validPoints >= 2) {
+                    map.animateCamera(
+                        CameraUpdateFactory.newLatLngBounds(
+                            bounds.build(),
+                            100  // Padding
+                        ),
+                        500
+                    )
+                    CrashLogger.log("MapView: Zoomed to route overview for POIs")
+                }
+            } catch (e: Exception) {
+                CrashLogger.logError("MapView", "POI overview zoom failed", e)
+            }
+        }
+    }
 }
 
 /**
  * Erstellt ein Bitmap mit McDonald's Zeit-Label für die Karte
- * Zeigt Ankunftszeit und Umwegzeit
+ * Zeigt Ankunftszeit und Umwegzeit in Schwarz-Weiß
  */
 private fun createMcDonaldsLabelBitmap(arrivalMinutes: Int, detourMinutes: Int): Bitmap {
     val arrivalText = "${arrivalMinutes}min"
@@ -653,7 +729,7 @@ private fun createMcDonaldsLabelBitmap(arrivalMinutes: Int, detourMinutes: Int):
     val smallPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 24f
         typeface = Typeface.DEFAULT
-        color = Color.parseColor("#FFEB3B")  // Gelb für Umweg
+        color = Color.LTGRAY  // Hellgrau für Umweg
     }
 
     val arrivalBounds = Rect()
@@ -669,16 +745,16 @@ private fun createMcDonaldsLabelBitmap(arrivalMinutes: Int, detourMinutes: Int):
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
-    // Hintergrund (McDonald's rot)
+    // Hintergrund (Schwarz)
     val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#DA291C")
+        color = Color.parseColor("#1A1A1A")
         style = Paint.Style.FILL
     }
     canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 8f, 8f, bgPaint)
 
-    // Rand
+    // Rand (Weiß)
     val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#FFCC00")  // McDonald's gelb
+        color = Color.WHITE
         style = Paint.Style.STROKE
         strokeWidth = 2f
     }
@@ -692,7 +768,7 @@ private fun createMcDonaldsLabelBitmap(arrivalMinutes: Int, detourMinutes: Int):
         paint
     )
 
-    // Umwegzeit (gelb, kleiner)
+    // Umwegzeit (hellgrau, kleiner)
     canvas.drawText(
         detourText,
         (width - detourBounds.width()) / 2f,

@@ -189,14 +189,39 @@ fun DaLangApp(viewModel: MainViewModel) {
     var selectedPoiType by remember { mutableStateOf<PoiType?>(null) }
     var poiResults by remember { mutableStateOf<List<Poi>>(emptyList()) }
     var isSearchingPoi by remember { mutableStateOf(false) }
+    var showMcDonaldsOverview by remember { mutableStateOf(false) }
 
-    // POI Suche starten - entlang der Route wenn vorhanden
+    // McDonald's Toggle - Zeigt/versteckt McDonald's auf der Route
+    fun toggleMcDonalds() {
+        if (showMcDonaldsOverview) {
+            // Ausschalten - zurück zur normalen Ansicht
+            showMcDonaldsOverview = false
+            selectedPoiType = null
+            poiResults = emptyList()
+        } else {
+            // Einschalten - McDonald's laden und anzeigen
+            val location = currentLocation ?: return
+            val route = navigationState.route
+            if (route != null && route.geometry.isNotEmpty()) {
+                selectedPoiType = PoiType.MCDONALDS
+                isSearchingPoi = true
+                showMcDonaldsOverview = true
+                scope.launch {
+                    poiResults = poiRepository.searchAlongRoute(PoiType.MCDONALDS, route.geometry, location)
+                    isSearchingPoi = false
+                }
+            }
+        }
+    }
+
+    // POI Suche starten - entlang der Route wenn vorhanden (für Tankstellen)
     fun searchPoi(type: PoiType) {
         val location = currentLocation ?: return
         selectedPoiType = type
         showPoiDialog = true
         isSearchingPoi = true
         poiResults = emptyList()
+        showMcDonaldsOverview = false  // McDonald's Übersicht ausschalten
 
         scope.launch {
             val route = navigationState.route
@@ -223,24 +248,12 @@ fun DaLangApp(viewModel: MainViewModel) {
         }
     }
 
-    // POI-Marker ausblenden wenn Navigation startet
+    // POI-Marker und McDonald's-Übersicht ausblenden wenn Navigation startet
     LaunchedEffect(navigationState.isNavigating) {
         if (navigationState.isNavigating) {
             selectedPoiType = null
             poiResults = emptyList()
-        }
-    }
-
-    // McDonald's automatisch laden wenn Route berechnet wurde
-    LaunchedEffect(navigationState.route) {
-        val route = navigationState.route
-        val location = currentLocation
-        if (route != null && route.geometry.isNotEmpty() && location != null && !navigationState.isNavigating) {
-            // McDonald's entlang der Route suchen und auf Karte anzeigen
-            selectedPoiType = PoiType.MCDONALDS
-            isSearchingPoi = true
-            poiResults = poiRepository.searchAlongRoute(PoiType.MCDONALDS, route.geometry, location)
-            isSearchingPoi = false
+            showMcDonaldsOverview = false
         }
     }
 
@@ -302,10 +315,20 @@ fun DaLangApp(viewModel: MainViewModel) {
             selectedPoiType = selectedPoiType,
             preferredFuelType = preferredFuelType,
             vehicleRangeKm = vehicleRangeKm,
+            showPoiOverview = showMcDonaldsOverview,
             onMapClick = { location ->
                 // Nur reagieren wenn keine Navigation aktiv und keine Route geplant
                 if (!navigationState.isNavigating && navigationState.route == null) {
                     viewModel.onMapClicked(location)
+                }
+            },
+            onPoiClick = { poi ->
+                // Bei Klick auf McDonald's: Dorthin navigieren
+                if (showMcDonaldsOverview) {
+                    viewModel.addWaypoint(LatLng(poi.lat, poi.lng))
+                    showMcDonaldsOverview = false
+                    selectedPoiType = null
+                    poiResults = emptyList()
                 }
             },
             modifier = Modifier.fillMaxSize()
@@ -332,7 +355,7 @@ fun DaLangApp(viewModel: MainViewModel) {
             state = navigationState,
             onStartNavigation = viewModel::startNavigation,
             onStopNavigation = viewModel::stopNavigation,
-            onMcDonaldsClick = { searchPoi(PoiType.MCDONALDS) },
+            onMcDonaldsClick = { toggleMcDonalds() },
             onGasStationClick = { searchPoi(PoiType.GAS_STATION) },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
