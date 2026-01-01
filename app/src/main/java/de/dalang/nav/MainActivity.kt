@@ -261,7 +261,12 @@ fun DaLangApp(viewModel: MainViewModel) {
                 modifier = Modifier.width(300.dp)
             ) {
                 DrawerContent(
-                    onCloseDrawer = { scope.launch { drawerState.close() } }
+                    onCloseDrawer = { scope.launch { drawerState.close() } },
+                    onSettingsChanged = {
+                        // Settings aktualisieren
+                        preferredFuelType = settingsRepository.preferredFuelType
+                        vehicleRangeKm = settingsRepository.vehicleRangeKm
+                    }
                 )
             }
         }
@@ -421,7 +426,8 @@ fun MapClickDialog(
 @Suppress("UNUSED_PARAMETER")
 @Composable
 fun DrawerContent(
-    onCloseDrawer: () -> Unit
+    onCloseDrawer: () -> Unit,
+    onSettingsChanged: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val appVersion = remember {
@@ -535,11 +541,7 @@ fun DrawerContent(
     if (showHereSettings) {
         HereSettingsDialog(
             onDismiss = { showHereSettings = false },
-            onSave = {
-                // Settings aktualisieren
-                preferredFuelType = settingsRepository.preferredFuelType
-                vehicleRangeKm = settingsRepository.vehicleRangeKm
-            }
+            onSave = { onSettingsChanged() }
         )
     }
 
