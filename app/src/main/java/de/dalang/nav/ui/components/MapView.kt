@@ -122,10 +122,6 @@ fun MapViewComposable(
                                     }
                                 }
 
-                                // Listener für fehlende Bilder (sprites)
-                                map.addOnStyleImageMissingListener { id ->
-                                    CrashLogger.log("MapView: Missing style image: $id")
-                                }
                                 try {
                                     map.uiSettings.apply {
                                         isCompassEnabled = true
