@@ -46,6 +46,7 @@ fun HereSettingsDialog(
     val settingsRepository = remember { SettingsRepository(context) }
 
     var hereApiKey by remember { mutableStateOf(HereConfig.getApiKey()) }
+    var hereApiEnabled by remember { mutableStateOf(settingsRepository.hereApiEnabled) }
     var showApiKey by remember { mutableStateOf(false) }
     var monthlyLimit by remember { mutableStateOf(settingsRepository.hereMonthlyLimit.toString()) }
     var selectedFuelType by remember { mutableStateOf(settingsRepository.preferredFuelType) }
@@ -143,6 +144,43 @@ fun HereSettingsDialog(
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // HERE API aktivieren/deaktivieren Toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "HERE API aktivieren",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = if (hereApiEnabled) "Routing & Spritpreise über HERE" else "Fallback auf OSRM",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = hereApiEnabled,
+                    onCheckedChange = { hereApiEnabled = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color(0xFF4CAF50),
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.Gray
+                    )
+                )
+            }
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -466,6 +504,7 @@ fun HereSettingsDialog(
                 Button(
                     onClick = {
                         HereConfig.setApiKey(hereApiKey.trim())
+                        settingsRepository.hereApiEnabled = hereApiEnabled
                         monthlyLimit.toIntOrNull()?.let {
                             settingsRepository.hereMonthlyLimit = it
                         }

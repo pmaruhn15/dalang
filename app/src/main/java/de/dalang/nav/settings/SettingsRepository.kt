@@ -52,6 +52,11 @@ class SettingsRepository(context: Context) {
         get() = prefs.getString(KEY_HERE_API_KEY, "") ?: ""
         set(value) = prefs.edit { putString(KEY_HERE_API_KEY, value) }
 
+    // Toggle ob HERE API genutzt werden soll (unabhängig vom Key)
+    var hereApiEnabled: Boolean
+        get() = prefs.getBoolean(KEY_HERE_API_ENABLED, true)
+        set(value) = prefs.edit { putBoolean(KEY_HERE_API_ENABLED, value) }
+
     var voiceEnabled: Boolean
         get() = prefs.getBoolean(KEY_VOICE_ENABLED, true)
         set(value) = prefs.edit { putBoolean(KEY_VOICE_ENABLED, value) }
@@ -78,7 +83,11 @@ class SettingsRepository(context: Context) {
         get() = prefs.getInt(KEY_HERE_MONTHLY_LIMIT, DEFAULT_HERE_MONTHLY_LIMIT)
         set(value) = prefs.edit { putInt(KEY_HERE_MONTHLY_LIMIT, value) }
 
-    fun isHereConfigured(): Boolean = hereApiKey.isNotBlank()
+    // HERE ist "konfiguriert" wenn Key vorhanden UND aktiviert
+    fun isHereConfigured(): Boolean = hereApiKey.isNotBlank() && hereApiEnabled
+
+    // Nur prüfen ob Key vorhanden ist (für UI Anzeige)
+    fun hasHereApiKey(): Boolean = hereApiKey.isNotBlank()
 
     // ========== HERE API Usage Tracking (Monatlich) ==========
 
@@ -263,6 +272,7 @@ class SettingsRepository(context: Context) {
     companion object {
         private const val PREFS_NAME = "dalang_settings"
         private const val KEY_HERE_API_KEY = "here_api_key"
+        private const val KEY_HERE_API_ENABLED = "here_api_enabled"
         private const val KEY_VOICE_ENABLED = "voice_enabled"
         private const val KEY_FUEL_TYPE = "preferred_fuel_type"
         private const val KEY_VEHICLE_RANGE_KM = "vehicle_range_km"

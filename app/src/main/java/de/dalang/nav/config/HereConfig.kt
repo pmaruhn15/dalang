@@ -32,6 +32,13 @@ object HereConfig {
 
     fun isConfigured(): Boolean = settingsRepository?.isHereConfigured() == true
 
+    // Toggle zum Ein-/Ausschalten der HERE API
+    fun isEnabled(): Boolean = settingsRepository?.hereApiEnabled ?: true
+
+    fun setEnabled(enabled: Boolean) {
+        settingsRepository?.hereApiEnabled = enabled
+    }
+
     // Usage Tracking (monatlich) - HERE Routing API
     fun canMakeRequest(): Boolean = settingsRepository?.canMakeHereRequest() ?: false
 
