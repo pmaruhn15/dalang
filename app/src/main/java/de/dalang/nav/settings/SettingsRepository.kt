@@ -78,6 +78,13 @@ class SettingsRepository(context: Context) {
         get() = prefs.getInt(KEY_VEHICLE_RANGE_KM, 0) // 0 = nicht gesetzt/unbegrenzt
         set(value) = prefs.edit { putInt(KEY_VEHICLE_RANGE_KM, value) }
 
+    // MapTiler API Key für Karten-Tiles
+    var mapTilerApiKey: String
+        get() = prefs.getString(KEY_MAPTILER_API_KEY, "") ?: ""
+        set(value) = prefs.edit { putString(KEY_MAPTILER_API_KEY, value) }
+
+    fun hasMapTilerApiKey(): Boolean = mapTilerApiKey.isNotBlank()
+
     // HERE API - Monatliches Limit (Free Tier: 250.000/Monat)
     var hereMonthlyLimit: Int
         get() = prefs.getInt(KEY_HERE_MONTHLY_LIMIT, DEFAULT_HERE_MONTHLY_LIMIT)
@@ -276,6 +283,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_VOICE_ENABLED = "voice_enabled"
         private const val KEY_FUEL_TYPE = "preferred_fuel_type"
         private const val KEY_VEHICLE_RANGE_KM = "vehicle_range_km"
+        private const val KEY_MAPTILER_API_KEY = "maptiler_api_key"
 
         // HERE Usage Tracking (monatlich)
         private const val KEY_HERE_MONTHLY_LIMIT = "here_monthly_limit"

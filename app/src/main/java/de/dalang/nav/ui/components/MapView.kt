@@ -21,6 +21,7 @@ import de.dalang.nav.navigation.Poi
 import de.dalang.nav.navigation.PoiType
 import de.dalang.nav.navigation.Route
 import de.dalang.nav.settings.FuelType
+import de.dalang.nav.settings.SettingsRepository
 import de.dalang.nav.util.CrashLogger
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -33,9 +34,13 @@ import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 
-private const val STYLE_LIGHT = "https://tiles.openfreemap.org/styles/positron"
-// Dark style aus lokaler Asset-Datei laden (kann im Repo bearbeitet werden)
-private const val STYLE_DARK = "asset://map_style_dark.json"
+// Fallback styles (OpenFreeMap - kostenlos, kein API Key)
+private const val OPENFREEMAP_LIGHT = "https://tiles.openfreemap.org/styles/positron"
+private const val OPENFREEMAP_DARK = "https://tiles.openfreemap.org/styles/positron"  // Kein echter Dark-Style verfügbar
+
+// MapTiler styles (mit API Key)
+private fun mapTilerStyle(style: String, apiKey: String) =
+    "https://api.maptiler.com/maps/$style/style.json?key=$apiKey"
 
 @Composable
 fun MapViewComposable(
@@ -60,6 +65,10 @@ fun MapViewComposable(
     val lifecycleOwner = LocalLifecycleOwner.current
     val isDarkTheme = isSystemInDarkTheme()
 
+    // MapTiler API Key aus Settings
+    val settingsRepository = remember { SettingsRepository(context) }
+    val mapTilerKey = remember { settingsRepository.mapTilerApiKey }
+
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var isMapReady by remember { mutableStateOf(false) }
@@ -69,8 +78,17 @@ fun MapViewComposable(
     // POIs für Klick-Erkennung merken
     val currentPois = remember(pois) { pois }
 
-    // Auto Light/Dark basierend auf System-Theme
-    val styleUrl = if (isDarkTheme) STYLE_DARK else STYLE_LIGHT
+    // Style-URL: MapTiler wenn Key vorhanden, sonst OpenFreeMap Fallback
+    val styleUrl = if (mapTilerKey.isNotBlank()) {
+        if (isDarkTheme) {
+            mapTilerStyle("streets-v2-dark", mapTilerKey)
+        } else {
+            mapTilerStyle("streets-v2-light", mapTilerKey)
+        }
+    } else {
+        // Fallback ohne API Key
+        if (isDarkTheme) OPENFREEMAP_DARK else OPENFREEMAP_LIGHT
+    }
 
     AndroidView(
         factory = { ctx ->

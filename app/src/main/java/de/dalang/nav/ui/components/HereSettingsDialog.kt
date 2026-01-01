@@ -52,6 +52,10 @@ fun HereSettingsDialog(
     var selectedFuelType by remember { mutableStateOf(settingsRepository.preferredFuelType) }
     var vehicleRangeKm by remember { mutableStateOf(settingsRepository.vehicleRangeKm.let { if (it == 0) "" else it.toString() }) }
 
+    // MapTiler API Key
+    var mapTilerApiKey by remember { mutableStateOf(settingsRepository.mapTilerApiKey) }
+    var showMapTilerKey by remember { mutableStateOf(false) }
+
     // Fuel Prices API Test State
     var isTesting by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
@@ -132,8 +136,16 @@ fun HereSettingsDialog(
                 .verticalScroll(rememberScrollState())
         ) {
             Text(
-                text = "HERE API",
+                text = "API Einstellungen",
                 style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "HERE API",
+                style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
@@ -301,6 +313,100 @@ fun HereSettingsDialog(
                         fontWeight = FontWeight.Medium
                     )
                 }
+            }
+
+            // MapTiler API Key (für Karten-Tiles)
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Karte",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "MapTiler für Karten-Tiles mit Dark Mode",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "MapTiler API Key",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (mapTilerApiKey.isEmpty()) {
+                            Text(
+                                text = "API Key eingeben...",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 14.sp
+                            )
+                        }
+
+                        BasicTextField(
+                            value = mapTilerApiKey,
+                            onValueChange = { mapTilerApiKey = it },
+                            textStyle = TextStyle(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 14.sp
+                            ),
+                            singleLine = true,
+                            visualTransformation = if (showMapTilerKey) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            },
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    TextButton(
+                        onClick = { showMapTilerKey = !showMapTilerKey },
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Text(
+                            text = if (showMapTilerKey) "Verbergen" else "Zeigen",
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "cloud.maptiler.com → API Keys",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (mapTilerApiKey.isBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Ohne Key: OpenFreeMap (kein Dark Mode)",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             // Kraftstoff-Einstellungen
@@ -510,6 +616,7 @@ fun HereSettingsDialog(
                         }
                         settingsRepository.preferredFuelType = selectedFuelType
                         settingsRepository.vehicleRangeKm = vehicleRangeKm.toIntOrNull() ?: 0
+                        settingsRepository.mapTilerApiKey = mapTilerApiKey.trim()
                         onSave()
                         onDismiss()
                     },
