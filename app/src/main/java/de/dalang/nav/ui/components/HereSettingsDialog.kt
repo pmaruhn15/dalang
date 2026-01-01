@@ -81,12 +81,13 @@ fun HereSettingsDialog(
         scope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    // Test mit München Koordinaten - v2 API
-                    val url = "https://fuel-v2.cc.api.here.com/fuel/stations.json" +
-                            "?prox=48.1351,11.5820,5000" +
+                    // Test mit München Koordinaten - v3 API
+                    // Format: in=circle:{lat},{lng};r={radius}
+                    val url = "https://fuel.hereapi.com/v3/stations" +
+                            "?in=circle:48.1351,11.5820;r=5000" +
                             "&apiKey=${hereApiKey.trim()}"
 
-                    CrashLogger.log("HereSettings: Testing Fuel Prices API v2: $url")
+                    CrashLogger.log("HereSettings: Testing Fuel Prices API v3: $url")
                     val connection = URL(url).openConnection()
                     connection.connectTimeout = 10000
                     connection.readTimeout = 10000
@@ -95,8 +96,8 @@ fun HereSettingsDialog(
                     // Counter erhöhen
                     settingsRepository.incrementFuelPricesUsage()
 
-                    // Prüfen ob Stationen gefunden wurden (v2 Format: fuelStations.fuelStation)
-                    if (response.contains("\"fuelStation\"") || response.contains("\"fuelStations\"")) {
+                    // Prüfen ob Stationen gefunden wurden (v3 Format: stations Array)
+                    if (response.contains("\"stations\"")) {
                         val stationCount = Regex("\"id\"\\s*:").findAll(response).count()
                         "OK! $stationCount Tankstellen gefunden"
                     } else {
@@ -108,9 +109,9 @@ fun HereSettingsDialog(
                 usageInfos = settingsRepository.getAllApiUsageInfos()
                 CrashLogger.log("HereSettings: Fuel Prices API test successful: $result")
             } catch (e: java.io.FileNotFoundException) {
-                testResult = "404 - Fuel Prices nicht aktiviert im HERE Projekt"
+                testResult = "404 - Fuel Prices v3 nicht aktiviert"
                 testSuccess = false
-                CrashLogger.logError("HereSettings", "Fuel Prices API 404 - API nicht im HERE Projekt aktiviert", e)
+                CrashLogger.logError("HereSettings", "Fuel Prices API v3 404 - Service nicht aktiviert", e)
             } catch (e: Exception) {
                 testResult = "Fehler: ${e.message?.take(50)}"
                 testSuccess = false

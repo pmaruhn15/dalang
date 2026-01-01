@@ -201,8 +201,9 @@ class PoiRepository {
     }
 
     /**
-     * Sucht Tankstellen mit HERE Fuel Prices API inkl. Spritpreise
-     * API: https://fuel-v2.cc.api.here.com/fuel/stations.json
+     * Sucht Tankstellen mit HERE Fuel Prices API v3 inkl. Spritpreise
+     * API: https://fuel.hereapi.com/v3/stations
+     * Docs: https://developer.here.com/documentation/fuel-prices
      */
     private suspend fun searchGasStationsWithHere(
         center: LatLng,
@@ -222,13 +223,13 @@ class PoiRepository {
             }
 
             val apiKey = HereConfig.getApiKey()
-            // HERE Fuel Prices API v2 - prox=lat,lng,radius (radius in Metern)
+            // HERE Fuel Prices API v3 - in=circle:{lat},{lng};r={radius}
             val radiusMeters = (radiusKm * 1000).toInt().coerceAtMost(100000)
-            val url = "https://fuel-v2.cc.api.here.com/fuel/stations.json?" +
-                "prox=${center.lat},${center.lng},$radiusMeters" +
+            val url = "https://fuel.hereapi.com/v3/stations?" +
+                "in=circle:${center.lat},${center.lng};r=$radiusMeters" +
                 "&apiKey=$apiKey"
 
-            CrashLogger.log("PoiRepository: HERE Fuel Prices v2 request at ${center.lat},${center.lng} radius ${radiusKm}km")
+            CrashLogger.log("PoiRepository: HERE Fuel Prices v3 request at ${center.lat},${center.lng} radius ${radiusKm}km")
 
             val connection = URL(url).openConnection()
             connection.setRequestProperty("User-Agent", "DaLang Navigation App")
@@ -243,11 +244,9 @@ class PoiRepository {
 
             val json = JSONObject(response)
 
-            // HERE Fuel Prices API v2 Response Format:
-            // { "fuelStations": { "fuelStation": [...] } }
-            val stationsArray = json.optJSONObject("fuelStations")?.optJSONArray("fuelStation")
-                ?: json.optJSONArray("items")
-                ?: json.optJSONArray("stations")
+            // HERE Fuel Prices API v3 Response Format:
+            // { "stations": [...] }
+            val stationsArray = json.optJSONArray("stations")
 
             if (stationsArray == null) {
                 CrashLogger.log("PoiRepository: HERE Fuel Prices - no stations array in response")
@@ -297,25 +296,23 @@ class PoiRepository {
                 val distance = calculateDistance(center.lat, center.lng, lat, lng)
                 val arrivalMinutes = estimateArrivalTime(distance)
 
-                // Kraftstoffpreise - v3 nutzt "fuels" oder "fuelPrice" Array
+                // Kraftstoffpreise - v3 nutzt "prices" Array mit fuelType ID
+                // FuelType IDs: 1=Diesel, 53=Super E5, 54=Super E10, 2=Regular
                 var diesel: Double? = null
                 var e5: Double? = null
 
-                val fuelPriceArray = station.optJSONArray("fuels")
-                    ?: station.optJSONArray("fuelPrice")
-                    ?: station.optJSONArray("fuelPrices")
-                if (fuelPriceArray != null) {
-                    for (j in 0 until fuelPriceArray.length()) {
-                        val fuelPrice = fuelPriceArray.getJSONObject(j)
-                        // v3: fuelType kann String sein (diesel, e5, e10) oder Code (1, 2, 3)
-                        val fuelTypeCode = fuelPrice.optString("fuelType", "")
-                            .ifEmpty { fuelPrice.optString("type", "") }
-                        val price = fuelPrice.optDouble("price", Double.NaN).takeIf { !it.isNaN() }
-                            ?: fuelPrice.optDouble("pricePerUnit", Double.NaN).takeIf { !it.isNaN() }
+                val pricesArray = station.optJSONArray("prices")
+                if (pricesArray != null) {
+                    for (j in 0 until pricesArray.length()) {
+                        val priceObj = pricesArray.getJSONObject(j)
+                        val fuelTypeId = priceObj.optInt("fuelType", -1)
+                        val price = priceObj.optDouble("price", Double.NaN).takeIf { !it.isNaN() }
 
-                        when (fuelTypeCode.lowercase()) {
-                            "1", "diesel" -> diesel = price
-                            "2", "3", "e5", "super", "super_plus" -> if (e5 == null) e5 = price
+                        when (fuelTypeId) {
+                            1 -> diesel = price  // Diesel
+                            53 -> e5 = price     // Super E5
+                            54 -> if (e5 == null) e5 = price  // Super E10 als Fallback
+                            2 -> if (e5 == null) e5 = price   // Regular als Fallback
                         }
                     }
                 }
