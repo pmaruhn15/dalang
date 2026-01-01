@@ -28,16 +28,21 @@ object FlexiblePolyline {
         try {
             val decoder = Decoder(encoded)
 
-            // Header dekodieren
+            // HERE Flexible Polyline Format (siehe github.com/heremaps/flexible-polyline):
+            // 1. Version byte (aktuell 1)
+            // 2. Header mit Precision in Bits 0-3, ThirdDim in Bits 4-6, ThirdDimPrecision in Bits 7-10
+            // 3. Koordinaten: LAT zuerst, dann LNG (als signed deltas)
+
+            // Version byte lesen (sollte 1 sein)
+            val version = decoder.decodeUnsignedValue()
+
+            // Header mit Precision dekodieren
             val headerValue = decoder.decodeUnsignedValue()
-            val headerPrecision = headerValue and 0x0F
+            val precision = headerValue and 0x0F
             val thirdDim = (headerValue shr 4) and 0x07
             val thirdDimPrecision = (headerValue shr 7) and 0x0F
 
-            // HERE Routing API v8 scheint Precision 6 zu verwenden (10^6)
-            // basierend auf den beobachteten Rohdaten (48179542 -> 48.179542)
-            val precision = 6
-            CrashLogger.log("FlexiblePolyline: headerValue=$headerValue, headerPrecision=$headerPrecision, using precision=$precision")
+            CrashLogger.log("FlexiblePolyline: version=$version, precision=$precision, thirdDim=$thirdDim")
 
             val factor = Math.pow(10.0, precision.toDouble())
 
@@ -47,16 +52,14 @@ object FlexiblePolyline {
             var lastZ = 0L
 
             while (decoder.hasMore()) {
-                // HERE Routing API v8 kodiert: lng zuerst, dann lat (entgegen der Spec!)
-                // Beweis aus Debug-Log: raw=(11507733,48180270) für München (lat~48.18, lng~11.5)
-                // -> 11507733 ist lng (11.5), 48180270 ist lat (48.18)
-                val lngDelta = decoder.decodeSignedValue()
-                lastLng += lngDelta
+                // HERE Flexible Polyline: LAT zuerst, dann LNG
+                val latDelta = decoder.decodeSignedValue()
+                lastLat += latDelta
 
                 if (!decoder.hasMore()) break
 
-                val latDelta = decoder.decodeSignedValue()
-                lastLat += latDelta
+                val lngDelta = decoder.decodeSignedValue()
+                lastLng += lngDelta
 
                 // Third dimension (Altitude) falls vorhanden
                 if (thirdDim != 0 && decoder.hasMore()) {

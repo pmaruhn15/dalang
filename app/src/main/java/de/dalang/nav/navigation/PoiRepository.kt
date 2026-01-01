@@ -72,27 +72,30 @@ class PoiRepository {
                 return@withContext emptyList()
             }
 
-            // Für Tankstellen: HERE Fuel Prices API mit Corridor-Suche (eine einzige Anfrage)
-            if (type == PoiType.GAS_STATION && HereConfig.isConfigured() && HereConfig.canMakeFuelPricesRequest()) {
-                val results = searchGasStationsAlongRoute(routeGeometry, currentLocation, maxDistanceFromRouteKm, limit)
-                if (results.isNotEmpty()) {
-                    return@withContext results
+            // Für Tankstellen: HERE Fuel Prices API mit Corridor-Suche (EINE einzige Anfrage!)
+            // KEIN Sample-Points Fallback - das würde 10-20 API-Aufrufe pro Route verbrauchen
+            // Bei 100/Monat Free Tier wäre das zu schnell aufgebraucht
+            if (type == PoiType.GAS_STATION) {
+                if (HereConfig.isConfigured() && HereConfig.canMakeFuelPricesRequest()) {
+                    val results = searchGasStationsAlongRoute(routeGeometry, currentLocation, maxDistanceFromRouteKm, limit)
+                    if (results.isNotEmpty()) {
+                        return@withContext results
+                    }
+                    CrashLogger.log("PoiRepository: Corridor search returned no results, using Nominatim fallback")
                 }
-                // Fallback auf alte Methode wenn Corridor-Suche fehlschlägt
+                // Fallback: Nominatim (kostenlos, unbegrenzt, aber ohne Preise)
+                return@withContext searchGasStationsWithNominatim(routeGeometry, currentLocation, maxDistanceFromRouteKm, limit)
             }
 
-            // Fallback: Sample-Punkte entlang der Route (alle ~5km)
+            // Für andere POIs (z.B. McDonald's): Sample-Punkte entlang der Route (alle ~5km)
             val samplePoints = sampleRoutePoints(routeGeometry, 5.0)
-            CrashLogger.log("PoiRepository: Using ${samplePoints.size} sample points along route")
+            CrashLogger.log("PoiRepository: Using ${samplePoints.size} sample points for ${type.displayName}")
 
             val allResults = mutableListOf<Poi>()
             val seenLocations = mutableSetOf<String>()
 
             for (samplePoint in samplePoints) {
-                val results = when (type) {
-                    PoiType.GAS_STATION -> searchGasStationsWithHere(samplePoint, maxDistanceFromRouteKm + 3.0)
-                    else -> searchWithNominatim(type, samplePoint, maxDistanceFromRouteKm + 3.0)
-                }
+                val results = searchWithNominatim(type, samplePoint, maxDistanceFromRouteKm + 3.0)
 
                 // Nur POIs hinzufügen, die nah an der Route sind und nicht schon vorhanden
                 for (poi in results) {
@@ -596,6 +599,68 @@ class PoiRepository {
 
         } catch (e: Exception) {
             CrashLogger.logError("PoiRepository", "Nominatim search failed", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Sucht Tankstellen entlang einer Route mit Nominatim (kostenlos, unbegrenzt)
+     * Verwendet nur 3 Sample-Punkte um Rate-Limiting zu vermeiden
+     * Keine Spritpreise verfügbar
+     */
+    private suspend fun searchGasStationsWithNominatim(
+        routeGeometry: List<LatLng>,
+        currentLocation: LatLng,
+        maxDistanceFromRouteKm: Double,
+        limit: Int
+    ): List<Poi> = withContext(Dispatchers.IO) {
+        try {
+            CrashLogger.log("PoiRepository: Nominatim fallback for gas stations (no prices)")
+
+            // Nur 3 Sample-Punkte: Start, Mitte, Ende der Route
+            val samplePoints = if (routeGeometry.size >= 3) {
+                listOf(
+                    routeGeometry.first(),
+                    routeGeometry[routeGeometry.size / 2],
+                    routeGeometry.last()
+                )
+            } else {
+                routeGeometry.take(3)
+            }
+
+            val allResults = mutableListOf<Poi>()
+            val seenLocations = mutableSetOf<String>()
+
+            for (samplePoint in samplePoints) {
+                val results = searchWithNominatim(PoiType.GAS_STATION, samplePoint, maxDistanceFromRouteKm + 5.0)
+
+                for (poi in results) {
+                    val locationKey = "${poi.lat.format(4)}_${poi.lng.format(4)}"
+                    if (locationKey !in seenLocations) {
+                        val distanceToRoute = minDistanceToRoute(poi.lat, poi.lng, routeGeometry)
+                        if (distanceToRoute <= maxDistanceFromRouteKm) {
+                            val distanceFromCurrent = calculateDistance(
+                                currentLocation.lat, currentLocation.lng,
+                                poi.lat, poi.lng
+                            )
+                            val detourMinutes = estimateDetourTime(distanceToRoute)
+                            allResults.add(poi.copy(
+                                distanceKm = distanceFromCurrent,
+                                estimatedArrivalMinutes = estimateArrivalTime(distanceFromCurrent),
+                                detourMinutes = detourMinutes
+                            ))
+                            seenLocations.add(locationKey)
+                        }
+                    }
+                }
+            }
+
+            val sortedResults = allResults.sortedBy { it.distanceKm }.take(limit)
+            CrashLogger.log("PoiRepository: Nominatim found ${sortedResults.size} gas stations (no prices)")
+            sortedResults
+
+        } catch (e: Exception) {
+            CrashLogger.logError("PoiRepository", "Nominatim gas station search failed", e)
             emptyList()
         }
     }
