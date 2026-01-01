@@ -217,10 +217,17 @@ private fun PoiListItem(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "+${poi.estimatedArrivalMinutes} min",
+                    text = "${poi.estimatedArrivalMinutes} min",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (poi.detourMinutes > 0) {
+                    Text(
+                        text = "+${poi.detourMinutes} min Umweg",
+                        fontSize = 11.sp,
+                        color = Color(0xFFFF9800)  // Orange für Umweg
+                    )
+                }
             }
         }
 

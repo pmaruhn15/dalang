@@ -231,6 +231,19 @@ fun DaLangApp(viewModel: MainViewModel) {
         }
     }
 
+    // McDonald's automatisch laden wenn Route berechnet wurde
+    LaunchedEffect(navigationState.route) {
+        val route = navigationState.route
+        val location = currentLocation
+        if (route != null && route.geometry.isNotEmpty() && location != null && !navigationState.isNavigating) {
+            // McDonald's entlang der Route suchen und auf Karte anzeigen
+            selectedPoiType = PoiType.MCDONALDS
+            isSearchingPoi = true
+            poiResults = poiRepository.searchAlongRoute(PoiType.MCDONALDS, route.geometry, location)
+            isSearchingPoi = false
+        }
+    }
+
     // Fehler als Snackbar anzeigen
     LaunchedEffect(errorMessage) {
         errorMessage?.let {

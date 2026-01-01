@@ -510,6 +510,18 @@ fun MapViewComposable(
                             }
                         }
 
+                        // Zeit-Label Icons für McDonald's erstellen
+                        if (selectedPoiType == PoiType.MCDONALDS) {
+                            filteredPois.forEachIndexed { index, poi ->
+                                val mcLabelName = "mc-label-$index"
+                                val mcBitmap = createMcDonaldsLabelBitmap(
+                                    poi.estimatedArrivalMinutes,
+                                    poi.detourMinutes
+                                )
+                                style.addImage(mcLabelName, mcBitmap)
+                            }
+                        }
+
                         // Normale POIs (nicht die günstigste)
                         val normalPois = if (cheapestPoi != null) {
                             filteredPois.filter { it != cheapestPoi }
@@ -518,15 +530,19 @@ fun MapViewComposable(
                         }
 
                         if (normalPois.isNotEmpty()) {
-                            // POIs als FeatureCollection mit Preis-Infos
+                            // POIs als FeatureCollection mit Preis-/Zeit-Infos
                             val features = normalPois.mapIndexed { index, poi ->
-                                val priceIconName = if (selectedPoiType == PoiType.GAS_STATION &&
-                                    poi.fuelPrices?.getPriceForType(preferredFuelType) != null) {
-                                    "price-label-${filteredPois.indexOf(poi)}"
-                                } else {
-                                    iconName
+                                val poiIconName = when {
+                                    selectedPoiType == PoiType.GAS_STATION &&
+                                        poi.fuelPrices?.getPriceForType(preferredFuelType) != null -> {
+                                        "price-label-${filteredPois.indexOf(poi)}"
+                                    }
+                                    selectedPoiType == PoiType.MCDONALDS -> {
+                                        "mc-label-${filteredPois.indexOf(poi)}"
+                                    }
+                                    else -> iconName
                                 }
-                                """{"type":"Feature","id":$index,"geometry":{"type":"Point","coordinates":[${poi.lng},${poi.lat}]},"properties":{"name":"${poi.name.replace("\"", "\\\"")}", "icon":"$priceIconName"}}"""
+                                """{"type":"Feature","id":$index,"geometry":{"type":"Point","coordinates":[${poi.lng},${poi.lat}]},"properties":{"name":"${poi.name.replace("\"", "\\\"")}", "icon":"$poiIconName"}}"""
                             }.joinToString(",")
                             val geoJson = """{"type":"FeatureCollection","features":[$features]}"""
 
@@ -618,6 +634,73 @@ fun MapViewComposable(
             CrashLogger.logError("MapView", "getStyle failed for POIs", e)
         }
     }
+}
+
+/**
+ * Erstellt ein Bitmap mit McDonald's Zeit-Label für die Karte
+ * Zeigt Ankunftszeit und Umwegzeit
+ */
+private fun createMcDonaldsLabelBitmap(arrivalMinutes: Int, detourMinutes: Int): Bitmap {
+    val arrivalText = "${arrivalMinutes}min"
+    val detourText = "+${detourMinutes}min"
+
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 32f
+        typeface = Typeface.DEFAULT_BOLD
+        color = Color.WHITE
+    }
+
+    val smallPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 24f
+        typeface = Typeface.DEFAULT
+        color = Color.parseColor("#FFEB3B")  // Gelb für Umweg
+    }
+
+    val arrivalBounds = Rect()
+    val detourBounds = Rect()
+    paint.getTextBounds(arrivalText, 0, arrivalText.length, arrivalBounds)
+    smallPaint.getTextBounds(detourText, 0, detourText.length, detourBounds)
+
+    val padding = 12
+    val spacing = 4
+    val width = maxOf(arrivalBounds.width(), detourBounds.width()) + padding * 2
+    val height = arrivalBounds.height() + detourBounds.height() + spacing + padding * 2
+
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+
+    // Hintergrund (McDonald's rot)
+    val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#DA291C")
+        style = Paint.Style.FILL
+    }
+    canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 8f, 8f, bgPaint)
+
+    // Rand
+    val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#FFCC00")  // McDonald's gelb
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+    canvas.drawRoundRect(1f, 1f, width.toFloat() - 1f, height.toFloat() - 1f, 8f, 8f, borderPaint)
+
+    // Ankunftszeit (weiß)
+    canvas.drawText(
+        arrivalText,
+        (width - arrivalBounds.width()) / 2f,
+        padding.toFloat() + arrivalBounds.height(),
+        paint
+    )
+
+    // Umwegzeit (gelb, kleiner)
+    canvas.drawText(
+        detourText,
+        (width - detourBounds.width()) / 2f,
+        padding.toFloat() + arrivalBounds.height() + spacing + detourBounds.height(),
+        smallPaint
+    )
+
+    return bitmap
 }
 
 /**

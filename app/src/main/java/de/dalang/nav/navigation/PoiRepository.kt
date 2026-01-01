@@ -39,6 +39,7 @@ data class Poi(
     val address: String?,
     val distanceKm: Double,  // Entfernung vom aktuellen Standort
     val estimatedArrivalMinutes: Int,  // Geschätzte Ankunftszeit in Minuten
+    val detourMinutes: Int = 0,  // Zusätzliche Zeit für Umweg (nur bei Route-Suche)
     val fuelPrices: FuelPrices? = null  // Nur für Tankstellen
 )
 
@@ -93,9 +94,12 @@ class PoiRepository {
                                 currentLocation.lat, currentLocation.lng,
                                 poi.lat, poi.lng
                             )
+                            // Umweg berechnen: Hin + Zurück zur Route (~2x Abstand von Route)
+                            val detourMinutes = estimateDetourTime(distanceToRoute)
                             allResults.add(poi.copy(
                                 distanceKm = distanceFromCurrent,
-                                estimatedArrivalMinutes = estimateArrivalTime(distanceFromCurrent)
+                                estimatedArrivalMinutes = estimateArrivalTime(distanceFromCurrent),
+                                detourMinutes = detourMinutes
                             ))
                             seenLocations.add(locationKey)
                         }
@@ -418,6 +422,17 @@ class PoiRepository {
     private fun estimateArrivalTime(distanceKm: Double): Int {
         val avgSpeedKmh = 40.0
         val timeHours = distanceKm / avgSpeedKmh
+        return (timeHours * 60).toInt().coerceAtLeast(1)
+    }
+
+    /**
+     * Schätzt die Umwegzeit für einen POI abseits der Route
+     * Berechnet: 2x Entfernung zur Route (hin + zurück) bei ~30 km/h
+     */
+    private fun estimateDetourTime(distanceToRouteKm: Double): Int {
+        val avgSpeedKmh = 30.0  // Etwas langsamer wegen Abfahrt/Auffahrt
+        val detourDistanceKm = distanceToRouteKm * 2  // Hin + Zurück
+        val timeHours = detourDistanceKm / avgSpeedKmh
         return (timeHours * 60).toInt().coerceAtLeast(1)
     }
 }
