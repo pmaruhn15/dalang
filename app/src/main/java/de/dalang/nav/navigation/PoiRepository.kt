@@ -202,7 +202,7 @@ class PoiRepository {
 
     /**
      * Sucht Tankstellen mit HERE Fuel Prices API inkl. Spritpreise
-     * API: https://fuel.hereapi.com/v3/stations
+     * API: https://fuel-v2.cc.api.here.com/fuel/stations.json
      */
     private suspend fun searchGasStationsWithHere(
         center: LatLng,
@@ -222,14 +222,13 @@ class PoiRepository {
             }
 
             val apiKey = HereConfig.getApiKey()
-            // HERE Fuel Prices API v3 - radius in Metern
+            // HERE Fuel Prices API v2 - prox=lat,lng,radius (radius in Metern)
             val radiusMeters = (radiusKm * 1000).toInt().coerceAtMost(100000)
-            val url = "https://fuel.hereapi.com/v3/stations?" +
-                "at=${center.lat},${center.lng}" +
-                "&radius=$radiusMeters" +
+            val url = "https://fuel-v2.cc.api.here.com/fuel/stations.json?" +
+                "prox=${center.lat},${center.lng},$radiusMeters" +
                 "&apiKey=$apiKey"
 
-            CrashLogger.log("PoiRepository: HERE Fuel Prices v3 request at ${center.lat},${center.lng} radius ${radiusKm}km")
+            CrashLogger.log("PoiRepository: HERE Fuel Prices v2 request at ${center.lat},${center.lng} radius ${radiusKm}km")
 
             val connection = URL(url).openConnection()
             connection.setRequestProperty("User-Agent", "DaLang Navigation App")
@@ -244,12 +243,11 @@ class PoiRepository {
 
             val json = JSONObject(response)
 
-            // HERE Fuel Prices API v3 Response Format:
-            // { "items": [...] } oder { "stations": [...] }
-            // Fallback auf v2 Format: { "fuelStations": { "fuelStation": [...] } }
-            val stationsArray = json.optJSONArray("items")
+            // HERE Fuel Prices API v2 Response Format:
+            // { "fuelStations": { "fuelStation": [...] } }
+            val stationsArray = json.optJSONObject("fuelStations")?.optJSONArray("fuelStation")
+                ?: json.optJSONArray("items")
                 ?: json.optJSONArray("stations")
-                ?: json.optJSONObject("fuelStations")?.optJSONArray("fuelStation")
 
             if (stationsArray == null) {
                 CrashLogger.log("PoiRepository: HERE Fuel Prices - no stations array in response")
