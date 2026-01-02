@@ -31,17 +31,23 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import de.dalang.nav.destinations.DestinationsRepository
+import de.dalang.nav.destinations.FavoriteType
+import de.dalang.nav.destinations.SavedDestination
 import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.navigation.Poi
 import de.dalang.nav.navigation.PoiRepository
 import de.dalang.nav.navigation.PoiType
+import de.dalang.nav.search.SearchResult
 import de.dalang.nav.settings.FuelType
 import de.dalang.nav.settings.SettingsRepository
+import de.dalang.nav.ui.components.FavoriteAddressDialog
 import de.dalang.nav.ui.components.HereSettingsDialog
 import de.dalang.nav.ui.components.MapViewComposable
 import de.dalang.nav.ui.components.NavigationPanel
 import de.dalang.nav.ui.components.OfflineMapsDialog
 import de.dalang.nav.ui.components.PoiSelectionDialog
+import de.dalang.nav.ui.components.RecentDestinationsDropdown
 import de.dalang.nav.ui.components.SearchBar
 import de.dalang.nav.ui.components.UpdateDialog
 import de.dalang.nav.ui.theme.DaLangTheme
@@ -185,6 +191,29 @@ fun DaLangApp(viewModel: MainViewModel) {
     var preferredFuelType by remember { mutableStateOf(settingsRepository.preferredFuelType) }
     var vehicleRangeKm by remember { mutableStateOf(settingsRepository.vehicleRangeKm) }
 
+    // Destinations (Favoriten & letzte Ziele)
+    val destinationsRepository = remember { DestinationsRepository(context) }
+    var homeAddress by remember { mutableStateOf(destinationsRepository.getFavorite(FavoriteType.HOME)) }
+    var workAddress by remember { mutableStateOf(destinationsRepository.getFavorite(FavoriteType.WORK)) }
+    var recentDestinations by remember { mutableStateOf(destinationsRepository.getRecentDestinations()) }
+    var showRecentDestinations by remember { mutableStateOf(false) }
+    var showFavoriteDialog by remember { mutableStateOf(false) }
+    var editingFavoriteType by remember { mutableStateOf<FavoriteType?>(null) }
+
+    // Callback wenn ein gespeichertes Ziel ausgewählt wird
+    fun onSavedDestinationSelected(destination: SavedDestination) {
+        showRecentDestinations = false
+        // Als SearchResult behandeln und Route berechnen
+        viewModel.selectDestination(
+            SearchResult(
+                displayName = destination.name,
+                lat = destination.lat,
+                lon = destination.lng,
+                type = "saved"
+            )
+        )
+    }
+
     // POI Search State
     val poiRepository = remember { PoiRepository() }
     var showPoiDialog by remember { mutableStateOf(false) }
@@ -251,11 +280,26 @@ fun DaLangApp(viewModel: MainViewModel) {
     }
 
     // POI-Marker und McDonald's-Übersicht ausblenden wenn Navigation startet
-    LaunchedEffect(navigationState.isNavigating) {
-        if (navigationState.isNavigating) {
+    // Außerdem: Ziel als letztes Ziel speichern
+    LaunchedEffect(navigationState.isNavigating, navigationState.destination, navigationState.destinationName) {
+        if (navigationState.isNavigating && navigationState.destination != null) {
             selectedPoiType = null
             poiResults = emptyList()
             showMcDonaldsOverview = false
+            showRecentDestinations = false
+
+            // Ziel als letztes Ziel speichern
+            val destName = navigationState.destinationName
+            if (!destName.isNullOrBlank()) {
+                val savedDest = SavedDestination(
+                    name = destName,
+                    lat = navigationState.destination!!.lat,
+                    lng = navigationState.destination!!.lng
+                )
+                destinationsRepository.addRecentDestination(savedDest)
+                recentDestinations = destinationsRepository.getRecentDestinations()
+                CrashLogger.log("MainActivity: Saved destination to recent: $destName")
+            }
         }
     }
 
@@ -372,17 +416,87 @@ fun DaLangApp(viewModel: MainViewModel) {
 
         // Suchleiste oben mit Menu-Button
         if (!navigationState.isNavigating) {
-            SearchBar(
-                query = searchQuery,
-                onQueryChange = viewModel::updateSearchQuery,
-                results = searchResults,
-                isSearching = isSearching,
-                onResultClick = viewModel::selectDestination,
-                onClear = viewModel::clearSearch,
-                onMenuClick = { scope.launch { drawerState.open() } },
+            Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
+            ) {
+                SearchBar(
+                    query = searchQuery,
+                    onQueryChange = { query ->
+                        viewModel.updateSearchQuery(query)
+                        // Dropdown ausblenden wenn Sucheingabe beginnt
+                        if (query.isNotEmpty()) {
+                            showRecentDestinations = false
+                        }
+                    },
+                    results = searchResults,
+                    isSearching = isSearching,
+                    onResultClick = viewModel::selectDestination,
+                    onClear = {
+                        viewModel.clearSearch()
+                        showRecentDestinations = false
+                    },
+                    onMenuClick = { scope.launch { drawerState.open() } },
+                    onFocusChanged = { focused ->
+                        // Dropdown nur anzeigen wenn fokussiert UND leer
+                        showRecentDestinations = focused && searchQuery.isEmpty()
+                    },
+                    modifier = Modifier
+                )
+
+                // Recent Destinations Dropdown
+                RecentDestinationsDropdown(
+                    isVisible = showRecentDestinations && searchQuery.isEmpty(),
+                    homeAddress = homeAddress,
+                    workAddress = workAddress,
+                    recentDestinations = recentDestinations,
+                    onDestinationClick = { destination ->
+                        onSavedDestinationSelected(destination)
+                    },
+                    onEditFavorite = { type ->
+                        editingFavoriteType = type
+                        showFavoriteDialog = true
+                        showRecentDestinations = false
+                    },
+                    onDeleteRecent = { destination ->
+                        destinationsRepository.removeRecentDestination(destination)
+                        recentDestinations = destinationsRepository.getRecentDestinations()
+                    }
+                )
+            }
+        }
+
+        // Favorite Address Dialog
+        if (showFavoriteDialog && editingFavoriteType != null) {
+            FavoriteAddressDialog(
+                favoriteType = editingFavoriteType!!,
+                currentAddress = when (editingFavoriteType) {
+                    FavoriteType.HOME -> homeAddress
+                    FavoriteType.WORK -> workAddress
+                    else -> null
+                },
+                currentLocation = currentLocation,
+                onSave = { destination ->
+                    destinationsRepository.setFavorite(editingFavoriteType!!, destination)
+                    when (editingFavoriteType) {
+                        FavoriteType.HOME -> homeAddress = destination
+                        FavoriteType.WORK -> workAddress = destination
+                        else -> {}
+                    }
+                },
+                onDelete = {
+                    destinationsRepository.setFavorite(editingFavoriteType!!, null)
+                    when (editingFavoriteType) {
+                        FavoriteType.HOME -> homeAddress = null
+                        FavoriteType.WORK -> workAddress = null
+                        else -> {}
+                    }
+                },
+                onDismiss = {
+                    showFavoriteDialog = false
+                    editingFavoriteType = null
+                }
             )
         }
 
