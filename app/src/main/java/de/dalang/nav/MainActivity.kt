@@ -198,13 +198,20 @@ fun DaLangApp(viewModel: MainViewModel) {
     var homeAddress by remember { mutableStateOf(destinationsRepository.getFavorite(FavoriteType.HOME)) }
     var workAddress by remember { mutableStateOf(destinationsRepository.getFavorite(FavoriteType.WORK)) }
     var recentDestinations by remember { mutableStateOf(destinationsRepository.getRecentDestinations()) }
-    var showRecentDestinations by remember { mutableStateOf(false) }
+    var isSearchFieldFocused by remember { mutableStateOf(false) }
     var showFavoriteDialog by remember { mutableStateOf(false) }
     var editingFavoriteType by remember { mutableStateOf<FavoriteType?>(null) }
 
+    // Derived state: Dropdown zeigen wenn Suchfeld fokussiert UND leer UND nicht navigierend
+    val showRecentDestinations by remember {
+        derivedStateOf {
+            isSearchFieldFocused && searchQuery.isEmpty() && !navigationState.isNavigating && !showFavoriteDialog
+        }
+    }
+
     // Callback wenn ein gespeichertes Ziel ausgewählt wird
     fun onSavedDestinationSelected(destination: SavedDestination) {
-        showRecentDestinations = false
+        isSearchFieldFocused = false
         keyboardController?.hide()
         // Als SearchResult behandeln und Route berechnen
         viewModel.selectDestination(
@@ -289,7 +296,7 @@ fun DaLangApp(viewModel: MainViewModel) {
             selectedPoiType = null
             poiResults = emptyList()
             showMcDonaldsOverview = false
-            showRecentDestinations = false
+            isSearchFieldFocused = false
 
             // Ziel als letztes Ziel speichern
             val destName = navigationState.destinationName
@@ -368,7 +375,7 @@ fun DaLangApp(viewModel: MainViewModel) {
             onMapClick = { location ->
                 // Wenn Dropdown offen: nur schließen, nicht navigieren
                 if (showRecentDestinations) {
-                    showRecentDestinations = false
+                    isSearchFieldFocused = false
                 } else if (!navigationState.isNavigating && navigationState.route == null) {
                     // Nur reagieren wenn keine Navigation aktiv und keine Route geplant
                     viewModel.onMapClicked(location)
@@ -431,30 +438,25 @@ fun DaLangApp(viewModel: MainViewModel) {
                     query = searchQuery,
                     onQueryChange = { query ->
                         viewModel.updateSearchQuery(query)
-                        // Dropdown ausblenden wenn Sucheingabe beginnt
-                        if (query.isNotEmpty()) {
-                            showRecentDestinations = false
-                        }
+                        // showRecentDestinations wird automatisch durch derivedState aktualisiert
                     },
                     results = searchResults,
                     isSearching = isSearching,
                     onResultClick = viewModel::selectDestination,
                     onClear = {
                         viewModel.clearSearch()
-                        // Nach dem Löschen Dropdown wieder anzeigen
-                        showRecentDestinations = true
+                        // showRecentDestinations wird automatisch durch derivedState aktualisiert
                     },
                     onMenuClick = { scope.launch { drawerState.open() } },
                     onFocusChanged = { focused ->
-                        // Dropdown nur anzeigen wenn fokussiert UND leer
-                        showRecentDestinations = focused && searchQuery.isEmpty()
+                        isSearchFieldFocused = focused
                     },
                     modifier = Modifier
                 )
 
                 // Recent Destinations Dropdown
                 RecentDestinationsDropdown(
-                    isVisible = showRecentDestinations && searchQuery.isEmpty(),
+                    isVisible = showRecentDestinations,
                     homeAddress = homeAddress,
                     workAddress = workAddress,
                     recentDestinations = recentDestinations,
@@ -464,7 +466,7 @@ fun DaLangApp(viewModel: MainViewModel) {
                     onEditFavorite = { type ->
                         editingFavoriteType = type
                         showFavoriteDialog = true
-                        showRecentDestinations = false
+                        // showRecentDestinations wird automatisch false durch showFavoriteDialog
                     },
                     onDeleteRecent = { destination ->
                         destinationsRepository.removeRecentDestination(destination)
@@ -503,8 +505,7 @@ fun DaLangApp(viewModel: MainViewModel) {
                 onDismiss = {
                     showFavoriteDialog = false
                     editingFavoriteType = null
-                    // Dropdown wieder anzeigen nach Dialog-Schließen
-                    showRecentDestinations = true
+                    // showRecentDestinations wird automatisch durch derivedState aktualisiert
                 }
             )
         }
