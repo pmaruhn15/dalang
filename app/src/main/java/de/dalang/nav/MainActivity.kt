@@ -231,27 +231,19 @@ fun DaLangApp(viewModel: MainViewModel) {
     var selectedPoiType by remember { mutableStateOf<PoiType?>(null) }
     var poiResults by remember { mutableStateOf<List<Poi>>(emptyList()) }
     var isSearchingPoi by remember { mutableStateOf(false) }
-    var showMcDonaldsOverview by remember { mutableStateOf(false) }
 
-    // McDonald's Toggle - Zeigt/versteckt McDonald's auf der Route
-    fun toggleMcDonalds() {
-        if (showMcDonaldsOverview) {
-            // Ausschalten - zurück zur normalen Ansicht
-            showMcDonaldsOverview = false
-            selectedPoiType = null
+    // McDonald's Suche - zeigt Dialog wie bei Tankstellen
+    fun searchMcDonalds() {
+        val location = currentLocation ?: return
+        val route = navigationState.route
+        if (route != null && route.geometry.isNotEmpty()) {
+            selectedPoiType = PoiType.MCDONALDS
+            showPoiDialog = true
+            isSearchingPoi = true
             poiResults = emptyList()
-        } else {
-            // Einschalten - McDonald's laden und anzeigen
-            val location = currentLocation ?: return
-            val route = navigationState.route
-            if (route != null && route.geometry.isNotEmpty()) {
-                selectedPoiType = PoiType.MCDONALDS
-                isSearchingPoi = true
-                showMcDonaldsOverview = true
-                scope.launch {
-                    poiResults = poiRepository.searchAlongRoute(PoiType.MCDONALDS, route.geometry, location)
-                    isSearchingPoi = false
-                }
+            scope.launch {
+                poiResults = poiRepository.searchAlongRoute(PoiType.MCDONALDS, route.geometry, location)
+                isSearchingPoi = false
             }
         }
     }
@@ -263,7 +255,6 @@ fun DaLangApp(viewModel: MainViewModel) {
         showPoiDialog = true
         isSearchingPoi = true
         poiResults = emptyList()
-        showMcDonaldsOverview = false  // McDonald's Übersicht ausschalten
 
         scope.launch {
             val route = navigationState.route
@@ -296,7 +287,6 @@ fun DaLangApp(viewModel: MainViewModel) {
         if (navigationState.isNavigating && navigationState.destination != null) {
             selectedPoiType = null
             poiResults = emptyList()
-            showMcDonaldsOverview = false
             isSearchFieldFocused = false
 
             // Ziel als letztes Ziel speichern
@@ -368,11 +358,11 @@ fun DaLangApp(viewModel: MainViewModel) {
             destination = navigationState.destination,
             route = navigationState.route,
             isNavigating = navigationState.isNavigating,
-            pois = poiResults,
-            selectedPoiType = selectedPoiType,
+            pois = emptyList(),  // POIs werden nicht mehr auf der Karte angezeigt
+            selectedPoiType = null,
             preferredFuelType = preferredFuelType,
             vehicleRangeKm = vehicleRangeKm,
-            showPoiOverview = showMcDonaldsOverview,
+            showPoiOverview = false,
             onMapClick = { location ->
                 // Wenn Dropdown offen: nur schließen, nicht navigieren
                 if (showRecentDestinations) {
@@ -382,23 +372,7 @@ fun DaLangApp(viewModel: MainViewModel) {
                     viewModel.onMapClicked(location)
                 }
             },
-            onPoiClick = { poi ->
-                // Bei Klick auf POI-Marker: Als Zwischenziel setzen
-                val waypointType = when (selectedPoiType) {
-                    PoiType.MCDONALDS -> WaypointType.MCDONALDS
-                    PoiType.GAS_STATION -> WaypointType.GAS_STATION
-                    else -> WaypointType.GAS_STATION
-                }
-                viewModel.addWaypoint(
-                    waypointLocation = LatLng(poi.lat, poi.lng),
-                    waypointName = poi.name,
-                    waypointType = waypointType
-                )
-                // POIs von Karte entfernen
-                showMcDonaldsOverview = false
-                selectedPoiType = null
-                poiResults = emptyList()
-            },
+            onPoiClick = null,  // POIs werden jetzt über Dialog ausgewählt
             modifier = Modifier.fillMaxSize()
         )
 
@@ -547,12 +521,10 @@ fun DaLangApp(viewModel: MainViewModel) {
                 // POIs zurücksetzen wenn Navigation beendet wird
                 selectedPoiType = null
                 poiResults = emptyList()
-                showMcDonaldsOverview = false
             },
-            onMcDonaldsClick = { toggleMcDonalds() },
+            onMcDonaldsClick = { searchMcDonalds() },
             onGasStationClick = { searchPoi(PoiType.GAS_STATION) },
             isMcDonaldsLoading = isSearchingPoi && selectedPoiType == PoiType.MCDONALDS,
-            showMcDonaldsOverview = showMcDonaldsOverview,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
         )
@@ -588,10 +560,8 @@ fun DaLangApp(viewModel: MainViewModel) {
                         waypointType = waypointType
                     )
                     showPoiDialog = false
-                    // POIs von Karte entfernen nach Auswahl
                     selectedPoiType = null
                     poiResults = emptyList()
-                    showMcDonaldsOverview = false
                 },
                 onDismiss = {
                     showPoiDialog = false

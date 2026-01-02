@@ -32,7 +32,6 @@ fun NavigationPanel(
     onMcDonaldsClick: () -> Unit = {},
     onGasStationClick: () -> Unit = {},
     isMcDonaldsLoading: Boolean = false,
-    showMcDonaldsOverview: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     // Get navigation bar height for bottom padding
@@ -59,8 +58,7 @@ fun NavigationPanel(
                     onStop = onStopNavigation,
                     onMcDonaldsClick = onMcDonaldsClick,
                     onGasStationClick = onGasStationClick,
-                    isMcDonaldsLoading = isMcDonaldsLoading,
-                    showMcDonaldsOverview = showMcDonaldsOverview
+                    isMcDonaldsLoading = isMcDonaldsLoading
                 )
             } else {
                 // Routenvorschau
@@ -79,8 +77,7 @@ private fun ActiveNavigationContent(
     onStop: () -> Unit,
     onMcDonaldsClick: () -> Unit,
     onGasStationClick: () -> Unit,
-    isMcDonaldsLoading: Boolean = false,
-    showMcDonaldsOverview: Boolean = false
+    isMcDonaldsLoading: Boolean = false
 ) {
     val currentStep = state.currentStep
 
@@ -118,28 +115,22 @@ private fun ActiveNavigationContent(
         Spacer(modifier = Modifier.weight(1f))
 
         // POI-Buttons rechts in der gleichen Zeile
-        // McDonald's Button - mit Lade-Spinner oder aktivem Zustand
         val buttonBg = MaterialTheme.colorScheme.onSurface
         val buttonFg = MaterialTheme.colorScheme.surface
+
+        // McDonald's Button
         IconButton(
             onClick = onMcDonaldsClick,
             enabled = !isMcDonaldsLoading,
             modifier = Modifier
                 .size(40.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(if (showMcDonaldsOverview) MaterialTheme.colorScheme.surface else buttonBg)
-                .then(
-                    if (showMcDonaldsOverview) {
-                        Modifier.border(2.dp, buttonBg, RoundedCornerShape(8.dp))
-                    } else {
-                        Modifier
-                    }
-                )
+                .background(buttonBg)
         ) {
             if (isMcDonaldsLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
-                    color = if (showMcDonaldsOverview) buttonBg else buttonFg,
+                    color = buttonFg,
                     strokeWidth = 2.dp
                 )
             } else {
@@ -147,7 +138,7 @@ private fun ActiveNavigationContent(
                     painter = painterResource(id = R.drawable.ic_mcdonalds),
                     contentDescription = "McDonald's",
                     modifier = Modifier.size(24.dp),
-                    colorFilter = ColorFilter.tint(if (showMcDonaldsOverview) buttonBg else buttonFg)
+                    colorFilter = ColorFilter.tint(buttonFg)
                 )
             }
         }
