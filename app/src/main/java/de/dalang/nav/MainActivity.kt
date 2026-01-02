@@ -366,10 +366,8 @@ fun DaLangApp(viewModel: MainViewModel) {
                 // Wenn Dropdown offen: nur schließen, nicht navigieren
                 if (showRecentDestinations) {
                     showRecentDestinations = false
-                    return@MapScreen
-                }
-                // Nur reagieren wenn keine Navigation aktiv und keine Route geplant
-                if (!navigationState.isNavigating && navigationState.route == null) {
+                } else if (!navigationState.isNavigating && navigationState.route == null) {
+                    // Nur reagieren wenn keine Navigation aktiv und keine Route geplant
                     viewModel.onMapClicked(location)
                 }
             },
