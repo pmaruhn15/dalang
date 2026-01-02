@@ -363,6 +363,11 @@ fun DaLangApp(viewModel: MainViewModel) {
             vehicleRangeKm = vehicleRangeKm,
             showPoiOverview = showMcDonaldsOverview,
             onMapClick = { location ->
+                // Wenn Dropdown offen: nur schließen, nicht navigieren
+                if (showRecentDestinations) {
+                    showRecentDestinations = false
+                    return@MapScreen
+                }
                 // Nur reagieren wenn keine Navigation aktiv und keine Route geplant
                 if (!navigationState.isNavigating && navigationState.route == null) {
                     viewModel.onMapClicked(location)
@@ -435,7 +440,8 @@ fun DaLangApp(viewModel: MainViewModel) {
                     onResultClick = viewModel::selectDestination,
                     onClear = {
                         viewModel.clearSearch()
-                        showRecentDestinations = false
+                        // Nach dem Löschen Dropdown wieder anzeigen
+                        showRecentDestinations = true
                     },
                     onMenuClick = { scope.launch { drawerState.open() } },
                     onFocusChanged = { focused ->
@@ -496,6 +502,8 @@ fun DaLangApp(viewModel: MainViewModel) {
                 onDismiss = {
                     showFavoriteDialog = false
                     editingFavoriteType = null
+                    // Dropdown wieder anzeigen nach Dialog-Schließen
+                    showRecentDestinations = true
                 }
             )
         }
