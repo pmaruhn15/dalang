@@ -15,7 +15,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Work
@@ -145,7 +145,7 @@ private fun FavoriteItem(
         // Icon
         Icon(
             imageVector = when (type) {
-                FavoriteType.HOME -> Icons.Outlined.Home
+                FavoriteType.HOME -> Icons.Rounded.Home
                 FavoriteType.WORK -> Icons.Outlined.Work
             },
             contentDescription = type.displayName,

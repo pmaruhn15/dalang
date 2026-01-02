@@ -11,7 +11,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Work
 import androidx.compose.material3.*
@@ -100,7 +100,7 @@ fun FavoriteAddressDialog(
                 ) {
                     Icon(
                         imageVector = when (favoriteType) {
-                            FavoriteType.HOME -> Icons.Outlined.Home
+                            FavoriteType.HOME -> Icons.Rounded.Home
                             FavoriteType.WORK -> Icons.Outlined.Work
                         },
                         contentDescription = favoriteType.displayName,
