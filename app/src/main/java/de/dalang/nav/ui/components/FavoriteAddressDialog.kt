@@ -441,37 +441,10 @@ fun FavoriteAddressDialog(
                 Spacer(modifier = Modifier.height(20.dp))
 
                 // Buttons
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Löschen-Button (nur wenn bereits gesetzt)
-                    if (currentAddress != null) {
-                        OutlinedButton(
-                            onClick = {
-                                onDelete()
-                                onDismiss()
-                            },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.onSurface
-                            ),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Löschen")
-                        }
-                    }
-
-                    // Abbrechen
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Abbrechen")
-                    }
-
                     // Speichern
                     Button(
                         onClick = {
@@ -493,9 +466,36 @@ fun FavoriteAddressDialog(
                             disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
                             disabledContentColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
                         ),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Speichern")
+                    }
+
+                    // Abbrechen
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Abbrechen")
+                    }
+
+                    // Löschen-Button (nur wenn bereits gesetzt)
+                    if (currentAddress != null) {
+                        OutlinedButton(
+                            onClick = {
+                                onDelete()
+                                onDismiss()
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Löschen")
+                        }
                     }
                 }
             }
