@@ -715,7 +715,7 @@ fun MapViewComposable(
     var wasShowingOverview by remember { mutableStateOf(false) }
 
     // Zoom auf Route wenn POI-Übersicht aktiv ist, oder zurück zum Fahrzeug wenn deaktiviert
-    LaunchedEffect(showPoiOverview, isMapReady, route, currentLocation, bearing) {
+    LaunchedEffect(showPoiOverview, isMapReady, route, pois.size, currentLocation, bearing) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
 
@@ -748,18 +748,19 @@ fun MapViewComposable(
                 }
 
                 if (validPoints >= 2) {
-                    // Nord-ausgerichtet (bearing = 0), kein Tilt
+                    // Erst auf Bounds zoomen
                     map.animateCamera(
                         CameraUpdateFactory.newLatLngBounds(
                             bounds.build(),
                             100  // Padding
                         ),
-                        500
+                        400
                     )
-                    // Bearing auf Nord setzen
+                    // Kurz warten, dann Bearing auf Nord setzen
+                    kotlinx.coroutines.delay(450)
                     map.animateCamera(
                         CameraUpdateFactory.newCameraPosition(
-                            CameraPosition.Builder()
+                            CameraPosition.Builder(map.cameraPosition)
                                 .bearing(0.0)  // Nord
                                 .tilt(0.0)     // Kein Tilt
                                 .build()
