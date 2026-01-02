@@ -62,12 +62,21 @@ object OpeningHoursParser {
 
         if (todayHours == null) {
             // Heute geschlossen (z.B. Feiertag oder Ruhetag)
+            // Prüfe wann es wieder öffnet (morgen?)
+            val tomorrowDay = today.plus(1)
+            val tomorrowHours = parseTodayHours(openingHours, tomorrowDay)
+            val displayText = if (tomorrowHours != null) {
+                val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
+                "Heute geschlossen, öffnet morgen ${tomorrowHours.first.format(timeFormat)}"
+            } else {
+                "Heute geschlossen"
+            }
             return OpenStatus(
                 isOpenNow = false,
                 closesAt = null,
                 opensAt = null,
                 willBeOpenAtArrival = false,
-                displayText = "Heute geschlossen"
+                displayText = displayText
             )
         }
 
@@ -75,23 +84,43 @@ object OpeningHoursParser {
         val isOpenNow = now.isAfter(openTime) && now.isBefore(closeTime)
         val willBeOpenAtArrival = arrivalTime.isAfter(openTime) && arrivalTime.isBefore(closeTime)
 
+        // Nächste Öffnungszeit ermitteln (für morgen)
+        val tomorrowDay = today.plus(1)
+        val tomorrowHours = parseTodayHours(openingHours, tomorrowDay)
+        val nextOpenTime = tomorrowHours?.first
+
         // Anzeigetext erstellen
+        val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
         val displayText = when {
             !isOpenNow && now.isBefore(openTime) -> {
-                // Noch nicht geöffnet
-                "Öffnet ${openTime.format(DateTimeFormatter.ofPattern("HH:mm"))}"
+                // Noch nicht geöffnet heute
+                if (arrivalTime.isBefore(openTime)) {
+                    // Komme an bevor es öffnet
+                    "Öffnet ${openTime.format(timeFormat)} ⚠️"
+                } else if (arrivalTime.isBefore(closeTime)) {
+                    // Bei Ankunft ist es offen
+                    "Öffnet ${openTime.format(timeFormat)}"
+                } else {
+                    // Bei Ankunft schon wieder zu
+                    "Öffnet ${openTime.format(timeFormat)}, schließt ${closeTime.format(timeFormat)} ⚠️"
+                }
             }
             !isOpenNow -> {
-                // Bereits geschlossen
-                "Geschlossen"
+                // Bereits geschlossen - zeige wann es geschlossen hat und wann es wieder öffnet
+                val closedSince = "Seit ${closeTime.format(timeFormat)} geschlossen"
+                if (nextOpenTime != null) {
+                    "$closedSince, öffnet morgen ${nextOpenTime.format(timeFormat)}"
+                } else {
+                    closedSince
+                }
             }
             !willBeOpenAtArrival -> {
                 // Jetzt offen, aber bei Ankunft geschlossen
-                "Schließt ${closeTime.format(DateTimeFormatter.ofPattern("HH:mm"))} ⚠️"
+                "Schließt ${closeTime.format(timeFormat)} ⚠️"
             }
             else -> {
                 // Offen und wird bei Ankunft noch offen sein
-                "Bis ${closeTime.format(DateTimeFormatter.ofPattern("HH:mm"))} geöffnet"
+                "Bis ${closeTime.format(timeFormat)} geöffnet"
             }
         }
 
