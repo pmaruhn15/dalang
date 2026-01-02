@@ -21,6 +21,7 @@ import de.dalang.nav.navigation.FuelPrices
 import de.dalang.nav.navigation.Poi
 import de.dalang.nav.navigation.PoiType
 import de.dalang.nav.settings.FuelType
+import de.dalang.nav.util.OpeningHoursParser
 
 @Composable
 fun PoiSelectionDialog(
@@ -203,13 +204,23 @@ private fun PoiListItem(
                     )
                 }
 
-                // Öffnungszeiten anzeigen wenn vorhanden
-                if (!poi.openingHours.isNullOrBlank()) {
+                // Öffnungszeiten-Status anzeigen
+                val openStatus = OpeningHoursParser.checkOpenStatus(
+                    poi.openingHours,
+                    poi.estimatedArrivalMinutes
+                )
+                if (openStatus.displayText.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(2.dp))
+                    val statusColor = when {
+                        !openStatus.isOpenNow -> Color(0xFFE53935)  // Rot - geschlossen
+                        !openStatus.willBeOpenAtArrival -> Color(0xFFFF9800)  // Orange - schließt bald
+                        else -> Color(0xFF4CAF50)  // Grün - offen
+                    }
                     Text(
-                        text = "🕐 ${poi.openingHours}",
+                        text = openStatus.displayText,
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium,
+                        color = statusColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
