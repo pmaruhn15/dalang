@@ -514,7 +514,13 @@ fun DaLangApp(viewModel: MainViewModel) {
         NavigationPanel(
             state = navigationState,
             onStartNavigation = viewModel::startNavigation,
-            onStopNavigation = viewModel::stopNavigation,
+            onStopNavigation = {
+                viewModel.stopNavigation()
+                // POIs zurücksetzen wenn Navigation beendet wird
+                selectedPoiType = null
+                poiResults = emptyList()
+                showMcDonaldsOverview = false
+            },
             onMcDonaldsClick = { toggleMcDonalds() },
             onGasStationClick = { searchPoi(PoiType.GAS_STATION) },
             isMcDonaldsLoading = isSearchingPoi && selectedPoiType == PoiType.MCDONALDS,
