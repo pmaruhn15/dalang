@@ -4,8 +4,8 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- McDonald's Golden Arches M -->
+    <!-- McDonald's Golden Arches M (weiß) -->
     <path
-        android:fillColor="#FFC72C"
+        android:fillColor="#FFFFFF"
         android:pathData="M3,20 L3,8 C3,4 5,2 7,2 C9,2 10,4 12,8 C14,4 15,2 17,2 C19,2 21,4 21,8 L21,20 L18,20 L18,8 C18,6 17.5,5 17,5 C16,5 15,7 12,14 C9,7 8,5 7,5 C6.5,5 6,6 6,8 L6,20 Z"/>
 </vector>

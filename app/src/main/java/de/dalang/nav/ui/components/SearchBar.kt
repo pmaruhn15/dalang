@@ -80,7 +80,11 @@ fun SearchBar(
                     .shadow(4.dp, RoundedCornerShape(12.dp))
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surface)
-                    .clickable { focusRequester.requestFocus() }
+                    .clickable {
+                        focusRequester.requestFocus()
+                        // Direkt onFocusChanged aufrufen für sofortige Reaktion
+                        onFocusChanged?.invoke(true)
+                    }
                     .padding(horizontal = 16.dp, vertical = 14.dp)
             ) {
                 Row(
