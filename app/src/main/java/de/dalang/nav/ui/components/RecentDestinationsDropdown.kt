@@ -13,6 +13,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Work
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,7 +29,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import de.dalang.nav.destinations.FavoriteType
 import de.dalang.nav.destinations.SavedDestination
 
@@ -138,9 +143,14 @@ private fun FavoriteItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Icon
-        Text(
-            text = type.icon,
-            fontSize = 20.sp
+        Icon(
+            imageVector = when (type) {
+                FavoriteType.HOME -> Icons.Outlined.Home
+                FavoriteType.WORK -> Icons.Outlined.Work
+            },
+            contentDescription = type.displayName,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(22.dp)
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -170,11 +180,13 @@ private fun FavoriteItem(
         }
 
         // Bearbeiten-Button
-        Text(
-            text = "⚙️",
-            fontSize = 18.sp,
+        Icon(
+            imageVector = Icons.Outlined.Settings,
+            contentDescription = "Bearbeiten",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .padding(start = 8.dp)
+                .size(20.dp)
                 .clickable { onEdit() }
         )
     }
@@ -205,12 +217,23 @@ private fun SwipeToDeleteItem(
             contentAlignment = Alignment.CenterEnd
         ) {
             if (offsetX < -50f) {
-                Text(
-                    text = "🗑️ Löschen",
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    style = MaterialTheme.typography.bodyMedium,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(end = 16.dp)
-                )
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Delete,
+                        contentDescription = "Löschen",
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Löschen",
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
         }
 
@@ -240,9 +263,11 @@ private fun SwipeToDeleteItem(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "📍",
-                fontSize = 18.sp
+            Icon(
+                imageVector = Icons.Outlined.LocationOn,
+                contentDescription = "Ort",
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(20.dp)
             )
 
             Spacer(modifier = Modifier.width(12.dp))
