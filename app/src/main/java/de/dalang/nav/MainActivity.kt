@@ -30,6 +30,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import de.dalang.nav.destinations.DestinationsRepository
 import de.dalang.nav.destinations.FavoriteType
@@ -185,6 +186,7 @@ fun DaLangApp(viewModel: MainViewModel) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     // Settings
     val settingsRepository = remember { SettingsRepository(context) }
@@ -203,6 +205,7 @@ fun DaLangApp(viewModel: MainViewModel) {
     // Callback wenn ein gespeichertes Ziel ausgewählt wird
     fun onSavedDestinationSelected(destination: SavedDestination) {
         showRecentDestinations = false
+        keyboardController?.hide()
         // Als SearchResult behandeln und Route berechnen
         viewModel.selectDestination(
             SearchResult(
