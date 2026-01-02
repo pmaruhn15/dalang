@@ -367,8 +367,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Fügt einen Zwischenstopp zur aktuellen Route hinzu.
      * Berechnet neue Route: Aktueller Standort -> Waypoint -> Ursprüngliches Ziel
      */
-    fun addWaypoint(waypoint: LatLng) {
-        CrashLogger.log("MainViewModel: addWaypoint to ${waypoint.lat},${waypoint.lng}")
+    fun addWaypoint(waypointLocation: LatLng, waypointName: String, waypointType: WaypointType) {
+        CrashLogger.log("MainViewModel: addWaypoint '$waypointName' (${waypointType}) to ${waypointLocation.lat},${waypointLocation.lng}")
         viewModelScope.launch {
             try {
                 val current = _currentLocation.value
@@ -383,10 +383,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _navigationState.update { it.copy(isRecalculating = true) }
 
                 // Route vom aktuellen Standort zum Waypoint
-                val routeToWaypoint = routeRepository.getRoute(current, waypoint)
+                val routeToWaypoint = routeRepository.getRoute(current, waypointLocation)
 
                 // Route vom Waypoint zum ursprünglichen Ziel
-                val routeToDestination = routeRepository.getRoute(waypoint, destination)
+                val routeToDestination = routeRepository.getRoute(waypointLocation, destination)
 
                 if (routeToWaypoint != null && routeToDestination != null) {
                     // Kombinierte Route erstellen
@@ -408,7 +408,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         it.copy(
                             route = combinedRoute,
                             currentStepIndex = 0,
-                            isRecalculating = false
+                            isRecalculating = false,
+                            // Waypoint-Daten setzen
+                            waypoint = waypointLocation,
+                            waypointName = waypointName,
+                            waypointType = waypointType,
+                            distanceToWaypoint = routeToWaypoint.distance,
+                            timeToWaypoint = routeToWaypoint.duration,
+                            // Gesamtdistanz/-zeit zum Hauptziel aktualisieren
+                            totalDistanceRemaining = combinedDistance,
+                            totalTimeRemaining = combinedDuration
                         )
                     }
 
@@ -422,6 +431,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (e: Exception) {
                 CrashLogger.logError("MainViewModel", "addWaypoint failed", e)
+                _navigationState.update { it.copy(isRecalculating = false) }
+            }
+        }
+    }
+
+    /**
+     * Entfernt das aktuelle Zwischenziel und berechnet Route direkt zum Hauptziel
+     */
+    fun clearWaypoint() {
+        val state = _navigationState.value
+        val destination = state.destination ?: return
+        val current = _currentLocation.value ?: return
+
+        CrashLogger.log("MainViewModel: clearWaypoint")
+
+        viewModelScope.launch {
+            try {
+                _navigationState.update { it.copy(isRecalculating = true) }
+
+                val route = routeRepository.getRoute(current, destination)
+                if (route != null) {
+                    _navigationState.update {
+                        it.copy(
+                            route = route,
+                            currentStepIndex = 0,
+                            isRecalculating = false,
+                            waypoint = null,
+                            waypointName = null,
+                            waypointType = null,
+                            distanceToWaypoint = 0.0,
+                            timeToWaypoint = 0.0,
+                            totalDistanceRemaining = route.distance,
+                            totalTimeRemaining = route.duration
+                        )
+                    }
+                } else {
+                    _navigationState.update { it.copy(isRecalculating = false) }
+                }
+            } catch (e: Exception) {
+                CrashLogger.logError("MainViewModel", "clearWaypoint failed", e)
                 _navigationState.update { it.copy(isRecalculating = false) }
             }
         }
@@ -475,6 +524,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
+            // Prüfen ob am Waypoint (Zwischenziel) angekommen
+            val waypoint = state.waypoint
+            if (waypoint != null && location.distanceTo(waypoint) < 50) {
+                CrashLogger.log("MainViewModel: Arrived at waypoint ${state.waypointName}")
+                navigationService?.speakNow("Zwischenziel erreicht: ${state.waypointName}")
+                // Waypoint entfernen, weiter zum Hauptziel
+                _navigationState.update {
+                    it.copy(
+                        waypoint = null,
+                        waypointName = null,
+                        waypointType = null,
+                        distanceToWaypoint = 0.0,
+                        timeToWaypoint = 0.0
+                    )
+                }
+            }
+
             // Prüfen ob am Ziel
             val destination = state.destination
             if (destination != null && location.distanceTo(destination) < 20) {
@@ -484,8 +550,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 stopNavigation()
             }
 
-            // Gesamtdistanz und Zeit aktualisieren
-            updateRemainingDistance(location, route, state.currentStepIndex)
+            // Gesamtdistanz und Zeit aktualisieren (inkl. Waypoint)
+            updateRemainingDistance(location, route, state.currentStepIndex, waypoint)
         } catch (e: Exception) {
             CrashLogger.logError("MainViewModel", "updateNavigation failed", e)
         }
@@ -566,7 +632,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun updateRemainingDistance(location: LatLng, route: Route, fromStep: Int) {
+    private fun updateRemainingDistance(location: LatLng, route: Route, fromStep: Int, waypoint: LatLng?) {
         try {
             var remaining = 0.0
             var remainingTime = 0.0
@@ -576,10 +642,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 remainingTime += route.steps[i].duration
             }
 
+            // Waypoint Distanz/Zeit berechnen falls vorhanden
+            val waypointDistance = if (waypoint != null) {
+                location.distanceTo(waypoint)
+            } else 0.0
+
+            // Grobe Zeit-Schätzung zum Waypoint (basierend auf durchschnittlicher Geschwindigkeit)
+            val speed = _speed.value.coerceAtLeast(10f)  // mindestens 10 m/s = 36 km/h
+            val waypointTime = if (waypoint != null) {
+                waypointDistance / speed
+            } else 0.0
+
             _navigationState.update {
                 it.copy(
                     totalDistanceRemaining = remaining,
-                    totalTimeRemaining = remainingTime
+                    totalTimeRemaining = remainingTime,
+                    distanceToWaypoint = waypointDistance,
+                    timeToWaypoint = waypointTime
                 )
             }
         } catch (e: Exception) {

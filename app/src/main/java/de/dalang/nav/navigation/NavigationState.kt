@@ -1,5 +1,10 @@
 package de.dalang.nav.navigation
 
+enum class WaypointType {
+    MCDONALDS,
+    GAS_STATION
+}
+
 data class NavigationState(
     val isNavigating: Boolean = false,
     val route: Route? = null,
@@ -11,7 +16,13 @@ data class NavigationState(
     val destination: LatLng? = null,
     val destinationName: String? = null,
     val isRecalculating: Boolean = false,
-    val hasArrived: Boolean = false
+    val hasArrived: Boolean = false,
+    // Waypoint (Zwischenziel) - z.B. McDonald's oder Tankstelle
+    val waypoint: LatLng? = null,
+    val waypointName: String? = null,
+    val waypointType: WaypointType? = null,
+    val distanceToWaypoint: Double = 0.0,
+    val timeToWaypoint: Double = 0.0
 ) {
     val currentStep: RouteStep?
         get() = route?.steps?.getOrNull(currentStepIndex)

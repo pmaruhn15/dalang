@@ -39,6 +39,7 @@ import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.navigation.Poi
 import de.dalang.nav.navigation.PoiRepository
 import de.dalang.nav.navigation.PoiType
+import de.dalang.nav.navigation.WaypointType
 import de.dalang.nav.search.SearchResult
 import de.dalang.nav.settings.FuelType
 import de.dalang.nav.settings.SettingsRepository
@@ -382,13 +383,21 @@ fun DaLangApp(viewModel: MainViewModel) {
                 }
             },
             onPoiClick = { poi ->
-                // Bei Klick auf McDonald's: Dorthin navigieren
-                if (showMcDonaldsOverview) {
-                    viewModel.addWaypoint(LatLng(poi.lat, poi.lng))
-                    showMcDonaldsOverview = false
-                    selectedPoiType = null
-                    poiResults = emptyList()
+                // Bei Klick auf POI-Marker: Als Zwischenziel setzen
+                val waypointType = when (selectedPoiType) {
+                    PoiType.MCDONALDS -> WaypointType.MCDONALDS
+                    PoiType.GAS_STATION -> WaypointType.GAS_STATION
+                    else -> WaypointType.GAS_STATION
                 }
+                viewModel.addWaypoint(
+                    waypointLocation = LatLng(poi.lat, poi.lng),
+                    waypointName = poi.name,
+                    waypointType = waypointType
+                )
+                // POIs von Karte entfernen
+                showMcDonaldsOverview = false
+                selectedPoiType = null
+                poiResults = emptyList()
             },
             modifier = Modifier.fillMaxSize()
         )
@@ -425,6 +434,25 @@ fun DaLangApp(viewModel: MainViewModel) {
                     )
                 }
             }
+        }
+
+        // Waypoint Indicator - oben rechts (nur während Navigation mit aktivem Zwischenziel)
+        AnimatedVisibility(
+            visible = navigationState.isNavigating && navigationState.waypoint != null,
+            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+            exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(top = 8.dp, end = 8.dp)
+        ) {
+            WaypointIndicator(
+                waypointType = navigationState.waypointType,
+                waypointName = navigationState.waypointName,
+                distanceKm = navigationState.distanceToWaypoint / 1000.0,
+                timeMinutes = (navigationState.timeToWaypoint / 60.0).toInt(),
+                onClearWaypoint = { viewModel.clearWaypoint() }
+            )
         }
 
         // Suchleiste oben mit Menu-Button
@@ -548,10 +576,22 @@ fun DaLangApp(viewModel: MainViewModel) {
                 isAlongRoute = navigationState.route != null,
                 preferredFuelType = preferredFuelType,
                 onSelect = { poi ->
-                    // POI als Zwischenstopp zur Route hinzufügen
-                    viewModel.addWaypoint(LatLng(poi.lat, poi.lng))
+                    // POI als Zwischenziel zur Route hinzufügen
+                    val waypointType = when (selectedPoiType) {
+                        PoiType.MCDONALDS -> WaypointType.MCDONALDS
+                        PoiType.GAS_STATION -> WaypointType.GAS_STATION
+                        else -> WaypointType.GAS_STATION
+                    }
+                    viewModel.addWaypoint(
+                        waypointLocation = LatLng(poi.lat, poi.lng),
+                        waypointName = poi.name,
+                        waypointType = waypointType
+                    )
                     showPoiDialog = false
-                    // selectedPoiType bleibt erhalten, damit Marker auf der Karte bleiben
+                    // POIs von Karte entfernen nach Auswahl
+                    selectedPoiType = null
+                    poiResults = emptyList()
+                    showMcDonaldsOverview = false
                 },
                 onDismiss = {
                     showPoiDialog = false
@@ -928,6 +968,79 @@ fun DebugLogDialog(
             ) {
                 Text("Schließen")
             }
+        }
+    }
+}
+
+@Composable
+fun WaypointIndicator(
+    waypointType: WaypointType?,
+    waypointName: String?,
+    distanceKm: Double,
+    timeMinutes: Int,
+    onClearWaypoint: () -> Unit
+) {
+    val bgColor = MaterialTheme.colorScheme.surface
+    val fgColor = MaterialTheme.colorScheme.onSurface
+
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(bgColor)
+            .clickable { onClearWaypoint() }
+            .padding(12.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Icon je nach Typ
+            when (waypointType) {
+                WaypointType.MCDONALDS -> {
+                    Text(
+                        text = "🍟",
+                        fontSize = 20.sp
+                    )
+                }
+                WaypointType.GAS_STATION -> {
+                    Text(
+                        text = "⛽",
+                        fontSize = 20.sp
+                    )
+                }
+                else -> {}
+            }
+
+            Column {
+                // Distanz und Zeit
+                Text(
+                    text = if (distanceKm >= 1.0) {
+                        String.format("%.1f km", distanceKm)
+                    } else {
+                        String.format("%d m", (distanceKm * 1000).toInt())
+                    },
+                    fontSize = 16.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    color = fgColor
+                )
+                Text(
+                    text = if (timeMinutes >= 60) {
+                        "${timeMinutes / 60} Std. ${timeMinutes % 60} Min."
+                    } else {
+                        "$timeMinutes Min."
+                    },
+                    fontSize = 12.sp,
+                    color = fgColor.copy(alpha = 0.7f)
+                )
+            }
+
+            // X zum Schließen
+            Text(
+                text = "✕",
+                fontSize = 14.sp,
+                color = fgColor.copy(alpha = 0.5f),
+                modifier = Modifier.padding(start = 4.dp)
+            )
         }
     }
 }
