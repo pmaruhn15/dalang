@@ -139,14 +139,15 @@ private fun ActiveNavigationContent(
             if (isMcDonaldsLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
-                    color = buttonFg,
+                    color = if (showMcDonaldsOverview) buttonBg else buttonFg,
                     strokeWidth = 2.dp
                 )
             } else {
                 Image(
                     painter = painterResource(id = R.drawable.ic_mcdonalds),
                     contentDescription = "McDonald's",
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(24.dp),
+                    colorFilter = ColorFilter.tint(if (showMcDonaldsOverview) buttonBg else buttonFg)
                 )
             }
         }
