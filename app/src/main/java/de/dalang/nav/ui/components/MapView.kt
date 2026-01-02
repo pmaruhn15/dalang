@@ -147,25 +147,27 @@ fun MapViewComposable(
                                     map.addOnMapClickListener { point ->
                                         CrashLogger.log("MapView: Map clicked at ${point.latitude}, ${point.longitude}")
 
-                                        // Prüfe ob POI-Marker geklickt wurde
-                                        val screenPoint = map.projection.toScreenLocation(point)
-                                        val poiFeatures = map.queryRenderedFeatures(screenPoint, "poi-layer")
-                                        val poiCheapestFeatures = map.queryRenderedFeatures(screenPoint, "poi-cheapest-layer")
-
-                                        val allPoiFeatures = poiFeatures + poiCheapestFeatures
-                                        if (allPoiFeatures.isNotEmpty() && currentPois.isNotEmpty()) {
-                                            // POI-Marker wurde geklickt - finde den nächsten POI
-                                            val clickedLat = point.latitude
-                                            val clickedLng = point.longitude
+                                        // Prüfe ob in der Nähe eines POI geklickt wurde (distanzbasiert)
+                                        if (currentPois.isNotEmpty()) {
+                                            val clickedLatLng = LatLng(point.latitude, point.longitude)
                                             val nearestPoi = currentPois.minByOrNull { poi ->
-                                                val dlat = poi.lat - clickedLat
-                                                val dlng = poi.lng - clickedLng
-                                                dlat * dlat + dlng * dlng
+                                                clickedLatLng.distanceTo(LatLng(poi.lat, poi.lng))
                                             }
                                             if (nearestPoi != null) {
-                                                CrashLogger.log("MapView: POI clicked: ${nearestPoi.name}")
-                                                onPoiClick?.invoke(nearestPoi)
-                                                return@addOnMapClickListener true
+                                                val distanceToPoi = clickedLatLng.distanceTo(LatLng(nearestPoi.lat, nearestPoi.lng))
+                                                // Bei aktuellem Zoom-Level: ca. 500m Toleranz für Klick auf POI
+                                                val zoomLevel = map.cameraPosition.zoom
+                                                val clickTolerance = when {
+                                                    zoomLevel >= 15 -> 100.0   // Nah dran: 100m
+                                                    zoomLevel >= 12 -> 300.0   // Mittel: 300m
+                                                    zoomLevel >= 10 -> 500.0   // Weit weg: 500m
+                                                    else -> 1000.0             // Sehr weit: 1km
+                                                }
+                                                if (distanceToPoi < clickTolerance) {
+                                                    CrashLogger.log("MapView: POI clicked: ${nearestPoi.name} (distance: ${distanceToPoi.toInt()}m, zoom: $zoomLevel)")
+                                                    onPoiClick?.invoke(nearestPoi)
+                                                    return@addOnMapClickListener true
+                                                }
                                             }
                                         }
 
