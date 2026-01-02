@@ -42,7 +42,8 @@ data class Poi(
     val distanceKm: Double,  // Entfernung vom aktuellen Standort
     val estimatedArrivalMinutes: Int,  // Geschätzte Ankunftszeit in Minuten
     val detourMinutes: Int = 0,  // Zusätzliche Zeit für Umweg (nur bei Route-Suche)
-    val fuelPrices: FuelPrices? = null  // Nur für Tankstellen
+    val fuelPrices: FuelPrices? = null,  // Nur für Tankstellen
+    val openingHours: String? = null  // Öffnungszeiten (z.B. "24/7" oder "Mo-Fr 06:00-22:00")
 )
 
 enum class PoiType(val searchQuery: String, val displayName: String) {
@@ -555,7 +556,8 @@ class PoiRepository {
                 "&format=json" +
                 "&limit=20" +
                 "&viewbox=$minLng,$maxLat,$maxLng,$minLat" +
-                "&bounded=1"
+                "&bounded=1" +
+                "&extratags=1"  // Für Öffnungszeiten
 
             CrashLogger.log("PoiRepository: Nominatim URL: $url")
 
@@ -580,6 +582,10 @@ class PoiRepository {
                 // Adresse (Rest nach dem Namen)
                 val address = displayName.split(",").drop(1).take(3).joinToString(", ").trim()
 
+                // Öffnungszeiten aus extratags extrahieren
+                val extratags = item.optJSONObject("extratags")
+                val openingHours = extratags?.optString("opening_hours", null)?.takeIf { it.isNotEmpty() }
+
                 val distance = calculateDistance(center.lat, center.lng, lat, lng)
                 val arrivalMinutes = estimateArrivalTime(distance)
 
@@ -590,7 +596,8 @@ class PoiRepository {
                         lng = lng,
                         address = address.ifEmpty { null },
                         distanceKm = distance,
-                        estimatedArrivalMinutes = arrivalMinutes
+                        estimatedArrivalMinutes = arrivalMinutes,
+                        openingHours = openingHours
                     )
                 )
             }

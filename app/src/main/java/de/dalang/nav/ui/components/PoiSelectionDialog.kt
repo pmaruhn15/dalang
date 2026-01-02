@@ -202,6 +202,18 @@ private fun PoiListItem(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+
+                // Öffnungszeiten anzeigen wenn vorhanden
+                if (!poi.openingHours.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "🕐 ${poi.openingHours}",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(12.dp))

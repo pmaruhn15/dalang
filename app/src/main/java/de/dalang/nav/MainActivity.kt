@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,6 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -967,15 +970,19 @@ fun WaypointIndicator(
             // Icon je nach Typ
             when (waypointType) {
                 WaypointType.MCDONALDS -> {
-                    Text(
-                        text = "🍟",
-                        fontSize = 20.sp
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_mcdonalds),
+                        contentDescription = "McDonald's",
+                        modifier = Modifier.size(24.dp),
+                        colorFilter = ColorFilter.tint(fgColor)
                     )
                 }
                 WaypointType.GAS_STATION -> {
-                    Text(
-                        text = "⛽",
-                        fontSize = 20.sp
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_gas_station),
+                        contentDescription = "Tankstelle",
+                        modifier = Modifier.size(24.dp),
+                        colorFilter = ColorFilter.tint(fgColor)
                     )
                 }
                 else -> {}
