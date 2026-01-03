@@ -377,6 +377,9 @@ class PoiRepository {
                 FuelPrices(diesel = diesel, e5 = e5, e10 = null)
             } else null
 
+            // Öffnungszeiten aus HERE API parsen
+            val openingHours = parseHereOpeningHours(station)
+
             return Poi(
                 name = brand.ifEmpty { name },
                 lat = lat,
@@ -385,9 +388,77 @@ class PoiRepository {
                 distanceKm = distanceFromCurrent,
                 estimatedArrivalMinutes = arrivalMinutes,
                 detourMinutes = detourMinutes,
-                fuelPrices = fuelPrices
+                fuelPrices = fuelPrices,
+                openingHours = openingHours
             )
         } catch (e: Exception) {
+            return null
+        }
+    }
+
+    /**
+     * Parst Öffnungszeiten aus HERE Fuel Prices API Response
+     * Format: { "openingHours": { "regularOpeningHours": [{ "daymask": 127, "period": [{ "from": "06:00:00", "to": "22:00:00" }] }] } }
+     * Oder: "open24x7": true
+     */
+    private fun parseHereOpeningHours(station: JSONObject): String? {
+        try {
+            // Prüfe ob 24/7 geöffnet
+            if (station.optBoolean("open24x7", false)) {
+                return "24/7"
+            }
+
+            val openingHoursObj = station.optJSONObject("openingHours") ?: return null
+            val regularHours = openingHoursObj.optJSONArray("regularOpeningHours") ?: return null
+
+            if (regularHours.length() == 0) return null
+
+            // Sammle alle Öffnungszeiten und konvertiere zu OSM-Format
+            val dayNames = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
+            val result = StringBuilder()
+
+            for (i in 0 until regularHours.length()) {
+                val entry = regularHours.getJSONObject(i)
+                val daymask = entry.optInt("daymask", 0)
+                val periodsArray = entry.optJSONArray("period") ?: continue
+
+                if (periodsArray.length() == 0) continue
+
+                // Erste Periode nehmen
+                val period = periodsArray.getJSONObject(0)
+                val from = period.optString("from", "").take(5)  // "06:00:00" -> "06:00"
+                val to = period.optString("to", "").take(5)
+
+                if (from.isEmpty() || to.isEmpty()) continue
+
+                // Daymask zu Tagen konvertieren (Bitmask: 1=Mo, 2=Tu, 4=We, 8=Th, 16=Fr, 32=Sa, 64=Su)
+                val days = mutableListOf<String>()
+                for (d in 0..6) {
+                    if ((daymask and (1 shl d)) != 0) {
+                        days.add(dayNames[d])
+                    }
+                }
+
+                if (days.isEmpty()) continue
+
+                // Zusammenhängende Tage als Bereich formatieren
+                val dayStr = if (days.size == 7) {
+                    "Mo-Su"
+                } else if (days == listOf("Mo", "Tu", "We", "Th", "Fr")) {
+                    "Mo-Fr"
+                } else if (days == listOf("Sa", "Su")) {
+                    "Sa-Su"
+                } else {
+                    days.joinToString(",")
+                }
+
+                if (result.isNotEmpty()) result.append("; ")
+                result.append("$dayStr $from-$to")
+            }
+
+            return result.toString().ifEmpty { null }
+        } catch (e: Exception) {
+            CrashLogger.logError("PoiRepository", "Failed to parse HERE opening hours", e)
             return null
         }
     }
@@ -513,6 +584,9 @@ class PoiRepository {
                     FuelPrices(diesel = diesel, e5 = e5, e10 = null)
                 } else null
 
+                // Öffnungszeiten aus HERE API
+                val openingHours = parseHereOpeningHours(station)
+
                 results.add(
                     Poi(
                         name = brand.ifEmpty { name },
@@ -521,7 +595,8 @@ class PoiRepository {
                         address = address,
                         distanceKm = distance,
                         estimatedArrivalMinutes = arrivalMinutes,
-                        fuelPrices = fuelPrices
+                        fuelPrices = fuelPrices,
+                        openingHours = openingHours
                     )
                 )
             }
