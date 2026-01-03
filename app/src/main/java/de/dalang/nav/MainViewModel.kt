@@ -363,6 +363,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun clearRoute() {
+        CrashLogger.log("MainViewModel: clearRoute")
+        _navigationState.update { NavigationState() }
+    }
+
     /**
      * Fügt einen Zwischenstopp zur aktuellen Route hinzu.
      * Berechnet neue Route: Aktueller Standort -> Waypoint -> Ursprüngliches Ziel

@@ -432,8 +432,8 @@ fun DaLangApp(viewModel: MainViewModel) {
             )
         }
 
-        // Suchleiste oben mit Menu-Button
-        if (!navigationState.isNavigating) {
+        // Suchleiste oben mit Menu-Button (versteckt bei Navigation und Routenvorschau)
+        if (!navigationState.isNavigating && navigationState.route == null) {
             Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -525,6 +525,7 @@ fun DaLangApp(viewModel: MainViewModel) {
                 selectedPoiType = null
                 poiResults = emptyList()
             },
+            onCancelRoute = { viewModel.clearRoute() },
             onMcDonaldsClick = { searchMcDonalds() },
             onGasStationClick = { searchPoi(PoiType.GAS_STATION) },
             isMcDonaldsLoading = isSearchingPoi && selectedPoiType == PoiType.MCDONALDS,

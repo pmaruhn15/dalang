@@ -1,5 +1,6 @@
 package de.dalang.nav.util
 
+import de.dalang.nav.util.CrashLogger
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -67,7 +68,7 @@ object OpeningHoursParser {
             val tomorrowHours = parseTodayHours(openingHours, tomorrowDay)
             val displayText = if (tomorrowHours != null) {
                 val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
-                "Heute geschlossen, öffnet morgen ${tomorrowHours.first.format(timeFormat)}"
+                "Geschl. · Morgen ab ${tomorrowHours.first.format(timeFormat)}"
             } else {
                 "Heute geschlossen"
             }
@@ -102,16 +103,15 @@ object OpeningHoursParser {
                     "Öffnet ${openTime.format(timeFormat)}"
                 } else {
                     // Bei Ankunft schon wieder zu
-                    "Öffnet ${openTime.format(timeFormat)}, schließt ${closeTime.format(timeFormat)} ⚠️"
+                    "${openTime.format(timeFormat)}-${closeTime.format(timeFormat)} ⚠️"
                 }
             }
             !isOpenNow -> {
                 // Bereits geschlossen - zeige wann es geschlossen hat und wann es wieder öffnet
-                val closedSince = "Seit ${closeTime.format(timeFormat)} geschlossen"
                 if (nextOpenTime != null) {
-                    "$closedSince, öffnet morgen ${nextOpenTime.format(timeFormat)}"
+                    "Geschl. · Morgen ab ${nextOpenTime.format(timeFormat)}"
                 } else {
-                    closedSince
+                    "Geschl. seit ${closeTime.format(timeFormat)}"
                 }
             }
             !willBeOpenAtArrival -> {

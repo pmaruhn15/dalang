@@ -4,31 +4,36 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.dalang.nav.R
 import de.dalang.nav.navigation.*
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.roundToInt
 
 @Composable
 fun NavigationPanel(
     state: NavigationState,
     onStartNavigation: () -> Unit,
     onStopNavigation: () -> Unit,
+    onCancelRoute: () -> Unit = {},
     onMcDonaldsClick: () -> Unit = {},
     onGasStationClick: () -> Unit = {},
     isMcDonaldsLoading: Boolean = false,
@@ -61,10 +66,11 @@ fun NavigationPanel(
                     isMcDonaldsLoading = isMcDonaldsLoading
                 )
             } else {
-                // Routenvorschau
+                // Routenvorschau (swipe zum Abbrechen)
                 RoutePreviewContent(
                     state = state,
-                    onStart = onStartNavigation
+                    onStart = onStartNavigation,
+                    onCancel = onCancelRoute
                 )
             }
         }
@@ -218,9 +224,14 @@ private fun ActiveNavigationContent(
 @Composable
 private fun RoutePreviewContent(
     state: NavigationState,
-    onStart: () -> Unit
+    onStart: () -> Unit,
+    onCancel: () -> Unit
 ) {
     val route = state.route ?: return
+
+    // Swipe-Offset State
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    val swipeThreshold = 150f  // Pixel zum Auslösen des Abbrechens
 
     // ETA berechnen
     val eta = Calendar.getInstance().apply {
@@ -234,70 +245,91 @@ private fun RoutePreviewContent(
         (route.duration - route.typicalDuration).toInt()
     } else 0
 
-    // Ziel
-    Text(
-        text = state.destinationName ?: "Ziel",
-        fontSize = 20.sp,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurface
-    )
-
-    Spacer(modifier = Modifier.height(8.dp))
-
-    // Route-Info mit ETA
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+    Column(
+        modifier = Modifier
+            .offset { IntOffset(offsetX.roundToInt(), 0) }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (kotlin.math.abs(offsetX) > swipeThreshold) {
+                            onCancel()
+                        }
+                        offsetX = 0f
+                    },
+                    onDragCancel = {
+                        offsetX = 0f
+                    },
+                    onHorizontalDrag = { _, dragAmount ->
+                        offsetX += dragAmount
+                    }
+                )
+            }
     ) {
-        // Distanz
-        Column {
-            Text(
-                text = route.distance.formatDistance(),
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = route.duration.formatDuration(),
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        // ETA mit Verkehr-Delay neben der Zeit
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                text = etaString,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            // Immer Delay anzeigen
-            val delayMinutes = trafficDelay / 60
-            Text(
-                text = if (delayMinutes > 0) "+$delayMinutes" else "+0",
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-
-    Spacer(modifier = Modifier.height(16.dp))
-
-    // Start-Button - Farben passen sich an Theme an
-    Button(
-        onClick = onStart,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.onSurface,
-            contentColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
+        // Ziel
         Text(
-            text = "Navigation starten",
-            modifier = Modifier.padding(vertical = 4.dp)
+            text = state.destinationName ?: "Ziel",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Route-Info mit ETA
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Distanz
+            Column {
+                Text(
+                    text = route.distance.formatDistance(),
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = route.duration.formatDuration(),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // ETA mit Verkehr-Delay neben der Zeit
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = etaString,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                // Immer Delay anzeigen
+                val delayMinutes = trafficDelay / 60
+                Text(
+                    text = if (delayMinutes > 0) "+$delayMinutes" else "+0",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Start-Button - Farben passen sich an Theme an
+        Button(
+            onClick = onStart,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.onSurface,
+                contentColor = MaterialTheme.colorScheme.surface
+            ),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "Navigation starten",
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+        }
     }
 }
 
