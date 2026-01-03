@@ -12,15 +12,26 @@ import androidx.core.app.NotificationCompat
 import de.dalang.nav.DaLangApp
 import de.dalang.nav.MainActivity
 import de.dalang.nav.R
+import de.dalang.nav.tts.PiperTts
 import de.dalang.nav.util.CrashLogger
+import kotlinx.coroutines.*
 import java.util.Locale
 
 class NavigationService : Service(), TextToSpeech.OnInitListener {
 
     private val binder = LocalBinder()
-    private var tts: TextToSpeech? = null
-    private var isTtsReady = false
+
+    // Piper TTS (primär - hochwertige Stimme)
+    private var piperTts: PiperTts? = null
+    private var isPiperReady = false
+
+    // Android TTS (Fallback)
+    private var androidTts: TextToSpeech? = null
+    private var isAndroidTtsReady = false
+
     var voiceEnabled = true
+
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     inner class LocalBinder : Binder() {
         fun getService(): NavigationService = this@NavigationService
@@ -29,10 +40,34 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
     override fun onCreate() {
         super.onCreate()
         CrashLogger.log("NavigationService onCreate")
+
+        // Android TTS als Fallback initialisieren
         try {
-            tts = TextToSpeech(this, this)
+            androidTts = TextToSpeech(this, this)
         } catch (e: Exception) {
-            CrashLogger.logError("NavigationService", "TTS init failed", e)
+            CrashLogger.logError("NavigationService", "Android TTS init failed", e)
+        }
+
+        // Piper TTS asynchron initialisieren
+        serviceScope.launch {
+            initializePiperTts()
+        }
+    }
+
+    private suspend fun initializePiperTts() {
+        try {
+            CrashLogger.log("NavigationService: Initializing Piper TTS...")
+            piperTts = PiperTts(this@NavigationService)
+            isPiperReady = piperTts?.initialize() == true
+
+            if (isPiperReady) {
+                CrashLogger.log("NavigationService: Piper TTS ready - using Thorsten voice")
+            } else {
+                CrashLogger.log("NavigationService: Piper TTS failed, using Android TTS fallback")
+            }
+        } catch (e: Exception) {
+            CrashLogger.logError("NavigationService", "Piper TTS init failed", e)
+            isPiperReady = false
         }
     }
 
@@ -55,30 +90,35 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
     }
 
     override fun onInit(status: Int) {
-        CrashLogger.log("NavigationService TTS onInit: status=$status")
+        CrashLogger.log("NavigationService Android TTS onInit: status=$status")
         try {
             if (status == TextToSpeech.SUCCESS) {
-                val result = tts?.setLanguage(Locale.GERMAN)
-                isTtsReady = result != TextToSpeech.LANG_MISSING_DATA &&
+                val result = androidTts?.setLanguage(Locale.GERMAN)
+                isAndroidTtsReady = result != TextToSpeech.LANG_MISSING_DATA &&
                         result != TextToSpeech.LANG_NOT_SUPPORTED
 
-                // Spracheinstellungen optimieren
-                tts?.setSpeechRate(1.0f)
-                tts?.setPitch(1.0f)
+                androidTts?.setSpeechRate(1.0f)
+                androidTts?.setPitch(1.0f)
 
-                CrashLogger.log("TTS ready: $isTtsReady")
+                CrashLogger.log("Android TTS ready: $isAndroidTtsReady")
             } else {
-                CrashLogger.logError("NavigationService", "TTS init failed with status: $status")
+                CrashLogger.logError("NavigationService", "Android TTS init failed with status: $status")
             }
         } catch (e: Exception) {
-            CrashLogger.logError("NavigationService", "TTS configuration failed", e)
+            CrashLogger.logError("NavigationService", "Android TTS configuration failed", e)
         }
     }
 
     fun speak(text: String) {
+        if (!voiceEnabled) return
+
         try {
-            if (isTtsReady && voiceEnabled) {
-                tts?.speak(text, TextToSpeech.QUEUE_ADD, null, text.hashCode().toString())
+            if (isPiperReady && piperTts != null) {
+                // Piper TTS verwenden (hochwertige Stimme)
+                piperTts?.speak(text)
+            } else if (isAndroidTtsReady) {
+                // Fallback zu Android TTS
+                androidTts?.speak(text, TextToSpeech.QUEUE_ADD, null, text.hashCode().toString())
             }
         } catch (e: Exception) {
             CrashLogger.logError("NavigationService", "speak failed", e)
@@ -86,9 +126,13 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
     }
 
     fun speakNow(text: String) {
+        if (!voiceEnabled) return
+
         try {
-            if (isTtsReady && voiceEnabled) {
-                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, text.hashCode().toString())
+            if (isPiperReady && piperTts != null) {
+                piperTts?.speakNow(text)
+            } else if (isAndroidTtsReady) {
+                androidTts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, text.hashCode().toString())
             }
         } catch (e: Exception) {
             CrashLogger.logError("NavigationService", "speakNow failed", e)
@@ -141,12 +185,25 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         CrashLogger.log("NavigationService onDestroy")
+
+        // Piper TTS beenden
         try {
-            tts?.stop()
-            tts?.shutdown()
+            piperTts?.shutdown()
+            piperTts = null
+            isPiperReady = false
         } catch (e: Exception) {
-            CrashLogger.logError("NavigationService", "TTS shutdown failed", e)
+            CrashLogger.logError("NavigationService", "Piper TTS shutdown failed", e)
         }
+
+        // Android TTS beenden
+        try {
+            androidTts?.stop()
+            androidTts?.shutdown()
+        } catch (e: Exception) {
+            CrashLogger.logError("NavigationService", "Android TTS shutdown failed", e)
+        }
+
+        serviceScope.cancel()
         super.onDestroy()
     }
 

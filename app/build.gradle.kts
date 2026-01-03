@@ -20,8 +20,8 @@ android {
         applicationId = "de.dalang.nav"
         minSdk = 29
         targetSdk = 34
-        versionCode = 59
-        versionName = "1.2.56"
+        versionCode = 60
+        versionName = "1.2.57"
     }
 
     buildTypes {
@@ -86,6 +86,9 @@ dependencies {
 
     // DataStore for preferences
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    // Sherpa-ONNX for Piper TTS (offline neural text-to-speech)
+    implementation("com.k2fsa.sherpa:onnx-android:1.10.30")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
