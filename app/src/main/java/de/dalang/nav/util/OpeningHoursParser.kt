@@ -82,8 +82,23 @@ object OpeningHoursParser {
         }
 
         val (openTime, closeTime) = todayHours
-        val isOpenNow = now.isAfter(openTime) && now.isBefore(closeTime)
-        val willBeOpenAtArrival = arrivalTime.isAfter(openTime) && arrivalTime.isBefore(closeTime)
+
+        // Prüfe ob Öffnungszeiten über Mitternacht gehen (z.B. 07:00-01:00)
+        val isOvernight = closeTime.isBefore(openTime)
+
+        val isOpenNow = if (isOvernight) {
+            // Über Mitternacht: offen wenn nach openTime ODER vor closeTime
+            now.isAfter(openTime) || now.isBefore(closeTime)
+        } else {
+            // Normal: offen wenn zwischen openTime und closeTime
+            now.isAfter(openTime) && now.isBefore(closeTime)
+        }
+
+        val willBeOpenAtArrival = if (isOvernight) {
+            arrivalTime.isAfter(openTime) || arrivalTime.isBefore(closeTime)
+        } else {
+            arrivalTime.isAfter(openTime) && arrivalTime.isBefore(closeTime)
+        }
 
         // Nächste Öffnungszeit ermitteln (für morgen)
         val tomorrowDay = today.plus(1)
@@ -93,26 +108,17 @@ object OpeningHoursParser {
         // Anzeigetext erstellen
         val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
         val displayText = when {
-            !isOpenNow && now.isBefore(openTime) -> {
-                // Noch nicht geöffnet heute
-                if (arrivalTime.isBefore(openTime)) {
-                    // Komme an bevor es öffnet
-                    "Öffnet ${openTime.format(timeFormat)} ⚠️"
-                } else if (arrivalTime.isBefore(closeTime)) {
-                    // Bei Ankunft ist es offen
+            !isOpenNow && (now.isBefore(openTime) || (isOvernight && now.isAfter(closeTime))) -> {
+                // Noch nicht geöffnet (vor Öffnung oder nach Nachtschluss)
+                if (willBeOpenAtArrival) {
                     "Öffnet ${openTime.format(timeFormat)}"
                 } else {
-                    // Bei Ankunft schon wieder zu
-                    "${openTime.format(timeFormat)}-${closeTime.format(timeFormat)} ⚠️"
+                    "Öffnet ${openTime.format(timeFormat)} ⚠️"
                 }
             }
             !isOpenNow -> {
-                // Bereits geschlossen - zeige wann es geschlossen hat und wann es wieder öffnet
-                if (nextOpenTime != null) {
-                    "Geschl. · Morgen ab ${nextOpenTime.format(timeFormat)}"
-                } else {
-                    "Geschl. seit ${closeTime.format(timeFormat)}"
-                }
+                // Geschlossen (nach regulärer Schließzeit)
+                "Geschl. · Öffnet ${openTime.format(timeFormat)}"
             }
             !willBeOpenAtArrival -> {
                 // Jetzt offen, aber bei Ankunft geschlossen
