@@ -276,6 +276,44 @@ class SettingsRepository(context: Context) {
         return list
     }
 
+    // ========== POI Layer Visibility ==========
+
+    var showPoiRestaurants: Boolean
+        get() = prefs.getBoolean(KEY_POI_RESTAURANTS, false)
+        set(value) = prefs.edit { putBoolean(KEY_POI_RESTAURANTS, value) }
+
+    var showPoiCafes: Boolean
+        get() = prefs.getBoolean(KEY_POI_CAFES, false)
+        set(value) = prefs.edit { putBoolean(KEY_POI_CAFES, value) }
+
+    var showPoiSupermarkets: Boolean
+        get() = prefs.getBoolean(KEY_POI_SUPERMARKETS, false)
+        set(value) = prefs.edit { putBoolean(KEY_POI_SUPERMARKETS, value) }
+
+    var showPoiSwimming: Boolean
+        get() = prefs.getBoolean(KEY_POI_SWIMMING, false)
+        set(value) = prefs.edit { putBoolean(KEY_POI_SWIMMING, value) }
+
+    var showPoiParking: Boolean
+        get() = prefs.getBoolean(KEY_POI_PARKING, false)
+        set(value) = prefs.edit { putBoolean(KEY_POI_PARKING, value) }
+
+    var showPoiHotels: Boolean
+        get() = prefs.getBoolean(KEY_POI_HOTELS, false)
+        set(value) = prefs.edit { putBoolean(KEY_POI_HOTELS, value) }
+
+    /**
+     * POI-Einstellungen als Map für MapView
+     */
+    fun getPoiVisibility(): Map<String, Boolean> = mapOf(
+        "restaurant" to showPoiRestaurants,
+        "cafe" to showPoiCafes,
+        "supermarket" to showPoiSupermarkets,
+        "swimming_pool" to showPoiSwimming,
+        "parking" to showPoiParking,
+        "hotel" to showPoiHotels
+    )
+
     companion object {
         private const val PREFS_NAME = "dalang_settings"
         private const val KEY_HERE_API_KEY = "here_api_key"
@@ -294,6 +332,14 @@ class SettingsRepository(context: Context) {
         private const val KEY_FUEL_PRICES_MONTHLY_LIMIT = "fuel_prices_monthly_limit"
         private const val KEY_FUEL_PRICES_USAGE_MONTH = "fuel_prices_usage_month"
         private const val KEY_FUEL_PRICES_USAGE_COUNT = "fuel_prices_usage_count"
+
+        // POI Layer Visibility
+        private const val KEY_POI_RESTAURANTS = "poi_restaurants"
+        private const val KEY_POI_CAFES = "poi_cafes"
+        private const val KEY_POI_SUPERMARKETS = "poi_supermarkets"
+        private const val KEY_POI_SWIMMING = "poi_swimming"
+        private const val KEY_POI_PARKING = "poi_parking"
+        private const val KEY_POI_HOTELS = "poi_hotels"
 
         // HERE Free Tier: 250.000 Transaktionen/Monat
         const val DEFAULT_HERE_MONTHLY_LIMIT = 250_000

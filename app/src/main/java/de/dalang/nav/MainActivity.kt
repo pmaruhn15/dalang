@@ -196,6 +196,7 @@ fun DaLangApp(viewModel: MainViewModel) {
     val settingsRepository = remember { SettingsRepository(context) }
     var preferredFuelType by remember { mutableStateOf(settingsRepository.preferredFuelType) }
     var vehicleRangeKm by remember { mutableStateOf(settingsRepository.vehicleRangeKm) }
+    var poiSettingsVersion by remember { mutableIntStateOf(0) }  // Trigger für POI Layer Update
 
     // Destinations (Favoriten & letzte Ziele)
     val destinationsRepository = remember { DestinationsRepository(context) }
@@ -342,6 +343,7 @@ fun DaLangApp(viewModel: MainViewModel) {
                         // Settings aktualisieren
                         preferredFuelType = settingsRepository.preferredFuelType
                         vehicleRangeKm = settingsRepository.vehicleRangeKm
+                        poiSettingsVersion++  // POI Layer Update triggern
                     }
                 )
             }
@@ -366,6 +368,7 @@ fun DaLangApp(viewModel: MainViewModel) {
             preferredFuelType = preferredFuelType,
             vehicleRangeKm = vehicleRangeKm,
             showPoiOverview = false,
+            poiSettingsVersion = poiSettingsVersion,
             onMapClick = { location ->
                 // Wenn Dropdown offen: nur schließen, nicht navigieren
                 if (showRecentDestinations) {
@@ -648,6 +651,7 @@ fun DrawerContent(
     onSettingsChanged: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val settingsRepository = remember { SettingsRepository(context) }
     val appVersion = remember {
         try {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
@@ -661,11 +665,21 @@ fun DrawerContent(
     var showDebugLog by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var showUpdate by remember { mutableStateOf(false) }
+    var showPoiExpanded by remember { mutableStateOf(false) }
+
+    // POI Toggle States
+    var showRestaurants by remember { mutableStateOf(settingsRepository.showPoiRestaurants) }
+    var showCafes by remember { mutableStateOf(settingsRepository.showPoiCafes) }
+    var showSupermarkets by remember { mutableStateOf(settingsRepository.showPoiSupermarkets) }
+    var showSwimming by remember { mutableStateOf(settingsRepository.showPoiSwimming) }
+    var showParking by remember { mutableStateOf(settingsRepository.showPoiParking) }
+    var showHotels by remember { mutableStateOf(settingsRepository.showPoiHotels) }
 
     Column(
         modifier = Modifier
             .fillMaxHeight()
             .padding(16.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         Spacer(modifier = Modifier.height(32.dp))
 
@@ -686,6 +700,60 @@ fun DrawerContent(
         HorizontalDivider()
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        // POIs auf Karte
+        NavigationDrawerItem(
+            label = { Text("POIs auf Karte") },
+            selected = showPoiExpanded,
+            onClick = { showPoiExpanded = !showPoiExpanded },
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+
+        // POI Toggles (expandierbar)
+        AnimatedVisibility(visible = showPoiExpanded) {
+            Column(
+                modifier = Modifier
+                    .padding(start = 16.dp)
+                    .fillMaxWidth()
+            ) {
+                PoiToggleRow("Restaurants", showRestaurants) {
+                    showRestaurants = it
+                    settingsRepository.showPoiRestaurants = it
+                    onSettingsChanged()
+                }
+                PoiToggleRow("Cafés", showCafes) {
+                    showCafes = it
+                    settingsRepository.showPoiCafes = it
+                    onSettingsChanged()
+                }
+                PoiToggleRow("Supermärkte", showSupermarkets) {
+                    showSupermarkets = it
+                    settingsRepository.showPoiSupermarkets = it
+                    onSettingsChanged()
+                }
+                PoiToggleRow("Schwimmbäder", showSwimming) {
+                    showSwimming = it
+                    settingsRepository.showPoiSwimming = it
+                    onSettingsChanged()
+                }
+                PoiToggleRow("Parkplätze", showParking) {
+                    showParking = it
+                    settingsRepository.showPoiParking = it
+                    onSettingsChanged()
+                }
+                PoiToggleRow("Hotels", showHotels) {
+                    showHotels = it
+                    settingsRepository.showPoiHotels = it
+                    onSettingsChanged()
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        HorizontalDivider()
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         // HERE API
         NavigationDrawerItem(
@@ -837,6 +905,35 @@ fun DrawerContent(
     if (showUpdate) {
         UpdateDialog(
             onDismiss = { showUpdate = false }
+        )
+    }
+}
+
+@Composable
+fun PoiToggleRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.primary,
+                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+            )
         )
     }
 }

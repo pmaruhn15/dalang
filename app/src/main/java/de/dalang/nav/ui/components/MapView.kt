@@ -60,6 +60,7 @@ fun MapViewComposable(
     preferredFuelType: FuelType = FuelType.DIESEL,
     vehicleRangeKm: Int = 0,
     showPoiOverview: Boolean = false,  // Zeigt POI-Übersicht mit Zoom auf Route
+    poiSettingsVersion: Int = 0,  // Trigger für POI Layer Visibility Update
     onMapClick: ((LatLng) -> Unit)? = null,
     onPoiClick: ((Poi) -> Unit)? = null,  // Callback wenn POI-Marker geklickt wird
     modifier: Modifier = Modifier
@@ -282,6 +283,64 @@ fun MapViewComposable(
             }
         } catch (e: Exception) {
             CrashLogger.logError("MapView", "Style switch failed", e)
+        }
+    }
+
+    // POI Layer Visibility basierend auf Settings
+    LaunchedEffect(isMapReady, styleVersion, poiSettingsVersion) {
+        if (!isMapReady) return@LaunchedEffect
+        val map = mapLibreMap ?: return@LaunchedEffect
+
+        try {
+            map.getStyle { style ->
+                val visibility = settingsRepository.getPoiVisibility()
+
+                // Restaurant Layer
+                style.getLayer("poi_restaurant")?.setProperties(
+                    PropertyFactory.visibility(
+                        if (visibility["restaurant"] == true) Property.VISIBLE else Property.NONE
+                    )
+                )
+
+                // Café Layer
+                style.getLayer("poi_cafe")?.setProperties(
+                    PropertyFactory.visibility(
+                        if (visibility["cafe"] == true) Property.VISIBLE else Property.NONE
+                    )
+                )
+
+                // Supermarket Layer
+                style.getLayer("poi_supermarket")?.setProperties(
+                    PropertyFactory.visibility(
+                        if (visibility["supermarket"] == true) Property.VISIBLE else Property.NONE
+                    )
+                )
+
+                // Swimming Pool Layer
+                style.getLayer("poi_swimming")?.setProperties(
+                    PropertyFactory.visibility(
+                        if (visibility["swimming_pool"] == true) Property.VISIBLE else Property.NONE
+                    )
+                )
+
+                // Parking Layer
+                style.getLayer("poi_parking")?.setProperties(
+                    PropertyFactory.visibility(
+                        if (visibility["parking"] == true) Property.VISIBLE else Property.NONE
+                    )
+                )
+
+                // Hotel Layer
+                style.getLayer("poi_hotel")?.setProperties(
+                    PropertyFactory.visibility(
+                        if (visibility["hotel"] == true) Property.VISIBLE else Property.NONE
+                    )
+                )
+
+                CrashLogger.log("MapView: POI layer visibility updated")
+            }
+        } catch (e: Exception) {
+            CrashLogger.logError("MapView", "POI visibility update failed", e)
         }
     }
 

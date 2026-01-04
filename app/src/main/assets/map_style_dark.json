@@ -974,6 +974,108 @@
         "text-halo-color": "rgba(0,0,0,0.7)",
         "text-halo-width": 1.4
       }
+    },
+    {
+      "id": "poi_restaurant",
+      "type": "circle",
+      "source": "openmaptiles",
+      "source-layer": "poi",
+      "minzoom": 14,
+      "filter": ["==", ["get", "class"], "restaurant"],
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "circle-color": "#e67e22",
+        "circle-radius": 6,
+        "circle-stroke-color": "#fff",
+        "circle-stroke-width": 1
+      }
+    },
+    {
+      "id": "poi_cafe",
+      "type": "circle",
+      "source": "openmaptiles",
+      "source-layer": "poi",
+      "minzoom": 14,
+      "filter": ["==", ["get", "class"], "cafe"],
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "circle-color": "#8b4513",
+        "circle-radius": 6,
+        "circle-stroke-color": "#fff",
+        "circle-stroke-width": 1
+      }
+    },
+    {
+      "id": "poi_supermarket",
+      "type": "circle",
+      "source": "openmaptiles",
+      "source-layer": "poi",
+      "minzoom": 14,
+      "filter": ["any", ["==", ["get", "class"], "grocery"], ["==", ["get", "subclass"], "supermarket"]],
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "circle-color": "#27ae60",
+        "circle-radius": 6,
+        "circle-stroke-color": "#fff",
+        "circle-stroke-width": 1
+      }
+    },
+    {
+      "id": "poi_swimming",
+      "type": "circle",
+      "source": "openmaptiles",
+      "source-layer": "poi",
+      "minzoom": 14,
+      "filter": ["any", ["==", ["get", "class"], "swimming"], ["==", ["get", "subclass"], "swimming_pool"]],
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "circle-color": "#3498db",
+        "circle-radius": 6,
+        "circle-stroke-color": "#fff",
+        "circle-stroke-width": 1
+      }
+    },
+    {
+      "id": "poi_parking",
+      "type": "circle",
+      "source": "openmaptiles",
+      "source-layer": "poi",
+      "minzoom": 14,
+      "filter": ["==", ["get", "class"], "parking"],
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "circle-color": "#3498db",
+        "circle-radius": 6,
+        "circle-stroke-color": "#fff",
+        "circle-stroke-width": 1
+      }
+    },
+    {
+      "id": "poi_hotel",
+      "type": "circle",
+      "source": "openmaptiles",
+      "source-layer": "poi",
+      "minzoom": 14,
+      "filter": ["any", ["==", ["get", "class"], "lodging"], ["==", ["get", "subclass"], "hotel"]],
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "circle-color": "#9b59b6",
+        "circle-radius": 6,
+        "circle-stroke-color": "#fff",
+        "circle-stroke-width": 1
+      }
     }
   ]
 }
