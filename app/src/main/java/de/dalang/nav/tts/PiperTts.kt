@@ -112,7 +112,7 @@ class PiperTts(private val context: Context) {
                 )
 
                 // Audio abspielen
-                playAudio(audio.samples(), ttsInstance.sampleRate())
+                playAudio(audio.samples, ttsInstance.sampleRate())
 
             } catch (e: Exception) {
                 CrashLogger.logError("PiperTts", "speak failed", e)

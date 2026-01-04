@@ -87,8 +87,5 @@ dependencies {
     // DataStore for preferences
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 
-    // Sherpa-ONNX for Piper TTS (offline neural text-to-speech)
-    implementation("com.github.k2-fsa:sherpa-onnx:v1.10.30")
-
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
