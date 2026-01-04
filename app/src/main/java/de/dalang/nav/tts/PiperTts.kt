@@ -15,8 +15,7 @@ import java.io.FileOutputStream
 
 /**
  * Piper TTS Wrapper für hochwertige deutsche Sprachausgabe
- * Verwendet Thorsten-high Voice über sherpa-onnx
- * Model wird beim ersten Start heruntergeladen (~114MB)
+ * Verwendet Thorsten-medium Voice über sherpa-onnx (gebündelt in APK)
  */
 class PiperTts(private val context: Context) {
 
@@ -25,19 +24,11 @@ class PiperTts(private val context: Context) {
     private var isInitialized = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    val modelDownloader = TtsModelDownloader(context)
-
     var speed: Float = 1.0f
     var enabled: Boolean = true
 
     /**
-     * Prüft ob das TTS Model verfügbar ist
-     */
-    fun isModelAvailable(): Boolean = modelDownloader.isModelDownloaded()
-
-    /**
-     * Initialisiert Piper TTS mit dem Thorsten-high Model
-     * Voraussetzung: Model muss bereits heruntergeladen sein
+     * Initialisiert Piper TTS mit dem Thorsten-medium Model aus Assets
      */
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -51,30 +42,30 @@ class PiperTts(private val context: Context) {
             }
             CrashLogger.log("PiperTts: Native library OK")
 
-            // Prüfe ob Model heruntergeladen wurde
-            if (!modelDownloader.isModelDownloaded()) {
-                CrashLogger.log("PiperTts: Model not downloaded yet")
-                return@withContext false
-            }
-
-            val modelFile = modelDownloader.modelFile
-            CrashLogger.log("PiperTts: Using model: ${modelFile.absolutePath} (${modelFile.length() / 1_000_000}MB)")
-
-            // Model-Verzeichnis für tokens und espeak-ng-data
+            // Model-Verzeichnis für alle Piper-Dateien
             val modelDir = File(context.filesDir, "piper")
             if (!modelDir.exists()) {
                 modelDir.mkdirs()
             }
 
+            val modelFile = File(modelDir, "de_DE-thorsten-medium.onnx")
             val tokensFile = File(modelDir, "tokens.txt")
             val dataDir = File(modelDir, "espeak-ng-data")
 
-            // Tokens und espeak-ng-data aus Assets kopieren (klein, immer in APK)
+            // Model aus Assets kopieren (einmalig)
+            if (!modelFile.exists() || modelFile.length() < 50_000_000) {
+                CrashLogger.log("PiperTts: Copying model from assets...")
+                copyAssetFile("piper/de_DE-thorsten-medium.onnx", modelFile)
+            }
+            CrashLogger.log("PiperTts: Using model: ${modelFile.absolutePath} (${modelFile.length() / 1_000_000}MB)")
+
+            // Tokens kopieren
             if (!tokensFile.exists()) {
                 CrashLogger.log("PiperTts: Copying tokens file...")
                 copyAssetFile("piper/tokens.txt", tokensFile)
             }
 
+            // espeak-ng-data kopieren
             if (!dataDir.exists()) {
                 CrashLogger.log("PiperTts: Copying espeak-ng-data...")
                 copyAssetDirectory("piper/espeak-ng-data", dataDir)
@@ -103,7 +94,7 @@ class PiperTts(private val context: Context) {
             tts = OfflineTts(config = config)
             isInitialized = true
 
-            CrashLogger.log("PiperTts: Initialized successfully with Thorsten-high, sample rate: ${tts?.sampleRate()}")
+            CrashLogger.log("PiperTts: Initialized successfully, sample rate: ${tts?.sampleRate()}")
             true
         } catch (e: Exception) {
             CrashLogger.logError("PiperTts", "Initialization failed", e)

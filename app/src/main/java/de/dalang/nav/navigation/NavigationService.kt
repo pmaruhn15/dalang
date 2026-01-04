@@ -12,7 +12,6 @@ import androidx.core.app.NotificationCompat
 import de.dalang.nav.DaLangApp
 import de.dalang.nav.MainActivity
 import de.dalang.nav.R
-import de.dalang.nav.tts.DownloadState
 import de.dalang.nav.tts.PiperTts
 import de.dalang.nav.util.CrashLogger
 import kotlinx.coroutines.*
@@ -49,7 +48,7 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
             CrashLogger.logError("NavigationService", "Android TTS init failed", e)
         }
 
-        // Piper TTS initialisieren (Download läuft im globalen Scope weiter)
+        // Piper TTS asynchron initialisieren
         serviceScope.launch {
             initializePiperTts()
         }
@@ -59,68 +58,16 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
         try {
             CrashLogger.log("NavigationService: Initializing Piper TTS...")
             piperTts = PiperTts(this@NavigationService)
+            isPiperReady = piperTts?.initialize() == true
 
-            // Prüfe ob Model heruntergeladen werden muss
-            if (!piperTts!!.isModelAvailable()) {
-                CrashLogger.log("NavigationService: TTS model not available, starting download...")
-                // Download im globalen Scope starten, damit er weiterläuft wenn Service beendet wird
-                startDownloadInBackground()
+            if (isPiperReady) {
+                CrashLogger.log("NavigationService: Piper TTS ready - using Thorsten voice")
             } else {
-                CrashLogger.log("NavigationService: TTS model already available")
-                // Direkt initialisieren
-                isPiperReady = piperTts?.initialize() == true
-                if (isPiperReady) {
-                    CrashLogger.log("NavigationService: Piper TTS ready - using Thorsten-high voice")
-                }
+                CrashLogger.log("NavigationService: Piper TTS failed, using Android TTS fallback")
             }
         } catch (e: Exception) {
             CrashLogger.logError("NavigationService", "Piper TTS init failed", e)
             isPiperReady = false
-        }
-    }
-
-    /**
-     * Startet Download im globalen Scope (überlebt Service-Neustart)
-     */
-    private fun startDownloadInBackground() {
-        val piper = piperTts ?: return
-
-        // Nur starten wenn nicht schon ein Download läuft
-        if (downloadJob?.isActive == true) {
-            CrashLogger.log("NavigationService: Download already in progress")
-            return
-        }
-
-        downloadJob = downloadScope.launch {
-            try {
-                piper.modelDownloader.downloadModel().collect { state ->
-                    when (state) {
-                        is DownloadState.Downloading -> {
-                            if (state.progress % 10 == 0) {
-                                CrashLogger.log("NavigationService: TTS download ${state.progress}%")
-                            }
-                        }
-                        is DownloadState.Completed -> {
-                            CrashLogger.log("NavigationService: TTS model download completed")
-                            // Piper nach Download initialisieren (wenn Service noch läuft)
-                            withContext(Dispatchers.Main) {
-                                if (piperTts?.isModelAvailable() == true) {
-                                    isPiperReady = piperTts?.initialize() == true
-                                    if (isPiperReady) {
-                                        CrashLogger.log("NavigationService: Piper TTS now ready after download")
-                                    }
-                                }
-                            }
-                        }
-                        is DownloadState.Error -> {
-                            CrashLogger.log("NavigationService: TTS download error: ${state.message}")
-                        }
-                        else -> {}
-                    }
-                }
-            } catch (e: Exception) {
-                CrashLogger.logError("NavigationService", "Download failed", e)
-            }
         }
     }
 
@@ -264,9 +211,5 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
         const val ACTION_START = "de.dalang.nav.START_NAVIGATION"
         const val ACTION_STOP = "de.dalang.nav.STOP_NAVIGATION"
         const val NOTIFICATION_ID = 1
-
-        // Globaler Scope für Download - überlebt Service-Neustart
-        private val downloadScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-        private var downloadJob: Job? = null
     }
 }
