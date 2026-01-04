@@ -12,9 +12,13 @@ import androidx.core.app.NotificationCompat
 import de.dalang.nav.DaLangApp
 import de.dalang.nav.MainActivity
 import de.dalang.nav.R
+import de.dalang.nav.tts.DownloadState
 import de.dalang.nav.tts.PiperTts
 import de.dalang.nav.util.CrashLogger
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.Locale
 
 class NavigationService : Service(), TextToSpeech.OnInitListener {
@@ -30,6 +34,10 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
     private var isAndroidTtsReady = false
 
     var voiceEnabled = true
+
+    // TTS Model Download State (für UI)
+    private val _ttsDownloadState = MutableStateFlow<DownloadState>(DownloadState.Idle)
+    val ttsDownloadState: StateFlow<DownloadState> = _ttsDownloadState.asStateFlow()
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -58,16 +66,67 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
         try {
             CrashLogger.log("NavigationService: Initializing Piper TTS...")
             piperTts = PiperTts(this@NavigationService)
+
+            // Prüfe ob Model heruntergeladen werden muss
+            if (!piperTts!!.isModelAvailable()) {
+                CrashLogger.log("NavigationService: TTS model not available, starting download...")
+                downloadTtsModel()
+            } else {
+                CrashLogger.log("NavigationService: TTS model already available")
+                _ttsDownloadState.value = DownloadState.Completed
+            }
+
+            // Versuche Piper zu initialisieren
             isPiperReady = piperTts?.initialize() == true
 
             if (isPiperReady) {
-                CrashLogger.log("NavigationService: Piper TTS ready - using Thorsten voice")
+                CrashLogger.log("NavigationService: Piper TTS ready - using Thorsten-high voice")
             } else {
                 CrashLogger.log("NavigationService: Piper TTS failed, using Android TTS fallback")
             }
         } catch (e: Exception) {
             CrashLogger.logError("NavigationService", "Piper TTS init failed", e)
             isPiperReady = false
+        }
+    }
+
+    /**
+     * Lädt das TTS Model herunter
+     */
+    private suspend fun downloadTtsModel() {
+        val piper = piperTts ?: return
+
+        piper.modelDownloader.downloadModel().collect { state ->
+            _ttsDownloadState.value = state
+
+            when (state) {
+                is DownloadState.Downloading -> {
+                    CrashLogger.log("NavigationService: TTS download ${state.progress}%")
+                }
+                is DownloadState.Completed -> {
+                    CrashLogger.log("NavigationService: TTS model download completed")
+                }
+                is DownloadState.Error -> {
+                    CrashLogger.log("NavigationService: TTS download error: ${state.message}")
+                }
+                else -> {}
+            }
+        }
+    }
+
+    /**
+     * Startet manuellen Download des TTS Models
+     */
+    fun startTtsModelDownload() {
+        serviceScope.launch {
+            downloadTtsModel()
+            // Nach Download erneut initialisieren
+            if (piperTts?.isModelAvailable() == true) {
+                isPiperReady = piperTts?.initialize() == true
+                if (isPiperReady) {
+                    CrashLogger.log("NavigationService: Piper TTS now ready after download")
+                }
+            }
         }
     }
 
