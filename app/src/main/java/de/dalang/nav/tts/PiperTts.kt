@@ -10,6 +10,8 @@ import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import de.dalang.nav.util.CrashLogger
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileOutputStream
 
@@ -23,6 +25,11 @@ class PiperTts(private val context: Context) {
     private var audioTrack: AudioTrack? = null
     private var isInitialized = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // Mutex verhindert gleichzeitige Audio-Wiedergabe
+    private val audioMutex = Mutex()
+    // Aktueller Speak-Job für Abbruch
+    private var currentSpeakJob: Job? = null
 
     var speed: Float = 1.0f
     var enabled: Boolean = true
@@ -104,29 +111,32 @@ class PiperTts(private val context: Context) {
     }
 
     /**
-     * Spricht den Text aus
+     * Spricht den Text aus (wartet auf vorherige Ausgabe)
      */
     fun speak(text: String) {
         if (!enabled || !isInitialized || text.isBlank()) return
 
-        scope.launch {
-            try {
-                val ttsInstance = tts ?: return@launch
+        currentSpeakJob = scope.launch {
+            // Warte auf Mutex - nur ein Audio gleichzeitig
+            audioMutex.withLock {
+                try {
+                    val ttsInstance = tts ?: return@withLock
 
-                CrashLogger.log("PiperTts: Speaking: $text")
+                    CrashLogger.log("PiperTts: Speaking: $text")
 
-                // Audio generieren
-                val audio = ttsInstance.generate(
-                    text = text,
-                    sid = 0,
-                    speed = speed
-                )
+                    // Audio generieren
+                    val audio = ttsInstance.generate(
+                        text = text,
+                        sid = 0,
+                        speed = speed
+                    )
 
-                // Audio abspielen
-                playAudio(audio.samples, ttsInstance.sampleRate())
+                    // Audio abspielen (blockiert bis fertig)
+                    playAudio(audio.samples, ttsInstance.sampleRate())
 
-            } catch (e: Exception) {
-                CrashLogger.logError("PiperTts", "speak failed", e)
+                } catch (e: Exception) {
+                    CrashLogger.logError("PiperTts", "speak failed", e)
+                }
             }
         }
     }
@@ -135,6 +145,8 @@ class PiperTts(private val context: Context) {
      * Spricht den Text sofort aus (unterbricht laufende Ausgabe)
      */
     fun speakNow(text: String) {
+        // Vorherigen Job abbrechen
+        currentSpeakJob?.cancel()
         stopCurrentPlayback()
         speak(text)
     }

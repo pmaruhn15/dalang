@@ -40,7 +40,7 @@ sealed class NavigationEvent {
 
 fun RouteStep.toGermanInstruction(): String {
     val directionText = when (maneuver.type) {
-        "depart" -> "Starten Sie"
+        "depart" -> "Los geht's"
         "arrive" -> "Ziel erreicht"
         "turn" -> when (maneuver.modifier) {
             "left" -> "Links abbiegen"
@@ -62,11 +62,29 @@ fun RouteStep.toGermanInstruction(): String {
         }
         "roundabout", "rotary" -> "Im Kreisverkehr"
         "exit roundabout", "exit rotary" -> "Kreisverkehr verlassen"
-        else -> maneuver.type
+        "new name" -> "Weiter auf der Straße"
+        else -> "Weiter"
     }
 
-    val streetName = if (instruction.isNotBlank()) " auf $instruction" else ""
-    return "$directionText$streetName"
+    // Nur deutsche Straßennamen anhängen (keine englischen OSRM/HERE Instruktionen)
+    // Ein Name gilt als deutsch wenn er keine typischen englischen Phrasen enthält
+    val streetName = instruction.takeIf { name ->
+        name.isNotBlank() &&
+        !name.contains("go ", ignoreCase = true) &&
+        !name.contains("turn ", ignoreCase = true) &&
+        !name.contains("continue ", ignoreCase = true) &&
+        !name.contains("head ", ignoreCase = true) &&
+        !name.contains(" for ", ignoreCase = true) &&
+        !name.contains(" on ", ignoreCase = true) &&
+        !name.contains(" onto ", ignoreCase = true) &&
+        !name.matches(Regex(".*\\d+\\s*(m|km|meters|kilometers).*", RegexOption.IGNORE_CASE))
+    }
+
+    return if (streetName != null) {
+        "$directionText auf $streetName"
+    } else {
+        directionText
+    }
 }
 
 fun Double.formatDistance(): String {
