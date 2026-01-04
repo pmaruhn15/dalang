@@ -184,8 +184,20 @@ class OfflineTts(
     ): Array<Any>
 
     companion object {
+        var isLibraryLoaded = false
+            private set
+        var libraryLoadError: String? = null
+            private set
+
         init {
-            System.loadLibrary("sherpa-onnx-jni")
+            try {
+                System.loadLibrary("sherpa-onnx-jni")
+                isLibraryLoaded = true
+                android.util.Log.i("SherpaOnnx", "Native library loaded successfully")
+            } catch (e: UnsatisfiedLinkError) {
+                libraryLoadError = e.message
+                android.util.Log.e("SherpaOnnx", "Failed to load native library: ${e.message}")
+            }
         }
     }
 }

@@ -28,11 +28,19 @@ class PiperTts(private val context: Context) {
     var enabled: Boolean = true
 
     /**
-     * Initialisiert Piper TTS mit dem Thorsten-high Model
+     * Initialisiert Piper TTS mit dem Thorsten-medium Model
      */
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
             CrashLogger.log("PiperTts: Initializing...")
+
+            // Prüfe ob Native Library geladen wurde
+            if (!OfflineTts.isLibraryLoaded) {
+                val error = OfflineTts.libraryLoadError ?: "Unknown error"
+                CrashLogger.log("PiperTts: Native library not loaded: $error")
+                return@withContext false
+            }
+            CrashLogger.log("PiperTts: Native library OK")
 
             // Model-Dateien aus Assets in internen Speicher kopieren
             val modelDir = File(context.filesDir, "piper")
