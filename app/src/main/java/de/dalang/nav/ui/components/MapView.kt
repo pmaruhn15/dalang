@@ -400,7 +400,7 @@ fun MapViewComposable(
                     val locationLayer = SymbolLayer("location-layer", "location-source").apply {
                         setProperties(
                             PropertyFactory.iconImage("position-arrow"),
-                            PropertyFactory.iconSize(1.6f),
+                            PropertyFactory.iconSize(1.2f),
                             PropertyFactory.iconRotate(effectiveRotation),
                             PropertyFactory.iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
                             PropertyFactory.iconAllowOverlap(true),
