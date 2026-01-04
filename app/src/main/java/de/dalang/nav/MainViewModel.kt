@@ -13,7 +13,6 @@ import de.dalang.nav.location.LocationProvider
 import de.dalang.nav.navigation.*
 import de.dalang.nav.search.SearchRepository
 import de.dalang.nav.search.SearchResult
-import de.dalang.nav.tts.DownloadState
 import de.dalang.nav.util.CrashLogger
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
@@ -84,10 +83,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isRecalculatingRoute = MutableStateFlow(false)
     val isRecalculatingRoute: StateFlow<Boolean> = _isRecalculatingRoute.asStateFlow()
 
-    // TTS Model Download State
-    private val _ttsDownloadState = MutableStateFlow<DownloadState>(DownloadState.Idle)
-    val ttsDownloadState: StateFlow<DownloadState> = _ttsDownloadState.asStateFlow()
-
     // Off-route Schwellenwert in Metern
     private val OFF_ROUTE_THRESHOLD = 40.0
     // Cooldown um nicht zu oft neu zu berechnen
@@ -107,8 +102,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var searchJob: Job? = null
     private var serviceBound = false
 
-    private var ttsDownloadJob: Job? = null
-
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             CrashLogger.log("MainViewModel: Service connected")
@@ -117,14 +110,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 navigationService = binder?.getService()
                 navigationService?.voiceEnabled = _voiceEnabled.value
                 serviceBound = true
-
-                // TTS Download State vom Service sammeln
-                ttsDownloadJob?.cancel()
-                ttsDownloadJob = viewModelScope.launch(exceptionHandler) {
-                    navigationService?.ttsDownloadState?.collect { state ->
-                        _ttsDownloadState.value = state
-                    }
-                }
             } catch (e: Exception) {
                 CrashLogger.logError("MainViewModel", "onServiceConnected failed", e)
             }
@@ -134,22 +119,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             CrashLogger.log("MainViewModel: Service disconnected")
             navigationService = null
             serviceBound = false
-            ttsDownloadJob?.cancel()
         }
     }
 
     init {
         CrashLogger.log("MainViewModel initialized")
-        // Service früh binden für TTS Download State
-        bindNavigationService()
-    }
-
-    /**
-     * Startet manuellen Download des TTS Models
-     */
-    fun startTtsModelDownload() {
-        CrashLogger.log("MainViewModel: startTtsModelDownload")
-        navigationService?.startTtsModelDownload()
     }
 
     private fun bindNavigationService() {

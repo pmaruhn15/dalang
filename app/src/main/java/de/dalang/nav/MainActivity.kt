@@ -46,7 +46,6 @@ import de.dalang.nav.navigation.WaypointType
 import de.dalang.nav.search.SearchResult
 import de.dalang.nav.settings.FuelType
 import de.dalang.nav.settings.SettingsRepository
-import de.dalang.nav.tts.DownloadState
 import de.dalang.nav.ui.components.FavoriteAddressDialog
 import de.dalang.nav.ui.components.HereSettingsDialog
 import de.dalang.nav.ui.components.MapViewComposable
@@ -187,7 +186,6 @@ fun DaLangApp(viewModel: MainViewModel) {
     val errorMessage by viewModel.errorMessage.collectAsState()
     val infoMessage by viewModel.infoMessage.collectAsState()
     val isRecalculatingRoute by viewModel.isRecalculatingRoute.collectAsState()
-    val ttsDownloadState by viewModel.ttsDownloadState.collectAsState()
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -346,9 +344,7 @@ fun DaLangApp(viewModel: MainViewModel) {
                         preferredFuelType = settingsRepository.preferredFuelType
                         vehicleRangeKm = settingsRepository.vehicleRangeKm
                         poiSettingsVersion++  // POI Layer Update triggern
-                    },
-                    ttsDownloadState = ttsDownloadState,
-                    onStartTtsDownload = { viewModel.startTtsModelDownload() }
+                    }
                 )
             }
         }
@@ -652,9 +648,7 @@ fun MapClickDialog(
 @Composable
 fun DrawerContent(
     onCloseDrawer: () -> Unit,
-    onSettingsChanged: () -> Unit = {},
-    ttsDownloadState: DownloadState = DownloadState.Idle,
-    onStartTtsDownload: () -> Unit = {}
+    onSettingsChanged: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val settingsRepository = remember { SettingsRepository(context) }
@@ -754,18 +748,6 @@ fun DrawerContent(
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        HorizontalDivider()
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // TTS Sprachausgabe Status
-        TtsDownloadSection(
-            downloadState = ttsDownloadState,
-            onStartDownload = onStartTtsDownload
-        )
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -1134,148 +1116,6 @@ fun WaypointIndicator(
                 color = fgColor.copy(alpha = 0.5f),
                 modifier = Modifier.padding(start = 4.dp)
             )
-        }
-    }
-}
-
-@Composable
-fun TtsDownloadSection(
-    downloadState: DownloadState,
-    onStartDownload: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        Text(
-            text = "Sprachausgabe",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        when (downloadState) {
-            is DownloadState.Idle -> {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Thorsten-High (~114 MB)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Button(
-                        onClick = onStartDownload,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.onSurface,
-                            contentColor = MaterialTheme.colorScheme.surface
-                        ),
-                        modifier = Modifier.height(32.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
-                    ) {
-                        Text("Download", fontSize = 12.sp)
-                    }
-                }
-            }
-
-            is DownloadState.Checking -> {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp
-                    )
-                    Text(
-                        text = "Prüfe...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            is DownloadState.Downloading -> {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Download läuft...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "${downloadState.progress}%",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    LinearProgressIndicator(
-                        progress = { downloadState.progress / 100f },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = String.format("%.1f / %.1f MB",
-                            downloadState.totalMb * downloadState.progress / 100f,
-                            downloadState.totalMb
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 10.sp
-                    )
-                }
-            }
-
-            is DownloadState.Completed -> {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "✓",
-                        color = Color(0xFF4CAF50),
-                        fontSize = 16.sp
-                    )
-                    Text(
-                        text = "Thorsten-High bereit",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            is DownloadState.Error -> {
-                Column {
-                    Text(
-                        text = "Fehler: ${downloadState.message}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = onStartDownload,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.onSurface,
-                            contentColor = MaterialTheme.colorScheme.surface
-                        ),
-                        modifier = Modifier.height(32.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
-                    ) {
-                        Text("Erneut versuchen", fontSize = 12.sp)
-                    }
-                }
-            }
         }
     }
 }
