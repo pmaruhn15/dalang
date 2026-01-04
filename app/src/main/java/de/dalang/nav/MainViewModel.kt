@@ -10,6 +10,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.dalang.nav.location.HeadingProvider
 import de.dalang.nav.location.LocationProvider
+import de.dalang.nav.location.LocationSmoother
+import de.dalang.nav.location.MapMatcher
 import de.dalang.nav.navigation.*
 import de.dalang.nav.search.SearchRepository
 import de.dalang.nav.search.SearchResult
@@ -43,9 +45,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val searchRepository: SearchRepository = SearchRepository()
     private val routeRepository: RouteRepository = RouteRepository()
+    private val locationSmoother = LocationSmoother()
+    private val mapMatcher = MapMatcher()
 
     private val _currentLocation = MutableStateFlow<LatLng?>(null)
     val currentLocation: StateFlow<LatLng?> = _currentLocation.asStateFlow()
+
+    // Angezeigte Position (geglättet + auf Route gematcht während Navigation)
+    private val _displayLocation = MutableStateFlow<LatLng?>(null)
+    val displayLocation: StateFlow<LatLng?> = _displayLocation.asStateFlow()
+
+    // Distanz zur Route in Metern (für UI-Anzeige wenn off-route)
+    private val _distanceToRoute = MutableStateFlow(0.0)
+    val distanceToRoute: StateFlow<Double> = _distanceToRoute.asStateFlow()
 
     private val _heading = MutableStateFlow(0f)
     val heading: StateFlow<Float> = _heading.asStateFlow()
@@ -167,10 +179,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     .collect { location ->
                         try {
-                            val newLocation = LatLng(location.latitude, location.longitude)
-                            _currentLocation.value = newLocation
-
-                            // Speed und Bearing extrahieren
+                            // Speed und Bearing extrahieren (vor dem Smoothing)
                             if (location.hasSpeed()) {
                                 _speed.value = location.speed
                             }
@@ -178,8 +187,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 _bearing.value = location.bearing
                             }
 
-                            if (_navigationState.value.isNavigating) {
-                                updateNavigation(newLocation)
+                            // Position durch Kalman-Filter glätten
+                            val smoothedLocation = locationSmoother.process(location)
+                            if (smoothedLocation == null) {
+                                // Position wurde als Ausreißer gefiltert
+                                return@collect
+                            }
+
+                            _currentLocation.value = smoothedLocation
+
+                            // Für Anzeige: Map-Matching wenn in Navigation
+                            val route = _navigationState.value.route
+                            if (_navigationState.value.isNavigating && route != null) {
+                                val matchResult = mapMatcher.matchToRoute(smoothedLocation, route)
+                                _displayLocation.value = matchResult.location
+                                _distanceToRoute.value = matchResult.distanceToRoute
+                                updateNavigation(smoothedLocation, matchResult.distanceToRoute)
+                            } else {
+                                _displayLocation.value = smoothedLocation
+                                _distanceToRoute.value = 0.0
                             }
                         } catch (e: Exception) {
                             CrashLogger.logError("MainViewModel", "Location collect failed", e)
@@ -354,6 +380,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 NavigationState()
             }
 
+            // Smoother und Matcher zurücksetzen
+            locationSmoother.reset()
+            mapMatcher.reset()
+            _distanceToRoute.value = 0.0
+
             val intent = Intent(getApplication(), NavigationService::class.java).apply {
                 action = NavigationService.ACTION_STOP
             }
@@ -481,14 +512,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun updateNavigation(location: LatLng) {
+    private fun updateNavigation(location: LatLng, distanceToRoute: Double) {
         try {
             val state = _navigationState.value
             val route = state.route ?: return
             val currentStep = state.currentStep ?: return
 
             // Prüfen ob wir von der Route abgewichen sind
-            val distanceToRoute = calculateDistanceToRoute(location, route)
+            // Durch das Smoothing haben wir weniger false positives
             if (distanceToRoute > OFF_ROUTE_THRESHOLD) {
                 val now = System.currentTimeMillis()
                 if (now - lastRecalculationTime > RECALCULATION_COOLDOWN_MS) {
@@ -609,6 +640,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 _isRecalculatingRoute.value = true
                 CrashLogger.log("MainViewModel: Recalculating route to destination...")
+
+                // Matcher zurücksetzen für neue Route
+                mapMatcher.reset()
 
                 val route = routeRepository.getRoute(currentLocation, destination)
                 if (route != null) {

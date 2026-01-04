@@ -175,6 +175,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DaLangApp(viewModel: MainViewModel) {
     val currentLocation by viewModel.currentLocation.collectAsState()
+    val displayLocation by viewModel.displayLocation.collectAsState()
     val heading by viewModel.heading.collectAsState()
     val speed by viewModel.speed.collectAsState()
     val bearing by viewModel.bearing.collectAsState()
@@ -354,8 +355,9 @@ fun DaLangApp(viewModel: MainViewModel) {
     ) { paddingValues ->
     Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
         // Karte im Hintergrund
+        // displayLocation enthält geglättete + map-gematchte Position
         MapViewComposable(
-            currentLocation = currentLocation,
+            currentLocation = displayLocation ?: currentLocation,
             heading = heading,
             speed = speed,
             bearing = bearing,
