@@ -49,7 +49,7 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
             CrashLogger.logError("NavigationService", "Android TTS init failed", e)
         }
 
-        // Piper TTS asynchron initialisieren
+        // Piper TTS initialisieren (Download läuft im globalen Scope weiter)
         serviceScope.launch {
             initializePiperTts()
         }
@@ -63,18 +63,15 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
             // Prüfe ob Model heruntergeladen werden muss
             if (!piperTts!!.isModelAvailable()) {
                 CrashLogger.log("NavigationService: TTS model not available, starting download...")
-                downloadTtsModel()
+                // Download im globalen Scope starten, damit er weiterläuft wenn Service beendet wird
+                startDownloadInBackground()
             } else {
                 CrashLogger.log("NavigationService: TTS model already available")
-            }
-
-            // Versuche Piper zu initialisieren
-            isPiperReady = piperTts?.initialize() == true
-
-            if (isPiperReady) {
-                CrashLogger.log("NavigationService: Piper TTS ready - using Thorsten-high voice")
-            } else {
-                CrashLogger.log("NavigationService: Piper TTS failed, using Android TTS fallback")
+                // Direkt initialisieren
+                isPiperReady = piperTts?.initialize() == true
+                if (isPiperReady) {
+                    CrashLogger.log("NavigationService: Piper TTS ready - using Thorsten-high voice")
+                }
             }
         } catch (e: Exception) {
             CrashLogger.logError("NavigationService", "Piper TTS init failed", e)
@@ -83,25 +80,46 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
     }
 
     /**
-     * Lädt das TTS Model herunter (im Hintergrund)
+     * Startet Download im globalen Scope (überlebt Service-Neustart)
      */
-    private suspend fun downloadTtsModel() {
+    private fun startDownloadInBackground() {
         val piper = piperTts ?: return
 
-        piper.modelDownloader.downloadModel().collect { state ->
-            when (state) {
-                is DownloadState.Downloading -> {
-                    if (state.progress % 10 == 0) {  // Nur alle 10% loggen
-                        CrashLogger.log("NavigationService: TTS download ${state.progress}%")
+        // Nur starten wenn nicht schon ein Download läuft
+        if (downloadJob?.isActive == true) {
+            CrashLogger.log("NavigationService: Download already in progress")
+            return
+        }
+
+        downloadJob = downloadScope.launch {
+            try {
+                piper.modelDownloader.downloadModel().collect { state ->
+                    when (state) {
+                        is DownloadState.Downloading -> {
+                            if (state.progress % 10 == 0) {
+                                CrashLogger.log("NavigationService: TTS download ${state.progress}%")
+                            }
+                        }
+                        is DownloadState.Completed -> {
+                            CrashLogger.log("NavigationService: TTS model download completed")
+                            // Piper nach Download initialisieren (wenn Service noch läuft)
+                            withContext(Dispatchers.Main) {
+                                if (piperTts?.isModelAvailable() == true) {
+                                    isPiperReady = piperTts?.initialize() == true
+                                    if (isPiperReady) {
+                                        CrashLogger.log("NavigationService: Piper TTS now ready after download")
+                                    }
+                                }
+                            }
+                        }
+                        is DownloadState.Error -> {
+                            CrashLogger.log("NavigationService: TTS download error: ${state.message}")
+                        }
+                        else -> {}
                     }
                 }
-                is DownloadState.Completed -> {
-                    CrashLogger.log("NavigationService: TTS model download completed")
-                }
-                is DownloadState.Error -> {
-                    CrashLogger.log("NavigationService: TTS download error: ${state.message}")
-                }
-                else -> {}
+            } catch (e: Exception) {
+                CrashLogger.logError("NavigationService", "Download failed", e)
             }
         }
     }
@@ -246,5 +264,9 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
         const val ACTION_START = "de.dalang.nav.START_NAVIGATION"
         const val ACTION_STOP = "de.dalang.nav.STOP_NAVIGATION"
         const val NOTIFICATION_ID = 1
+
+        // Globaler Scope für Download - überlebt Service-Neustart
+        private val downloadScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        private var downloadJob: Job? = null
     }
 }
