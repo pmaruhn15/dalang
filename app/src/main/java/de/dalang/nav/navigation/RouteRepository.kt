@@ -31,7 +31,8 @@ data class RouteStep(
 data class Maneuver(
     val type: String,
     val modifier: String?,
-    val location: LatLng
+    val location: LatLng,
+    val exit: Int? = null  // Exit number for roundabouts
 )
 
 data class LatLng(
@@ -272,6 +273,11 @@ class RouteRepository {
                     // HERE action types zu OSRM-kompatiblen Typen mappen
                     val (maneuverType, modifier) = mapHereAction(actionType, action.optString("direction", ""))
 
+                    // Exit number for roundabouts
+                    val exit = if (actionType == "roundaboutExit") {
+                        action.optInt("exit", 0).takeIf { it > 0 }
+                    } else null
+
                     // Geometrie-Segment fuer diesen Schritt
                     val nextOffset = if (i < actions.length() - 1) {
                         actions.getJSONObject(i + 1).optInt("offset", geometry.size)
@@ -296,7 +302,8 @@ class RouteRepository {
                             maneuver = Maneuver(
                                 type = maneuverType,
                                 modifier = modifier,
-                                location = location
+                                location = location,
+                                exit = exit
                             ),
                             geometry = stepGeometry,
                             laneInfo = laneInfo
@@ -422,6 +429,9 @@ class RouteRepository {
                         stepGeometry.add(LatLng(coord.getDouble(1), coord.getDouble(0)))
                     }
 
+                    // Exit number for roundabouts (OSRM provides this in maneuver object)
+                    val exit = maneuverObj.optInt("exit", 0).takeIf { it > 0 }
+
                     steps.add(
                         RouteStep(
                             instruction = step.optString("name", ""),
@@ -430,7 +440,8 @@ class RouteRepository {
                             maneuver = Maneuver(
                                 type = maneuverObj.getString("type"),
                                 modifier = maneuverObj.optString("modifier", null),
-                                location = LatLng(location.getDouble(1), location.getDouble(0))
+                                location = LatLng(location.getDouble(1), location.getDouble(0)),
+                                exit = exit
                             ),
                             geometry = stepGeometry
                         )

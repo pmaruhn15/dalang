@@ -43,6 +43,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val searchRepository: SearchRepository = SearchRepository()
     private val routeRepository: RouteRepository = RouteRepository()
+    private val voiceGuidance: VoiceGuidanceManager = VoiceGuidanceManager()
 
     private val _currentLocation = MutableStateFlow<LatLng?>(null)
     val currentLocation: StateFlow<LatLng?> = _currentLocation.asStateFlow()
@@ -307,6 +308,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return
             }
 
+            // Reset voice guidance for new navigation
+            voiceGuidance.reset()
+
             // Service binden falls noch nicht geschehen
             bindNavigationService()
 
@@ -328,9 +332,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 CrashLogger.logError("MainViewModel", "startForegroundService failed", e)
             }
 
-            // Erste Ansage
+            // Erste Ansage nur wenn erster Schritt nah genug
             state.route.steps.firstOrNull()?.let { step ->
-                speakInstruction(step)
+                val currentLoc = _currentLocation.value
+                if (currentLoc != null) {
+                    val dist = currentLoc.distanceTo(step.maneuver.location)
+                    if (dist < 200) {
+                        speakInstruction(step)
+                    }
+                }
             }
         } catch (e: Exception) {
             CrashLogger.logError("MainViewModel", "startNavigation failed", e)
@@ -394,6 +404,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     CrashLogger.log("MainViewModel: Combined route with waypoint - ${combinedSteps.size} steps, ${combinedDistance}m")
 
+                    // Reset voice guidance for new route
+                    voiceGuidance.reset()
+
                     _navigationState.update {
                         it.copy(
                             route = combinedRoute,
@@ -402,10 +415,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
 
-                    // Erste Ansage für neue Route
-                    combinedSteps.firstOrNull()?.let { step ->
-                        speakInstruction(step)
-                    }
+                    // Short announcement for route recalculation
+                    navigationService?.speak("Neue Route berechnet")
                 } else {
                     CrashLogger.logError("MainViewModel", "Failed to calculate route with waypoint")
                     _navigationState.update { it.copy(isRecalculating = false) }
@@ -422,6 +433,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val state = _navigationState.value
             val route = state.route ?: return
             val currentStep = state.currentStep ?: return
+            val currentSpeedMs = _speed.value
 
             // Distanz zum nächsten Manöver
             val distanceToManeuver = location.distanceTo(currentStep.maneuver.location)
@@ -430,26 +442,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (distanceToManeuver < 30 && state.currentStepIndex < route.steps.size - 1) {
                 val nextIndex = state.currentStepIndex + 1
                 val nextStep = route.steps[nextIndex]
+                val distanceToNext = location.distanceTo(nextStep.maneuver.location)
 
                 _navigationState.update {
                     it.copy(
                         currentStepIndex = nextIndex,
-                        distanceToNextStep = location.distanceTo(nextStep.maneuver.location)
+                        distanceToNextStep = distanceToNext
                     )
                 }
 
-                speakInstruction(nextStep)
-                updateServiceNotification(nextStep, distanceToManeuver)
+                // Notify voice guidance about step change
+                voiceGuidance.onStepChanged(nextIndex)
+
+                // Only announce next step if it's close enough
+                val announcement = voiceGuidance.getStepTransitionAnnouncement(
+                    currentStep = nextStep,
+                    nextStep = route.steps.getOrNull(nextIndex + 1),
+                    distanceToNext = distanceToNext,
+                    currentSpeedMs = currentSpeedMs
+                )
+                if (announcement != null) {
+                    navigationService?.speak(announcement)
+                }
+
+                updateServiceNotification(nextStep, distanceToNext)
             } else {
                 _navigationState.update {
                     it.copy(distanceToNextStep = distanceToManeuver)
                 }
 
-                // Voransage bei 200m, 100m, 50m
-                when {
-                    distanceToManeuver in 190.0..210.0 -> speakDistance(200, currentStep)
-                    distanceToManeuver in 90.0..110.0 -> speakDistance(100, currentStep)
-                    distanceToManeuver in 45.0..55.0 -> speakDistance(50, currentStep)
+                // Use voice guidance manager for smart announcements
+                val announcement = voiceGuidance.getAnnouncement(
+                    step = currentStep,
+                    nextStep = state.nextStep,
+                    distanceToManeuver = distanceToManeuver,
+                    currentSpeedMs = currentSpeedMs,
+                    stepIndex = state.currentStepIndex
+                )
+                if (announcement != null) {
+                    navigationService?.speak(announcement)
                 }
             }
 
@@ -499,25 +530,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun speakDistance(meters: Int, step: RouteStep) {
-        try {
-            val direction = when (step.maneuver.type) {
-                "turn" -> when (step.maneuver.modifier) {
-                    "left", "slight left", "sharp left" -> "links abbiegen"
-                    "right", "slight right", "sharp right" -> "rechts abbiegen"
-                    "uturn" -> "wenden"
-                    else -> ""
-                }
-                "roundabout", "rotary" -> "in den Kreisverkehr"
-                else -> ""
-            }
-            if (direction.isNotBlank()) {
-                navigationService?.speak("In $meters Metern $direction")
-            }
-        } catch (e: Exception) {
-            CrashLogger.logError("MainViewModel", "speakDistance failed", e)
-        }
-    }
 
     private fun updateServiceNotification(step: RouteStep, distance: Double) {
         try {
