@@ -195,7 +195,7 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(this, DaLangApp.NAVIGATION_CHANNEL_ID)
+        return NotificationCompat.Builder(this, NAVIGATION_CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(content)
             .setSmallIcon(R.drawable.ic_launcher)
@@ -234,5 +234,6 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
         const val ACTION_START = "de.dalang.nav.START_NAVIGATION"
         const val ACTION_STOP = "de.dalang.nav.STOP_NAVIGATION"
         const val NOTIFICATION_ID = 1
+        const val NAVIGATION_CHANNEL_ID = "dalang_navigation"
     }
 }
