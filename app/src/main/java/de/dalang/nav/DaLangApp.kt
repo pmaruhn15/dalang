@@ -23,12 +23,9 @@ class DaLangApp : Application() {
     private var _piperTts: PiperTts? = null
     val piperTts: PiperTts? get() = _piperTts
 
-    // Loading State für UI
+    // Loading State für UI (kleiner Indikator während TTS lädt)
     private val _isInitializing = MutableStateFlow(true)
     val isInitializing: StateFlow<Boolean> = _isInitializing.asStateFlow()
-
-    private val _initStatus = MutableStateFlow("App wird gestartet...")
-    val initStatus: StateFlow<String> = _initStatus.asStateFlow()
 
     var isPiperReady = false
         private set
@@ -77,27 +74,31 @@ class DaLangApp : Application() {
 
     private suspend fun initializePiperTts() {
         try {
-            _initStatus.value = "Sprachausgabe wird vorbereitet..."
-            CrashLogger.log("DaLangApp: Initializing Piper TTS...")
+            CrashLogger.log("DaLangApp: Starting Piper TTS initialization...")
 
-            _piperTts = PiperTts(this)
-            isPiperReady = _piperTts?.initialize() == true
+            // Kurz warten damit App vollständig gestartet ist
+            delay(1000)
 
-            if (isPiperReady) {
+            CrashLogger.log("DaLangApp: Creating PiperTts instance...")
+            val piper = PiperTts(this@DaLangApp)
+
+            CrashLogger.log("DaLangApp: Calling initialize()...")
+            val success = piper.initialize()
+
+            if (success) {
+                _piperTts = piper
+                isPiperReady = true
                 CrashLogger.log("DaLangApp: Piper TTS ready")
-                _initStatus.value = "Fertig!"
             } else {
-                CrashLogger.log("DaLangApp: Piper TTS failed, will use Android TTS")
-                _initStatus.value = "Fertig (Fallback-Stimme)"
+                CrashLogger.log("DaLangApp: Piper TTS init returned false, will use Android TTS")
+                isPiperReady = false
             }
         } catch (e: Exception) {
             CrashLogger.logError("DaLangApp", "Piper TTS init failed", e)
-            _initStatus.value = "Fertig (Fallback-Stimme)"
             isPiperReady = false
         } finally {
-            // Kurz warten damit Status sichtbar ist
-            delay(300)
             _isInitializing.value = false
+            CrashLogger.log("DaLangApp: Piper TTS initialization finished (ready=$isPiperReady)")
         }
     }
 
