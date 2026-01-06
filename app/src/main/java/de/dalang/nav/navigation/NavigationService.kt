@@ -31,7 +31,7 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
 
     var voiceEnabled = true
 
-    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     inner class LocalBinder : Binder() {
         fun getService(): NavigationService = this@NavigationService
