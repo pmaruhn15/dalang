@@ -6,11 +6,32 @@ import android.app.NotificationManager
 import android.content.Intent
 import android.os.Build
 import de.dalang.nav.config.HereConfig
+import de.dalang.nav.tts.PiperTts
 import de.dalang.nav.util.CrashLogger
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.maplibre.android.MapLibre
 import org.maplibre.android.WellKnownTileServer
 
 class DaLangApp : Application() {
+
+    private val appScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // Piper TTS Singleton - wird beim App-Start initialisiert
+    private var _piperTts: PiperTts? = null
+    val piperTts: PiperTts? get() = _piperTts
+
+    // Loading State für UI
+    private val _isInitializing = MutableStateFlow(true)
+    val isInitializing: StateFlow<Boolean> = _isInitializing.asStateFlow()
+
+    private val _initStatus = MutableStateFlow("App wird gestartet...")
+    val initStatus: StateFlow<String> = _initStatus.asStateFlow()
+
+    var isPiperReady = false
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -46,6 +67,37 @@ class DaLangApp : Application() {
             createNotificationChannel()
         } catch (e: Exception) {
             CrashLogger.logError("DaLangApp", "createNotificationChannel failed", e)
+        }
+
+        // Piper TTS im Hintergrund initialisieren
+        appScope.launch {
+            initializePiperTts()
+        }
+    }
+
+    private suspend fun initializePiperTts() {
+        try {
+            _initStatus.value = "Sprachausgabe wird vorbereitet..."
+            CrashLogger.log("DaLangApp: Initializing Piper TTS...")
+
+            _piperTts = PiperTts(this)
+            isPiperReady = _piperTts?.initialize() == true
+
+            if (isPiperReady) {
+                CrashLogger.log("DaLangApp: Piper TTS ready")
+                _initStatus.value = "Fertig!"
+            } else {
+                CrashLogger.log("DaLangApp: Piper TTS failed, will use Android TTS")
+                _initStatus.value = "Fertig (Fallback-Stimme)"
+            }
+        } catch (e: Exception) {
+            CrashLogger.logError("DaLangApp", "Piper TTS init failed", e)
+            _initStatus.value = "Fertig (Fallback-Stimme)"
+            isPiperReady = false
+        } finally {
+            // Kurz warten damit Status sichtbar ist
+            delay(300)
+            _isInitializing.value = false
         }
     }
 

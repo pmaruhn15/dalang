@@ -103,7 +103,24 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             DaLangTheme {
-                DaLangApp(viewModel)
+                // Loading State aus Application beobachten
+                val app = application as de.dalang.nav.DaLangApp
+                val isInitializing by app.isInitializing.collectAsState()
+                val initStatus by app.initStatus.collectAsState()
+
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // Haupt-App immer rendern (für schnellen Start)
+                    DaLangAppContent(viewModel)
+
+                    // Loading Overlay während Piper TTS lädt
+                    AnimatedVisibility(
+                        visible = isInitializing,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        LoadingScreen(status = initStatus)
+                    }
+                }
             }
         }
     }
@@ -173,7 +190,55 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun DaLangApp(viewModel: MainViewModel) {
+fun LoadingScreen(status: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            // App Logo/Name
+            Text(
+                text = "DaLang",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Navigation",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(48.dp))
+
+            // Loading Indicator
+            CircularProgressIndicator(
+                modifier = Modifier.size(48.dp),
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 4.dp
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Status Text
+            Text(
+                text = status,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun DaLangAppContent(viewModel: MainViewModel) {
     val currentLocation by viewModel.currentLocation.collectAsState()
     val displayLocation by viewModel.displayLocation.collectAsState()
     val heading by viewModel.heading.collectAsState()
