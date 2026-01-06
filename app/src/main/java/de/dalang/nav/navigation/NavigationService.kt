@@ -82,11 +82,16 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
             when (intent?.action) {
                 ACTION_START -> startForegroundNavigation()
                 ACTION_STOP -> stopSelf()
+                null -> {
+                    // Service wurde vom System neu gestartet - stoppen um Crash-Loop zu vermeiden
+                    CrashLogger.log("NavigationService: Restarted by system with null intent, stopping")
+                    stopSelf()
+                }
             }
         } catch (e: Exception) {
             CrashLogger.logError("NavigationService", "onStartCommand failed", e)
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onInit(status: Int) {
