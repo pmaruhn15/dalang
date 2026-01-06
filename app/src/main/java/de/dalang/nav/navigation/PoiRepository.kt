@@ -95,30 +95,37 @@ class PoiRepository {
             val allResults = mutableListOf<Poi>()
             val seenLocations = mutableSetOf<String>()
 
-            for (samplePoint in samplePoints) {
-                val results = searchWithNominatim(type, samplePoint, maxDistanceFromRouteKm + 3.0)
+            for ((index, samplePoint) in samplePoints.withIndex()) {
+                try {
+                    CrashLogger.log("PoiRepository: Querying sample point ${index + 1}/${samplePoints.size}")
+                    val results = searchWithNominatim(type, samplePoint, maxDistanceFromRouteKm + 3.0)
+                    CrashLogger.log("PoiRepository: Sample point ${index + 1} returned ${results.size} results")
 
-                // Nur POIs hinzufügen, die nah an der Route sind und nicht schon vorhanden
-                for (poi in results) {
-                    val locationKey = "${poi.lat.format(4)}_${poi.lng.format(4)}"
-                    if (locationKey !in seenLocations) {
-                        val distanceToRoute = minDistanceToRoute(poi.lat, poi.lng, routeGeometry)
-                        if (distanceToRoute <= maxDistanceFromRouteKm) {
-                            // Entfernung vom aktuellen Standort berechnen
-                            val distanceFromCurrent = calculateDistance(
-                                currentLocation.lat, currentLocation.lng,
-                                poi.lat, poi.lng
-                            )
-                            // Umweg berechnen: Hin + Zurück zur Route (~2x Abstand von Route)
-                            val detourMinutes = estimateDetourTime(distanceToRoute)
-                            allResults.add(poi.copy(
-                                distanceKm = distanceFromCurrent,
-                                estimatedArrivalMinutes = estimateArrivalTime(distanceFromCurrent),
-                                detourMinutes = detourMinutes
-                            ))
-                            seenLocations.add(locationKey)
+                    // Nur POIs hinzufügen, die nah an der Route sind und nicht schon vorhanden
+                    for (poi in results) {
+                        val locationKey = "${poi.lat.format(4)}_${poi.lng.format(4)}"
+                        if (locationKey !in seenLocations) {
+                            val distanceToRoute = minDistanceToRoute(poi.lat, poi.lng, routeGeometry)
+                            if (distanceToRoute <= maxDistanceFromRouteKm) {
+                                // Entfernung vom aktuellen Standort berechnen
+                                val distanceFromCurrent = calculateDistance(
+                                    currentLocation.lat, currentLocation.lng,
+                                    poi.lat, poi.lng
+                                )
+                                // Umweg berechnen: Hin + Zurück zur Route (~2x Abstand von Route)
+                                val detourMinutes = estimateDetourTime(distanceToRoute)
+                                allResults.add(poi.copy(
+                                    distanceKm = distanceFromCurrent,
+                                    estimatedArrivalMinutes = estimateArrivalTime(distanceFromCurrent),
+                                    detourMinutes = detourMinutes
+                                ))
+                                seenLocations.add(locationKey)
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    CrashLogger.logError("PoiRepository", "Sample point ${index + 1} query failed", e)
+                    // Continue with next sample point
                 }
             }
 
