@@ -41,6 +41,23 @@ class PiperTts(private val context: Context) {
         try {
             CrashLogger.log("PiperTts: Initializing...")
 
+            // Model-Verzeichnis für alle Piper-Dateien
+            val modelDir = File(context.filesDir, "piper")
+            if (!modelDir.exists()) {
+                modelDir.mkdirs()
+            }
+
+            // Crash-Counter prüfen - wenn zu viele Crashes, Piper deaktivieren
+            val crashCounterFile = File(modelDir, ".crash_count")
+            val crashCount = if (crashCounterFile.exists()) {
+                crashCounterFile.readText().trim().toIntOrNull() ?: 0
+            } else 0
+
+            if (crashCount >= 2) {
+                CrashLogger.log("PiperTts: Disabled due to $crashCount previous crashes")
+                return@withContext false
+            }
+
             // Prüfe ob Native Library geladen wurde
             if (!OfflineTts.isLibraryLoaded) {
                 val error = OfflineTts.libraryLoadError ?: "Unknown error"
@@ -49,34 +66,40 @@ class PiperTts(private val context: Context) {
             }
             CrashLogger.log("PiperTts: Native library OK")
 
-            // Model-Verzeichnis für alle Piper-Dateien
-            val modelDir = File(context.filesDir, "piper")
-            if (!modelDir.exists()) {
-                modelDir.mkdirs()
+            // Speicher-Check: Brauchen ~200MB für das Model
+            val runtime = Runtime.getRuntime()
+            val freeMemory = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
+            val freeMemoryMB = freeMemory / 1_000_000
+            CrashLogger.log("PiperTts: Available memory: ${freeMemoryMB}MB")
+
+            if (freeMemoryMB < 150) {
+                CrashLogger.log("PiperTts: Not enough memory (need 150MB, have ${freeMemoryMB}MB)")
+                return@withContext false
             }
 
             val modelFile = File(modelDir, "de_DE-thorsten-medium.onnx")
             val tokensFile = File(modelDir, "tokens.txt")
             val dataDir = File(modelDir, "espeak-ng-data")
-            val completionMarker = File(modelDir, ".init_complete")
+            val initSuccessMarker = File(modelDir, ".init_success")
 
-            // Prüfe ob Initialisierung schon erfolgreich war
-            val filesReady = completionMarker.exists() &&
-                    modelFile.exists() && modelFile.length() > 50_000_000 &&
+            // Prüfe ob vorherige Initialisierung erfolgreich war
+            if (initSuccessMarker.exists()) {
+                CrashLogger.log("PiperTts: Previous init was successful, using cached")
+            }
+
+            // Prüfe ob Dateien kopiert werden müssen
+            val filesExist = modelFile.exists() && modelFile.length() > 50_000_000 &&
                     tokensFile.exists() &&
                     dataDir.exists() && (dataDir.listFiles()?.isNotEmpty() == true)
 
-            if (!filesReady) {
+            if (!filesExist) {
                 CrashLogger.log("PiperTts: Files not ready, copying from assets...")
-
-                // Lösche altes Marker-File falls vorhanden
-                completionMarker.delete()
 
                 // Model aus Assets kopieren
                 if (!modelFile.exists() || modelFile.length() < 50_000_000) {
                     CrashLogger.log("PiperTts: Copying model from assets...")
                     copyAssetFile("piper/de_DE-thorsten-medium.onnx", modelFile)
-                    yield() // Gib anderen Coroutines Zeit
+                    yield()
                 }
                 CrashLogger.log("PiperTts: Model ready (${modelFile.length() / 1_000_000}MB)")
 
@@ -87,24 +110,27 @@ class PiperTts(private val context: Context) {
                     yield()
                 }
 
-                // espeak-ng-data kopieren - sequentiell mit Pausen
+                // espeak-ng-data kopieren
                 if (!dataDir.exists() || (dataDir.listFiles()?.isEmpty() == true)) {
                     CrashLogger.log("PiperTts: Copying espeak-ng-data...")
                     copyAssetDirectorySafe("piper/espeak-ng-data", dataDir)
                 }
 
-                // Marker setzen dass alles fertig ist
-                completionMarker.createNewFile()
-                CrashLogger.log("PiperTts: All files copied successfully")
+                CrashLogger.log("PiperTts: All files copied")
             } else {
                 CrashLogger.log("PiperTts: Using cached files")
             }
 
-            // Kurz warten bevor Native Library geladen wird
-            delay(100)
+            // Crash-Counter erhöhen BEVOR Native-Init (wird bei Erfolg gelöscht)
+            crashCounterFile.writeText((crashCount + 1).toString())
+            CrashLogger.log("PiperTts: Crash counter set to ${crashCount + 1}")
+
+            // Kurz warten und GC aufrufen um Speicher freizugeben
+            System.gc()
+            delay(200)
 
             // TTS konfigurieren - mit nur 1 Thread für weniger Speicherverbrauch
-            CrashLogger.log("PiperTts: Creating TTS instance...")
+            CrashLogger.log("PiperTts: Creating TTS instance (this may take a few seconds)...")
             val vitsConfig = OfflineTtsVitsModelConfig(
                 model = modelFile.absolutePath,
                 tokens = tokensFile.absolutePath,
@@ -116,7 +142,7 @@ class PiperTts(private val context: Context) {
 
             val modelConfig = OfflineTtsModelConfig(
                 vits = vitsConfig,
-                numThreads = 1,  // Reduziert von 2 auf 1 für weniger Speicher
+                numThreads = 1,
                 debug = false
             )
 
@@ -127,6 +153,9 @@ class PiperTts(private val context: Context) {
             tts = OfflineTts(config = config)
             isInitialized = true
 
+            // Erfolg! Crash-Counter zurücksetzen und Success-Marker setzen
+            crashCounterFile.delete()
+            initSuccessMarker.createNewFile()
             CrashLogger.log("PiperTts: Initialized successfully, sample rate: ${tts?.sampleRate()}")
             true
         } catch (e: Exception) {
