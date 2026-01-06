@@ -9,7 +9,6 @@ import android.os.Binder
 import android.os.IBinder
 import android.speech.tts.TextToSpeech
 import androidx.core.app.NotificationCompat
-import de.dalang.nav.DaLangApp
 import de.dalang.nav.MainActivity
 import de.dalang.nav.R
 import de.dalang.nav.tts.PiperTts
@@ -21,13 +20,12 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
 
     private val binder = LocalBinder()
 
-    // Piper TTS wird jetzt aus DaLangApp Singleton geholt
-    private val piperTts: PiperTts?
-        get() = (application as? DaLangApp)?.piperTts
-    private val isPiperReady: Boolean
-        get() = (application as? DaLangApp)?.isPiperReady == true
+    // Piper TTS - Lazy Init beim ersten Sprachgebrauch
+    private var piperTts: PiperTts? = null
+    private var isPiperReady = false
+    private var piperInitStarted = false
 
-    // Android TTS (Fallback)
+    // Android TTS (wird sofort verwendet, bis Piper bereit)
     private var androidTts: TextToSpeech? = null
     private var isAndroidTtsReady = false
 
@@ -43,15 +41,42 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
         super.onCreate()
         CrashLogger.log("NavigationService onCreate")
 
-        // Android TTS als Fallback initialisieren
+        // Android TTS sofort initialisieren (schnell, blockiert nicht)
         try {
             androidTts = TextToSpeech(this, this)
         } catch (e: Exception) {
             CrashLogger.logError("NavigationService", "Android TTS init failed", e)
         }
 
-        // Piper TTS wird jetzt von DaLangApp beim App-Start initialisiert (Singleton)
-        CrashLogger.log("NavigationService: Using Piper TTS from DaLangApp (isPiperReady=$isPiperReady)")
+        // Piper TTS wird NICHT hier initialisiert - erst bei erstem Sprachgebrauch
+        CrashLogger.log("NavigationService: Piper TTS will be initialized lazily on first speak")
+    }
+
+    /**
+     * Startet Piper TTS Initialisierung im Hintergrund.
+     * Wird beim ersten speak() aufgerufen.
+     */
+    private fun startPiperInitialization() {
+        if (piperInitStarted) return
+        piperInitStarted = true
+
+        serviceScope.launch {
+            try {
+                CrashLogger.log("NavigationService: Starting lazy Piper TTS init...")
+                val piper = PiperTts(this@NavigationService)
+                val success = piper.initialize()
+
+                if (success) {
+                    piperTts = piper
+                    isPiperReady = true
+                    CrashLogger.log("NavigationService: Piper TTS ready (lazy init)")
+                } else {
+                    CrashLogger.log("NavigationService: Piper TTS init failed, staying with Android TTS")
+                }
+            } catch (e: Exception) {
+                CrashLogger.logError("NavigationService", "Piper TTS lazy init failed", e)
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder {
@@ -100,12 +125,17 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
     fun speak(text: String) {
         if (!voiceEnabled) return
 
+        // Piper TTS lazy init beim ersten Sprachgebrauch starten
+        if (!piperInitStarted) {
+            startPiperInitialization()
+        }
+
         try {
             if (isPiperReady && piperTts != null) {
                 // Piper TTS verwenden (hochwertige Stimme)
                 piperTts?.speak(text)
             } else if (isAndroidTtsReady) {
-                // Fallback zu Android TTS
+                // Android TTS verwenden (bis Piper bereit)
                 androidTts?.speak(text, TextToSpeech.QUEUE_ADD, null, text.hashCode().toString())
             }
         } catch (e: Exception) {
@@ -115,6 +145,11 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
 
     fun speakNow(text: String) {
         if (!voiceEnabled) return
+
+        // Piper TTS lazy init beim ersten Sprachgebrauch starten
+        if (!piperInitStarted) {
+            startPiperInitialization()
+        }
 
         try {
             if (isPiperReady && piperTts != null) {
@@ -174,7 +209,14 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
     override fun onDestroy() {
         CrashLogger.log("NavigationService onDestroy")
 
-        // Piper TTS wird von DaLangApp verwaltet - nicht hier beenden
+        // Piper TTS beenden
+        try {
+            piperTts?.shutdown()
+            piperTts = null
+            isPiperReady = false
+        } catch (e: Exception) {
+            CrashLogger.logError("NavigationService", "Piper TTS shutdown failed", e)
+        }
 
         // Android TTS beenden
         try {

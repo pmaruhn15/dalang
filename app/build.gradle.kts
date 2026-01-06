@@ -20,8 +20,8 @@ android {
         applicationId = "de.dalang.nav"
         minSdk = 29
         targetSdk = 34
-        versionCode = 80
-        versionName = "1.2.80"
+        versionCode = 81
+        versionName = "1.2.81"
     }
 
     buildTypes {

@@ -103,14 +103,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             DaLangTheme {
-                // Piper TTS Ladestatus für kleinen Indikator
-                val app = application as de.dalang.nav.DaLangApp
-                val isInitializing by app.isInitializing.collectAsState()
-
-                DaLangAppContent(
-                    viewModel = viewModel,
-                    isPiperLoading = isInitializing
-                )
+                DaLangAppContent(viewModel = viewModel)
             }
         }
     }
@@ -180,10 +173,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun DaLangAppContent(
-    viewModel: MainViewModel,
-    isPiperLoading: Boolean = false
-) {
+fun DaLangAppContent(viewModel: MainViewModel) {
     val currentLocation by viewModel.currentLocation.collectAsState()
     val displayLocation by viewModel.displayLocation.collectAsState()
     val heading by viewModel.heading.collectAsState()
@@ -445,31 +435,6 @@ fun DaLangAppContent(
                 timeMinutes = (navigationState.timeToWaypoint / 60.0).toInt(),
                 onClearWaypoint = { viewModel.clearWaypoint() }
             )
-        }
-
-        // Piper TTS Loading Indicator - oben rechts (kleiner Indikator während TTS lädt)
-        AnimatedVisibility(
-            visible = isPiperLoading,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(top = 56.dp, end = 8.dp)  // Unter der Suchleiste
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    strokeWidth = 2.dp
-                )
-            }
         }
 
         // Suchleiste oben mit Menu-Button (versteckt bei Navigation und Routenvorschau)
