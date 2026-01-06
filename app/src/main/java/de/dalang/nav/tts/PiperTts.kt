@@ -58,27 +58,53 @@ class PiperTts(private val context: Context) {
             val modelFile = File(modelDir, "de_DE-thorsten-medium.onnx")
             val tokensFile = File(modelDir, "tokens.txt")
             val dataDir = File(modelDir, "espeak-ng-data")
+            val completionMarker = File(modelDir, ".init_complete")
 
-            // Model aus Assets kopieren (einmalig)
-            if (!modelFile.exists() || modelFile.length() < 50_000_000) {
-                CrashLogger.log("PiperTts: Copying model from assets...")
-                copyAssetFile("piper/de_DE-thorsten-medium.onnx", modelFile)
+            // Prüfe ob Initialisierung schon erfolgreich war
+            val filesReady = completionMarker.exists() &&
+                    modelFile.exists() && modelFile.length() > 50_000_000 &&
+                    tokensFile.exists() &&
+                    dataDir.exists() && (dataDir.listFiles()?.isNotEmpty() == true)
+
+            if (!filesReady) {
+                CrashLogger.log("PiperTts: Files not ready, copying from assets...")
+
+                // Lösche altes Marker-File falls vorhanden
+                completionMarker.delete()
+
+                // Model aus Assets kopieren
+                if (!modelFile.exists() || modelFile.length() < 50_000_000) {
+                    CrashLogger.log("PiperTts: Copying model from assets...")
+                    copyAssetFile("piper/de_DE-thorsten-medium.onnx", modelFile)
+                    yield() // Gib anderen Coroutines Zeit
+                }
+                CrashLogger.log("PiperTts: Model ready (${modelFile.length() / 1_000_000}MB)")
+
+                // Tokens kopieren
+                if (!tokensFile.exists()) {
+                    CrashLogger.log("PiperTts: Copying tokens file...")
+                    copyAssetFile("piper/tokens.txt", tokensFile)
+                    yield()
+                }
+
+                // espeak-ng-data kopieren - sequentiell mit Pausen
+                if (!dataDir.exists() || (dataDir.listFiles()?.isEmpty() == true)) {
+                    CrashLogger.log("PiperTts: Copying espeak-ng-data...")
+                    copyAssetDirectorySafe("piper/espeak-ng-data", dataDir)
+                }
+
+                // Marker setzen dass alles fertig ist
+                completionMarker.createNewFile()
+                CrashLogger.log("PiperTts: All files copied successfully")
+            } else {
+                CrashLogger.log("PiperTts: Using cached files")
             }
-            CrashLogger.log("PiperTts: Using model: ${modelFile.absolutePath} (${modelFile.length() / 1_000_000}MB)")
 
-            // Tokens kopieren
-            if (!tokensFile.exists()) {
-                CrashLogger.log("PiperTts: Copying tokens file...")
-                copyAssetFile("piper/tokens.txt", tokensFile)
-            }
+            // Kurz warten bevor Native Library geladen wird
+            delay(100)
 
-            // espeak-ng-data kopieren
-            if (!dataDir.exists()) {
-                CrashLogger.log("PiperTts: Copying espeak-ng-data...")
-                copyAssetDirectory("piper/espeak-ng-data", dataDir)
-            }
-
-            // TTS konfigurieren
+            // TTS konfigurieren - mit nur 1 Thread für weniger Speicherverbrauch
+            CrashLogger.log("PiperTts: Creating TTS instance...")
             val vitsConfig = OfflineTtsVitsModelConfig(
                 model = modelFile.absolutePath,
                 tokens = tokensFile.absolutePath,
@@ -90,7 +116,7 @@ class PiperTts(private val context: Context) {
 
             val modelConfig = OfflineTtsModelConfig(
                 vits = vitsConfig,
-                numThreads = 2,
+                numThreads = 1,  // Reduziert von 2 auf 1 für weniger Speicher
                 debug = false
             )
 
@@ -233,7 +259,10 @@ class PiperTts(private val context: Context) {
         }
     }
 
-    private fun copyAssetDirectory(assetPath: String, destDir: File) {
+    /**
+     * Sichere Verzeichniskopie - kopiert Dateien einzeln mit explizitem Schließen
+     */
+    private suspend fun copyAssetDirectorySafe(assetPath: String, destDir: File) {
         if (!destDir.exists()) {
             destDir.mkdirs()
         }
@@ -246,14 +275,33 @@ class PiperTts(private val context: Context) {
 
             try {
                 // Versuche als Datei zu öffnen
-                context.assets.open(srcPath).use { input ->
-                    FileOutputStream(destFile).use { output ->
-                        input.copyTo(output)
+                val input = context.assets.open(srcPath)
+                try {
+                    val output = FileOutputStream(destFile)
+                    try {
+                        // Kopiere in kleinen Chunks für weniger Speicherverbrauch
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                        }
+                        output.flush()
+                    } finally {
+                        output.close()
                     }
+                } finally {
+                    input.close()
                 }
+                // Kurze Pause zwischen Dateien
+                yield()
             } catch (e: Exception) {
-                // Ist wahrscheinlich ein Verzeichnis
-                copyAssetDirectory(srcPath, destFile)
+                // Ist wahrscheinlich ein Verzeichnis - rekursiv kopieren
+                if (e.message?.contains("directory") == true ||
+                    e.message?.contains("This file can not be opened") == true) {
+                    copyAssetDirectorySafe(srcPath, destFile)
+                } else {
+                    CrashLogger.log("PiperTts: Skipping $srcPath: ${e.message}")
+                }
             }
         }
     }
