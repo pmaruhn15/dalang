@@ -48,10 +48,11 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
             CrashLogger.logError("NavigationService", "Android TTS init failed", e)
         }
 
-        // Piper TTS asynchron initialisieren
-        serviceScope.launch {
-            initializePiperTts()
-        }
+        // Piper TTS temporär deaktiviert - verursacht Speicherprobleme bei gleichzeitiger POI-Suche
+        // TODO: Lazy-Init implementieren (erst bei erster Sprachausgabe initialisieren)
+        // serviceScope.launch {
+        //     initializePiperTts()
+        // }
     }
 
     private suspend fun initializePiperTts() {
