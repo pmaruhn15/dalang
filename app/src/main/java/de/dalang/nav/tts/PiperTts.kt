@@ -70,9 +70,9 @@ class PiperTts(private val context: Context) {
                 CrashLogger.log("PiperTts: Previous init was successful")
             }
 
-            // Prüfe Integrität der espeak-ng-data (mindestens 50 Dateien erwartet)
+            // Prüfe Integrität der espeak-ng-data (mindestens 300 Dateien erwartet, normal ~355)
             val espeakFileCount = countFilesRecursive(dataDir)
-            val espeakComplete = espeakCompleteMarker.exists() && espeakFileCount >= 50
+            val espeakComplete = espeakCompleteMarker.exists() && espeakFileCount >= 300
             CrashLogger.log("PiperTts: espeak-ng-data has $espeakFileCount files, complete=$espeakComplete")
 
             // Prüfe ob alle Dateien vorhanden und vollständig sind
@@ -109,8 +109,8 @@ class PiperTts(private val context: Context) {
                 val newFileCount = countFilesRecursive(dataDir)
                 CrashLogger.log("PiperTts: espeak-ng-data copied, $newFileCount files")
 
-                if (newFileCount < 50) {
-                    CrashLogger.log("PiperTts: ERROR - espeak-ng-data incomplete!")
+                if (newFileCount < 300) {
+                    CrashLogger.log("PiperTts: ERROR - espeak-ng-data incomplete! Only $newFileCount files")
                     return@withContext false
                 }
 
@@ -313,34 +313,35 @@ class PiperTts(private val context: Context) {
             val srcPath = "$assetPath/$file"
             val destFile = File(destDir, file)
 
-            try {
-                // Versuche als Datei zu öffnen
-                val input = context.assets.open(srcPath)
+            // Prüfe ob es ein Verzeichnis ist (hat Unterelemente)
+            val subItems = context.assets.list(srcPath)
+            if (subItems != null && subItems.isNotEmpty()) {
+                // Es ist ein Verzeichnis - rekursiv kopieren
+                copyAssetDirectorySafe(srcPath, destFile)
+            } else {
+                // Es ist eine Datei - kopieren
                 try {
-                    val output = FileOutputStream(destFile)
+                    val input = context.assets.open(srcPath)
                     try {
-                        // Kopiere in kleinen Chunks für weniger Speicherverbrauch
-                        val buffer = ByteArray(8192)
-                        var bytesRead: Int
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            output.write(buffer, 0, bytesRead)
+                        val output = FileOutputStream(destFile)
+                        try {
+                            // Kopiere in kleinen Chunks für weniger Speicherverbrauch
+                            val buffer = ByteArray(8192)
+                            var bytesRead: Int
+                            while (input.read(buffer).also { bytesRead = it } != -1) {
+                                output.write(buffer, 0, bytesRead)
+                            }
+                            output.flush()
+                        } finally {
+                            output.close()
                         }
-                        output.flush()
                     } finally {
-                        output.close()
+                        input.close()
                     }
-                } finally {
-                    input.close()
-                }
-                // Kurze Pause zwischen Dateien
-                yield()
-            } catch (e: Exception) {
-                // Ist wahrscheinlich ein Verzeichnis - rekursiv kopieren
-                if (e.message?.contains("directory") == true ||
-                    e.message?.contains("This file can not be opened") == true) {
-                    copyAssetDirectorySafe(srcPath, destFile)
-                } else {
-                    CrashLogger.log("PiperTts: Skipping $srcPath: ${e.message}")
+                    // Kurze Pause zwischen Dateien
+                    yield()
+                } catch (e: Exception) {
+                    CrashLogger.log("PiperTts: Error copying $srcPath: ${e.message}")
                 }
             }
         }
