@@ -41,23 +41,6 @@ class PiperTts(private val context: Context) {
         try {
             CrashLogger.log("PiperTts: Initializing...")
 
-            // Model-Verzeichnis für alle Piper-Dateien
-            val modelDir = File(context.filesDir, "piper")
-            if (!modelDir.exists()) {
-                modelDir.mkdirs()
-            }
-
-            // Crash-Counter prüfen - wenn zu viele Crashes, Piper deaktivieren
-            val crashCounterFile = File(modelDir, ".crash_count")
-            val crashCount = if (crashCounterFile.exists()) {
-                crashCounterFile.readText().trim().toIntOrNull() ?: 0
-            } else 0
-
-            if (crashCount >= 2) {
-                CrashLogger.log("PiperTts: Disabled due to $crashCount previous crashes")
-                return@withContext false
-            }
-
             // Prüfe ob Native Library geladen wurde
             if (!OfflineTts.isLibraryLoaded) {
                 val error = OfflineTts.libraryLoadError ?: "Unknown error"
@@ -66,71 +49,84 @@ class PiperTts(private val context: Context) {
             }
             CrashLogger.log("PiperTts: Native library OK")
 
-            // Speicher-Check: Brauchen ~200MB für das Model
-            val runtime = Runtime.getRuntime()
-            val freeMemory = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
-            val freeMemoryMB = freeMemory / 1_000_000
-            CrashLogger.log("PiperTts: Available memory: ${freeMemoryMB}MB")
-
-            if (freeMemoryMB < 150) {
-                CrashLogger.log("PiperTts: Not enough memory (need 150MB, have ${freeMemoryMB}MB)")
-                return@withContext false
+            // Model-Verzeichnis für alle Piper-Dateien
+            val modelDir = File(context.filesDir, "piper")
+            if (!modelDir.exists()) {
+                modelDir.mkdirs()
             }
 
             val modelFile = File(modelDir, "de_DE-thorsten-medium.onnx")
             val tokensFile = File(modelDir, "tokens.txt")
             val dataDir = File(modelDir, "espeak-ng-data")
+            val espeakCompleteMarker = File(modelDir, ".espeak_complete")
             val initSuccessMarker = File(modelDir, ".init_success")
 
-            // Prüfe ob vorherige Initialisierung erfolgreich war
-            if (initSuccessMarker.exists()) {
-                CrashLogger.log("PiperTts: Previous init was successful, using cached")
+            // Lösche alten Crash-Counter falls vorhanden (wir wollen immer versuchen)
+            File(modelDir, ".crash_count").delete()
+
+            // Wenn vorherige Init erfolgreich war, können wir cached files nutzen
+            val previousSuccess = initSuccessMarker.exists()
+            if (previousSuccess) {
+                CrashLogger.log("PiperTts: Previous init was successful")
             }
 
-            // Prüfe ob Dateien kopiert werden müssen
-            val filesExist = modelFile.exists() && modelFile.length() > 50_000_000 &&
-                    tokensFile.exists() &&
-                    dataDir.exists() && (dataDir.listFiles()?.isNotEmpty() == true)
+            // Prüfe Integrität der espeak-ng-data (mindestens 50 Dateien erwartet)
+            val espeakFileCount = countFilesRecursive(dataDir)
+            val espeakComplete = espeakCompleteMarker.exists() && espeakFileCount >= 50
+            CrashLogger.log("PiperTts: espeak-ng-data has $espeakFileCount files, complete=$espeakComplete")
 
-            if (!filesExist) {
-                CrashLogger.log("PiperTts: Files not ready, copying from assets...")
+            // Prüfe ob alle Dateien vorhanden und vollständig sind
+            val modelOk = modelFile.exists() && modelFile.length() > 50_000_000
+            val tokensOk = tokensFile.exists() && tokensFile.length() > 100
+            val espeakOk = espeakComplete
 
-                // Model aus Assets kopieren
-                if (!modelFile.exists() || modelFile.length() < 50_000_000) {
-                    CrashLogger.log("PiperTts: Copying model from assets...")
-                    copyAssetFile("piper/de_DE-thorsten-medium.onnx", modelFile)
-                    yield()
-                }
-                CrashLogger.log("PiperTts: Model ready (${modelFile.length() / 1_000_000}MB)")
+            if (!modelOk || !tokensOk || !espeakOk) {
+                CrashLogger.log("PiperTts: Files incomplete (model=$modelOk, tokens=$tokensOk, espeak=$espeakOk)")
+                CrashLogger.log("PiperTts: Deleting and re-copying all files...")
+
+                // Alles löschen und neu kopieren
+                modelDir.deleteRecursively()
+                modelDir.mkdirs()
+                initSuccessMarker.delete()
+                espeakCompleteMarker.delete()
+
+                // Model kopieren
+                CrashLogger.log("PiperTts: Copying model (63MB)...")
+                copyAssetFile("piper/de_DE-thorsten-medium.onnx", modelFile)
+                CrashLogger.log("PiperTts: Model copied (${modelFile.length() / 1_000_000}MB)")
+                yield()
 
                 // Tokens kopieren
-                if (!tokensFile.exists()) {
-                    CrashLogger.log("PiperTts: Copying tokens file...")
-                    copyAssetFile("piper/tokens.txt", tokensFile)
-                    yield()
-                }
+                CrashLogger.log("PiperTts: Copying tokens...")
+                copyAssetFile("piper/tokens.txt", tokensFile)
+                yield()
 
                 // espeak-ng-data kopieren
-                if (!dataDir.exists() || (dataDir.listFiles()?.isEmpty() == true)) {
-                    CrashLogger.log("PiperTts: Copying espeak-ng-data...")
-                    copyAssetDirectorySafe("piper/espeak-ng-data", dataDir)
+                CrashLogger.log("PiperTts: Copying espeak-ng-data (this may take a moment)...")
+                copyAssetDirectorySafe("piper/espeak-ng-data", dataDir)
+
+                // Verifiziere dass genug Dateien kopiert wurden
+                val newFileCount = countFilesRecursive(dataDir)
+                CrashLogger.log("PiperTts: espeak-ng-data copied, $newFileCount files")
+
+                if (newFileCount < 50) {
+                    CrashLogger.log("PiperTts: ERROR - espeak-ng-data incomplete!")
+                    return@withContext false
                 }
 
-                CrashLogger.log("PiperTts: All files copied")
+                // Markiere espeak als vollständig
+                espeakCompleteMarker.createNewFile()
+                CrashLogger.log("PiperTts: All files copied successfully")
             } else {
                 CrashLogger.log("PiperTts: Using cached files")
             }
 
-            // Crash-Counter erhöhen BEVOR Native-Init (wird bei Erfolg gelöscht)
-            crashCounterFile.writeText((crashCount + 1).toString())
-            CrashLogger.log("PiperTts: Crash counter set to ${crashCount + 1}")
-
-            // Kurz warten und GC aufrufen um Speicher freizugeben
+            // GC aufrufen um Speicher freizugeben
             System.gc()
-            delay(200)
+            delay(100)
 
-            // TTS konfigurieren - mit nur 1 Thread für weniger Speicherverbrauch
-            CrashLogger.log("PiperTts: Creating TTS instance (this may take a few seconds)...")
+            // TTS erstellen
+            CrashLogger.log("PiperTts: Creating TTS instance...")
             val vitsConfig = OfflineTtsVitsModelConfig(
                 model = modelFile.absolutePath,
                 tokens = tokensFile.absolutePath,
@@ -142,7 +138,7 @@ class PiperTts(private val context: Context) {
 
             val modelConfig = OfflineTtsModelConfig(
                 vits = vitsConfig,
-                numThreads = 1,
+                numThreads = 2,  // Fairphone 5 hat genug Power
                 debug = false
             )
 
@@ -153,8 +149,7 @@ class PiperTts(private val context: Context) {
             tts = OfflineTts(config = config)
             isInitialized = true
 
-            // Erfolg! Crash-Counter zurücksetzen und Success-Marker setzen
-            crashCounterFile.delete()
+            // Erfolg!
             initSuccessMarker.createNewFile()
             CrashLogger.log("PiperTts: Initialized successfully, sample rate: ${tts?.sampleRate()}")
             true
@@ -163,6 +158,22 @@ class PiperTts(private val context: Context) {
             isInitialized = false
             false
         }
+    }
+
+    /**
+     * Zählt alle Dateien in einem Verzeichnis rekursiv
+     */
+    private fun countFilesRecursive(dir: File): Int {
+        if (!dir.exists()) return 0
+        var count = 0
+        dir.listFiles()?.forEach { file ->
+            if (file.isDirectory) {
+                count += countFilesRecursive(file)
+            } else {
+                count++
+            }
+        }
+        return count
     }
 
     /**
