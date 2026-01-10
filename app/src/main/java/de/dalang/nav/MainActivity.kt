@@ -677,6 +677,9 @@ fun DrawerContent(
     var showParking by remember { mutableStateOf(settingsRepository.showPoiParking) }
     var showHotels by remember { mutableStateOf(settingsRepository.showPoiHotels) }
 
+    // Piper TTS Toggle State
+    var piperTtsEnabled by remember { mutableStateOf(settingsRepository.piperTtsEnabled) }
+
     Column(
         modifier = Modifier
             .fillMaxHeight()
@@ -749,6 +752,46 @@ fun DrawerContent(
                     onSettingsChanged()
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        HorizontalDivider()
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Piper TTS Toggle
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "Piper TTS",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Hochwertige Offline-Stimme",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = piperTtsEnabled,
+                onCheckedChange = {
+                    piperTtsEnabled = it
+                    settingsRepository.piperTtsEnabled = it
+                    CrashLogger.log("DrawerContent: Piper TTS ${if (it) "enabled" else "disabled"}")
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = MaterialTheme.colorScheme.primary,
+                    checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))

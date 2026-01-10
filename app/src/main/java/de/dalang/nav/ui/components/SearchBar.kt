@@ -16,11 +16,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
@@ -43,6 +45,7 @@ fun SearchBar(
     var isExpanded by remember { mutableStateOf(false) }
     var isFocused by remember { mutableStateOf(false) }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
     Column(
         modifier = modifier
@@ -176,12 +179,18 @@ fun SearchBar(
                             SearchResultItem(
                                 result = result,
                                 onClick = {
-                                    // First select the destination, then clean up UI
+                                    // WICHTIG: Erst Fokus und Keyboard entfernen BEVOR UI geändert wird
+                                    // Das verhindert den LayoutCoordinate Crash
+                                    focusManager.clearFocus()
+                                    keyboardController?.hide()
+
+                                    // Dann UI aktualisieren
                                     val selectedResult = result
                                     isExpanded = false
-                                    onResultClick(selectedResult)
                                     onClear()
-                                    keyboardController?.hide()
+
+                                    // Zuletzt Ziel auswählen (kann UI-Änderungen auslösen)
+                                    onResultClick(selectedResult)
                                 }
                             )
                         }

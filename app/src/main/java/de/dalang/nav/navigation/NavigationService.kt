@@ -11,6 +11,7 @@ import android.speech.tts.TextToSpeech
 import androidx.core.app.NotificationCompat
 import de.dalang.nav.MainActivity
 import de.dalang.nav.R
+import de.dalang.nav.settings.SettingsRepository
 import de.dalang.nav.tts.PiperTts
 import de.dalang.nav.util.CrashLogger
 import kotlinx.coroutines.*
@@ -59,6 +60,13 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
     private fun startPiperInitialization() {
         if (piperInitStarted) return
         piperInitStarted = true
+
+        // Prüfe ob Piper TTS in Einstellungen aktiviert ist
+        val settings = SettingsRepository(this)
+        if (!settings.piperTtsEnabled) {
+            CrashLogger.log("NavigationService: Piper TTS disabled in settings, using Android TTS only")
+            return
+        }
 
         serviceScope.launch {
             try {

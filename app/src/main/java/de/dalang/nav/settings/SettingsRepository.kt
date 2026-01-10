@@ -61,6 +61,11 @@ class SettingsRepository(context: Context) {
         get() = prefs.getBoolean(KEY_VOICE_ENABLED, true)
         set(value) = prefs.edit { putBoolean(KEY_VOICE_ENABLED, value) }
 
+    // Piper TTS (hochwertige Offline-Stimme) aktivieren/deaktivieren
+    var piperTtsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_PIPER_TTS_ENABLED, true)
+        set(value) = prefs.edit { putBoolean(KEY_PIPER_TTS_ENABLED, value) }
+
     // Kraftstofftyp für Preisanzeige (Diesel oder Super)
     var preferredFuelType: FuelType
         get() {
@@ -319,6 +324,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_HERE_API_KEY = "here_api_key"
         private const val KEY_HERE_API_ENABLED = "here_api_enabled"
         private const val KEY_VOICE_ENABLED = "voice_enabled"
+        private const val KEY_PIPER_TTS_ENABLED = "piper_tts_enabled"
         private const val KEY_FUEL_TYPE = "preferred_fuel_type"
         private const val KEY_VEHICLE_RANGE_KM = "vehicle_range_km"
         private const val KEY_MAPTILER_API_KEY = "maptiler_api_key"
