@@ -87,11 +87,33 @@ fun RouteStep.toGermanInstruction(): String {
     }
 }
 
+/**
+ * Formatiert eine Distanz für die Anzeige mit intelligenter Rundung.
+ * - Unter 100m: auf 10m runden (10, 20, 30, ... 90m)
+ * - 100-500m: auf 50m runden (100, 150, 200, ... 500m)
+ * - 500m-1km: auf 100m runden (500, 600, ... 1000m)
+ * - Über 1km: auf 0.1km Genauigkeit
+ */
 fun Double.formatDistance(): String {
-    return if (this >= 1000) {
-        String.format("%.1f km", this / 1000)
-    } else {
-        String.format("%d m", this.toInt())
+    // Intelligente Rundung basierend auf Distanz
+    val rounded = when {
+        this < 100 -> (this / 10).toInt() * 10.0
+        this < 500 -> (this / 50).toInt() * 50.0
+        this < 1000 -> (this / 100).toInt() * 100.0
+        else -> this  // Über 1km: keine Rundung der Meter, km-Formatierung macht das
+    }
+
+    return when {
+        rounded >= 1000 -> {
+            val km = rounded / 1000
+            if (km >= 10) {
+                "${km.toInt()} km"
+            } else {
+                String.format("%.1f km", km)
+            }
+        }
+        rounded < 10 -> "10 m"  // Minimum 10m anzeigen
+        else -> "${rounded.toInt()} m"
     }
 }
 

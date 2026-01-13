@@ -8,6 +8,7 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import de.dalang.nav.location.DistanceSmoother
 import de.dalang.nav.location.HeadingProvider
 import de.dalang.nav.location.LocationProvider
 import de.dalang.nav.location.LocationSmoother
@@ -47,6 +48,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val routeRepository: RouteRepository = RouteRepository()
     private val locationSmoother = LocationSmoother()
     private val mapMatcher = MapMatcher()
+    private val distanceSmoother = DistanceSmoother()
 
     private val _currentLocation = MutableStateFlow<LatLng?>(null)
     val currentLocation: StateFlow<LatLng?> = _currentLocation.asStateFlow()
@@ -383,6 +385,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Smoother und Matcher zurücksetzen
             locationSmoother.reset()
             mapMatcher.reset()
+            distanceSmoother.reset()
             _distanceToRoute.value = 0.0
 
             val intent = Intent(getApplication(), NavigationService::class.java).apply {
@@ -530,33 +533,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Distanz zum nächsten Manöver
-            val distanceToManeuver = location.distanceTo(currentStep.maneuver.location)
+            // Distanz zum nächsten Manöver (roh)
+            val rawDistanceToManeuver = location.distanceTo(currentStep.maneuver.location)
+
+            // Distanz glätten um Sprünge zu vermeiden
+            val distanceToManeuver = distanceSmoother.process(rawDistanceToManeuver)
 
             // Prüfen ob wir den nächsten Schritt erreicht haben
-            if (distanceToManeuver < 30 && state.currentStepIndex < route.steps.size - 1) {
+            if (rawDistanceToManeuver < 30 && state.currentStepIndex < route.steps.size - 1) {
                 val nextIndex = state.currentStepIndex + 1
                 val nextStep = route.steps[nextIndex]
+
+                // Distance Smoother für neuen Schritt zurücksetzen
+                val nextDistance = location.distanceTo(nextStep.maneuver.location)
+                distanceSmoother.setInitialDistance(nextDistance)
 
                 _navigationState.update {
                     it.copy(
                         currentStepIndex = nextIndex,
-                        distanceToNextStep = location.distanceTo(nextStep.maneuver.location)
+                        distanceToNextStep = nextDistance
                     )
                 }
 
                 speakInstruction(nextStep)
-                updateServiceNotification(nextStep, distanceToManeuver)
+                updateServiceNotification(nextStep, nextDistance)
             } else {
                 _navigationState.update {
                     it.copy(distanceToNextStep = distanceToManeuver)
                 }
 
-                // Voransage bei 200m, 100m, 50m
+                // Voransage bei 200m, 100m, 50m (basierend auf roher Distanz für Timing)
                 when {
-                    distanceToManeuver in 190.0..210.0 -> speakDistance(200, currentStep)
-                    distanceToManeuver in 90.0..110.0 -> speakDistance(100, currentStep)
-                    distanceToManeuver in 45.0..55.0 -> speakDistance(50, currentStep)
+                    rawDistanceToManeuver in 190.0..210.0 -> speakDistance(200, currentStep)
+                    rawDistanceToManeuver in 90.0..110.0 -> speakDistance(100, currentStep)
+                    rawDistanceToManeuver in 45.0..55.0 -> speakDistance(50, currentStep)
                 }
             }
 
@@ -641,8 +651,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _isRecalculatingRoute.value = true
                 CrashLogger.log("MainViewModel: Recalculating route to destination...")
 
-                // Matcher zurücksetzen für neue Route
+                // Matcher und Distance Smoother zurücksetzen für neue Route
                 mapMatcher.reset()
+                distanceSmoother.reset()
 
                 val route = routeRepository.getRoute(currentLocation, destination)
                 if (route != null) {
