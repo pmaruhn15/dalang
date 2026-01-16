@@ -29,6 +29,29 @@ data class NavigationState(
 
     val nextStep: RouteStep?
         get() = route?.steps?.getOrNull(currentStepIndex + 1)
+
+    /**
+     * Findet das nächste relevante Manöver (überspringt "Geradeaus" etc.)
+     * Gibt den Index des Steps zurück oder null wenn keins gefunden.
+     */
+    fun findNextRelevantStepIndex(): Int? {
+        val steps = route?.steps ?: return null
+        for (i in currentStepIndex until steps.size) {
+            if (steps[i].isRelevantManeuver()) {
+                return i
+            }
+        }
+        return null
+    }
+
+    /**
+     * Gibt das nächste relevante Manöver zurück (überspringt "Geradeaus" etc.)
+     */
+    val nextRelevantStep: RouteStep?
+        get() {
+            val index = findNextRelevantStepIndex() ?: return null
+            return route?.steps?.getOrNull(index)
+        }
 }
 
 sealed class NavigationEvent {
@@ -36,6 +59,24 @@ sealed class NavigationEvent {
     data class StepChanged(val step: RouteStep) : NavigationEvent()
     object Recalculating : NavigationEvent()
     object Arrived : NavigationEvent()
+}
+
+/**
+ * Prüft ob dieser Schritt ein relevantes Manöver ist, das angesagt werden soll.
+ * "Geradeaus fahren" und ähnliche werden übersprungen.
+ */
+fun RouteStep.isRelevantManeuver(): Boolean {
+    return when (maneuver.type) {
+        // Relevante Manöver (werden angesagt)
+        "turn", "roundabout", "rotary", "exit roundabout", "exit rotary",
+        "fork", "merge", "on ramp", "off ramp", "arrive", "depart" -> true
+
+        // Nicht relevante Manöver (werden übersprungen)
+        "continue", "new name", "notification" -> false
+
+        // Unbekannte Typen: nur ansagen wenn sie eine Richtung haben
+        else -> maneuver.modifier != null && maneuver.modifier != "straight"
+    }
 }
 
 fun RouteStep.toGermanInstruction(): String {

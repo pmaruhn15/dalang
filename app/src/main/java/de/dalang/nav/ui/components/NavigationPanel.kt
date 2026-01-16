@@ -4,7 +4,9 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -24,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.dalang.nav.R
 import de.dalang.nav.navigation.*
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.roundToInt
@@ -87,137 +90,171 @@ private fun ActiveNavigationContent(
 ) {
     val currentStep = state.currentStep
 
-    // Lane-Visualisierung + Distanz + POI-Buttons in einer Zeile
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Lane-Anzeige wenn verfügbar, sonst Richtungspfeil
-        if (currentStep?.laneInfo != null && currentStep.laneInfo.lanes.isNotEmpty()) {
-            LaneGuidancePanel(
-                laneInfo = currentStep.laneInfo,
-                modifier = Modifier.weight(1f)
-            )
-        } else {
-            // Fallback: Richtungspfeil
-            Image(
-                painter = painterResource(id = getTurnIconRes(currentStep)),
-                contentDescription = "Richtung",
-                modifier = Modifier.size(64.dp),
-                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
-            )
+    // Panel ausgeklappt State - standardmäßig eingeklappt
+    var isExpanded by remember { mutableStateOf(false) }
+
+    // Auto-Hide nach 5 Sekunden
+    LaunchedEffect(isExpanded) {
+        if (isExpanded) {
+            delay(5000L)
+            isExpanded = false
         }
+    }
 
-        Spacer(modifier = Modifier.width(12.dp))
-
-        // Distanz
-        Text(
-            text = state.distanceToNextStep.formatDistance(),
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        // POI-Buttons rechts in der gleichen Zeile
-        val buttonBg = MaterialTheme.colorScheme.onSurface
-        val buttonFg = MaterialTheme.colorScheme.surface
-
-        // McDonald's Button
-        IconButton(
-            onClick = onMcDonaldsClick,
-            enabled = !isMcDonaldsLoading,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(buttonBg)
+    // Klickbarer Bereich für Expand/Collapse
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            ) {
+                isExpanded = !isExpanded
+            }
+    ) {
+        // Lane-Visualisierung + Distanz (immer sichtbar)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isMcDonaldsLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    color = buttonFg,
-                    strokeWidth = 2.dp
+            // Lane-Anzeige wenn verfügbar, sonst Richtungspfeil
+            if (currentStep?.laneInfo != null && currentStep.laneInfo.lanes.isNotEmpty()) {
+                LaneGuidancePanel(
+                    laneInfo = currentStep.laneInfo,
+                    modifier = Modifier.weight(1f)
                 )
             } else {
+                // Fallback: Richtungspfeil
                 Image(
-                    painter = painterResource(id = R.drawable.ic_mcdonalds),
-                    contentDescription = "McDonald's",
-                    modifier = Modifier.size(24.dp),
-                    colorFilter = ColorFilter.tint(buttonFg)
+                    painter = painterResource(id = getTurnIconRes(currentStep)),
+                    contentDescription = "Richtung",
+                    modifier = Modifier.size(64.dp),
+                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Distanz
+            Text(
+                text = state.distanceToNextStep.formatDistance(),
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Verbleibende Zeit (kompakt, rechts)
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = state.totalTimeRemaining.formatDuration(),
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = state.totalDistanceRemaining.formatDistance(),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Tankstelle Button
-        IconButton(
-            onClick = onGasStationClick,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(buttonBg)
+        // Ausklappbarer Bereich mit Buttons
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.ic_gas_station),
-                contentDescription = "Tankstelle",
-                modifier = Modifier.size(24.dp),
-                colorFilter = ColorFilter.tint(buttonFg)
-            )
+            Column {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // POI-Buttons Zeile
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    val buttonBg = MaterialTheme.colorScheme.onSurface
+                    val buttonFg = MaterialTheme.colorScheme.surface
+
+                    // McDonald's Button
+                    Button(
+                        onClick = {
+                            onMcDonaldsClick()
+                            isExpanded = false
+                        },
+                        enabled = !isMcDonaldsLoading,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = buttonBg,
+                            contentColor = buttonFg
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (isMcDonaldsLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = buttonFg,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_mcdonalds),
+                                contentDescription = "McDonald's",
+                                modifier = Modifier.size(24.dp),
+                                colorFilter = ColorFilter.tint(buttonFg)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("McDonald's")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    // Tankstelle Button
+                    Button(
+                        onClick = {
+                            onGasStationClick()
+                            isExpanded = false
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = buttonBg,
+                            contentColor = buttonFg
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_gas_station),
+                            contentDescription = "Tankstelle",
+                            modifier = Modifier.size(24.dp),
+                            colorFilter = ColorFilter.tint(buttonFg)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Tankstelle")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Stop-Button
+                Button(
+                    onClick = onStop,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Navigation beenden",
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+            }
         }
-    }
-
-    Spacer(modifier = Modifier.height(16.dp))
-
-    // Verbleibende Route
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column {
-            Text(
-                text = state.totalDistanceRemaining.formatDistance(),
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "Verbleibend",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = state.totalTimeRemaining.formatDuration(),
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "Ankunft",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-
-    Spacer(modifier = Modifier.height(16.dp))
-
-    // Stop-Button - Farben passen sich an Theme an
-    Button(
-        onClick = onStop,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.onSurface,
-            contentColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(
-            text = "Navigation beenden",
-            modifier = Modifier.padding(vertical = 4.dp)
-        )
     }
 }
 

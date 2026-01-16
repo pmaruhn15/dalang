@@ -533,20 +533,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Distanz zum nächsten Manöver (roh)
+            // Distanz zum aktuellen Manöver (roh)
             val rawDistanceToManeuver = location.distanceTo(currentStep.maneuver.location)
 
             // Distanz glätten um Sprünge zu vermeiden
             val distanceToManeuver = distanceSmoother.process(rawDistanceToManeuver)
 
             // Prüfen ob wir den nächsten Schritt erreicht haben
-            if (rawDistanceToManeuver < 30 && state.currentStepIndex < route.steps.size - 1) {
+            // Bedingungen:
+            // 1. Wir sind nah am Manöver-Punkt (< 30m)
+            // 2. Es gibt einen nächsten Schritt
+            // 3. WICHTIG: Wir sind näher am nächsten Manöver als am aktuellen (= wir haben passiert)
+            val shouldAdvanceStep = if (state.currentStepIndex < route.steps.size - 1) {
+                val nextStep = route.steps[state.currentStepIndex + 1]
+                val distanceToNext = location.distanceTo(nextStep.maneuver.location)
+
+                // Manöver abgeschlossen wenn:
+                // - Sehr nah am aktuellen Manöver (< 20m) ODER
+                // - Näher am nächsten Manöver als am aktuellen (= passiert)
+                rawDistanceToManeuver < 20 || distanceToNext < rawDistanceToManeuver
+            } else {
+                false
+            }
+
+            if (shouldAdvanceStep) {
                 val nextIndex = state.currentStepIndex + 1
                 val nextStep = route.steps[nextIndex]
 
                 // Distance Smoother für neuen Schritt zurücksetzen
                 val nextDistance = location.distanceTo(nextStep.maneuver.location)
                 distanceSmoother.setInitialDistance(nextDistance)
+
+                CrashLogger.log("MainViewModel: Advancing to step $nextIndex (${nextStep.maneuver.type})")
 
                 _navigationState.update {
                     it.copy(
@@ -718,6 +736,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun speakInstruction(step: RouteStep) {
         try {
+            // Nur relevante Manöver ansagen (keine "Geradeaus fahren" etc.)
+            if (!step.isRelevantManeuver()) {
+                CrashLogger.log("MainViewModel: Skipping non-relevant instruction: ${step.maneuver.type}")
+                return
+            }
             val instruction = step.toGermanInstruction()
             navigationService?.speak(instruction)
         } catch (e: Exception) {

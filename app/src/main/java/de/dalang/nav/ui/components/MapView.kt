@@ -1,11 +1,13 @@
 package de.dalang.nav.ui.components
 
+import android.animation.ValueAnimator
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Typeface
+import android.view.animation.LinearInterpolator
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -344,21 +346,35 @@ fun MapViewComposable(
         }
     }
 
-    // Ego-Marker Rotation: Ab 5 km/h GPS-Bearing nutzen, sonst Kompass-Heading
-    // 5 km/h = 1.39 m/s
-    val effectiveRotation = if (speed > 1.39f) bearing else heading
+    // Ego-Marker Animation State
+    var animatedLocation by remember { mutableStateOf<LatLng?>(null) }
+    var animatedRotation by remember { mutableFloatStateOf(0f) }
+    var lastKnownBearing by remember { mutableFloatStateOf(0f) }
+    var markerAnimator by remember { mutableStateOf<ValueAnimator?>(null) }
+    var isMarkerSetup by remember { mutableStateOf(false) }
 
-    // Standort-Marker zeichnen (Pfeil mit Rotation) - Farbe passt sich an Theme an
+    // Letzte bekannte Bearing speichern wenn Geschwindigkeit > 5 km/h
+    // So bleibt der Pfeil in Fahrtrichtung auch beim Stillstand
+    LaunchedEffect(speed, bearing) {
+        if (speed > 1.39f) {  // 5 km/h = 1.39 m/s
+            lastKnownBearing = bearing
+        }
+    }
+
+    // Ego-Marker Rotation: Ab 5 km/h GPS-Bearing nutzen, sonst letzte bekannte Bearing
+    // Das verhindert dass der Pfeil bei Stillstand (Ampel) wild dreht
+    val effectiveRotation = if (speed > 1.39f) bearing else lastKnownBearing
+
+    // Standort-Marker Setup (nur einmal beim Theme-Wechsel)
     val positionArrowColor = if (isDarkTheme) Color.WHITE else Color.BLACK
-    LaunchedEffect(currentLocation, effectiveRotation, isMapReady, styleVersion, isDarkTheme) {
+    LaunchedEffect(isMapReady, styleVersion, isDarkTheme) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
-        val location = currentLocation ?: return@LaunchedEffect
 
         try {
             map.getStyle { style ->
                 try {
-                    // Vorherigen Marker entfernen (immer, da Farbe sich ändern kann)
+                    // Vorherigen Marker entfernen
                     try {
                         style.removeLayer("location-layer")
                         style.removeSource("location-source")
@@ -382,13 +398,14 @@ fun MapViewComposable(
                         style.addImage("position-arrow", bitmap)
                     }
 
-                    // Standort als GeoJSON Point
+                    // Initiale Position (wird durch Animation aktualisiert)
+                    val initialLocation = currentLocation ?: LatLng(51.1657, 10.4515)
                     val geoJson = """
                         {
                             "type": "Feature",
                             "geometry": {
                                 "type": "Point",
-                                "coordinates": [${location.lng}, ${location.lat}]
+                                "coordinates": [${initialLocation.lng}, ${initialLocation.lat}]
                             }
                         }
                     """.trimIndent()
@@ -396,7 +413,6 @@ fun MapViewComposable(
                     val source = GeoJsonSource("location-source", geoJson)
                     style.addSource(source)
 
-                    // Pfeil als Symbol mit Rotation (GPS-Bearing ab 5 km/h, sonst Kompass)
                     val locationLayer = SymbolLayer("location-layer", "location-source").apply {
                         setProperties(
                             PropertyFactory.iconImage("position-arrow"),
@@ -409,12 +425,89 @@ fun MapViewComposable(
                     }
                     style.addLayer(locationLayer)
 
+                    isMarkerSetup = true
+                    animatedLocation = initialLocation
+                    animatedRotation = effectiveRotation
+
                 } catch (e: Exception) {
-                    CrashLogger.logError("MapView", "Location marker failed", e)
+                    CrashLogger.logError("MapView", "Location marker setup failed", e)
                 }
             }
         } catch (e: Exception) {
-            CrashLogger.logError("MapView", "getStyle failed for location", e)
+            CrashLogger.logError("MapView", "getStyle failed for location setup", e)
+        }
+    }
+
+    // Flüssige Animation bei neuer GPS-Position
+    LaunchedEffect(currentLocation, effectiveRotation) {
+        if (!isMapReady || !isMarkerSetup) return@LaunchedEffect
+        val map = mapLibreMap ?: return@LaunchedEffect
+        val newLocation = currentLocation ?: return@LaunchedEffect
+        val oldLocation = animatedLocation ?: newLocation
+
+        // Laufende Animation abbrechen
+        markerAnimator?.cancel()
+
+        // Rotation interpolieren (kürzesten Weg)
+        val startRotation = animatedRotation
+        val endRotation = effectiveRotation
+        var rotationDiff = endRotation - startRotation
+        if (rotationDiff > 180) rotationDiff -= 360
+        else if (rotationDiff < -180) rotationDiff += 360
+
+        // Neue Animation starten (1 Sekunde, passend zum GPS-Update-Intervall)
+        markerAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 1000L
+            interpolator = LinearInterpolator()
+
+            addUpdateListener { animator ->
+                val fraction = animator.animatedValue as Float
+
+                // Position linear interpolieren
+                val interpLat = oldLocation.lat + (newLocation.lat - oldLocation.lat) * fraction
+                val interpLng = oldLocation.lng + (newLocation.lng - oldLocation.lng) * fraction
+
+                // Rotation interpolieren
+                var interpRotation = startRotation + rotationDiff * fraction
+                while (interpRotation < 0) interpRotation += 360
+                while (interpRotation >= 360) interpRotation -= 360
+
+                animatedLocation = LatLng(interpLat, interpLng)
+                animatedRotation = interpRotation
+
+                // GeoJSON Source aktualisieren für flüssige Bewegung
+                try {
+                    map.getStyle { style ->
+                        val source = style.getSourceAs<GeoJsonSource>("location-source")
+                        source?.setGeoJson("""
+                            {
+                                "type": "Feature",
+                                "geometry": {
+                                    "type": "Point",
+                                    "coordinates": [$interpLng, $interpLat]
+                                }
+                            }
+                        """.trimIndent())
+
+                        // Rotation des Layers aktualisieren
+                        style.getLayer("location-layer")?.setProperties(
+                            PropertyFactory.iconRotate(interpRotation)
+                        )
+                    }
+                } catch (e: Exception) {
+                    // Ignore animation frame errors
+                }
+            }
+
+            start()
+        }
+    }
+
+    // Cleanup bei Dispose
+    DisposableEffect(Unit) {
+        onDispose {
+            markerAnimator?.cancel()
+            markerAnimator = null
         }
     }
 
