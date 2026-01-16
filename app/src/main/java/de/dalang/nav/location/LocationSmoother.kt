@@ -3,6 +3,7 @@ package de.dalang.nav.location
 import android.location.Location
 import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.util.CrashLogger
+import de.dalang.nav.util.GeoUtils
 import kotlin.math.pow
 import kotlin.math.sqrt
 
@@ -64,7 +65,7 @@ class LocationSmoother {
         if (lastLoc != null && timestamp > lastTimestamp) {
             val timeDelta = (timestamp - lastTimestamp) / 1000.0
             if (timeDelta > 0 && timeDelta < 30) {  // Max 30s zwischen Updates
-                val distance = calculateDistance(lastLoc.lat, lastLoc.lng, measLat, measLng)
+                val distance = GeoUtils.calculateDistanceMeters(lastLoc.lat, lastLoc.lng, measLat, measLng)
                 val calculatedSpeed = distance / timeDelta
 
                 // Wenn berechnete Geschwindigkeit unrealistisch hoch (Teleport)
@@ -93,7 +94,7 @@ class LocationSmoother {
             vLng = 0.0
 
             // Initiale Unsicherheit basierend auf GPS-Accuracy
-            val accDegrees = metersToDegreesApprox(accuracy.toDouble(), measLat)
+            val accDegrees = GeoUtils.metersToDegreesApprox(accuracy.toDouble(), measLat)
             pLat = accDegrees.pow(2)
             pLng = accDegrees.pow(2)
             pVLat = 0.001  // Initiale Geschwindigkeits-Unsicherheit
@@ -124,7 +125,7 @@ class LocationSmoother {
 
             // === UPDATE STEP ===
             // Messrauschen in Grad umrechnen
-            val measNoise = metersToDegreesApprox(accuracy.toDouble(), measLat).pow(2)
+            val measNoise = GeoUtils.metersToDegreesApprox(accuracy.toDouble(), measLat).pow(2)
 
             // Kalman Gain für Position
             val kLat = pLat / (pLat + measNoise)
@@ -145,7 +146,7 @@ class LocationSmoother {
             vLng = predVLng + kVel * innovLng / dt
 
             // Geschwindigkeit begrenzen (max ~150 km/h in jede Richtung)
-            val maxVelDegrees = metersToDegreesApprox(42.0, lat)  // 42 m/s ≈ 150 km/h
+            val maxVelDegrees = GeoUtils.metersToDegreesApprox(42.0, lat)  // 42 m/s ≈ 150 km/h
             vLat = vLat.coerceIn(-maxVelDegrees, maxVelDegrees)
             vLng = vLng.coerceIn(-maxVelDegrees, maxVelDegrees)
 
@@ -195,8 +196,8 @@ class LocationSmoother {
         if (pLat < 0) return 0.0
 
         // Geschwindigkeit von Grad/s in m/s umrechnen
-        val vLatMs = degreesToMetersApprox(vLat, lat)
-        val vLngMs = degreesToMetersApprox(vLng, lat) * kotlin.math.cos(Math.toRadians(lat))
+        val vLatMs = GeoUtils.degreesToMetersApprox(vLat, lat)
+        val vLngMs = GeoUtils.degreesToMetersApprox(vLng, lat) * kotlin.math.cos(Math.toRadians(lat))
 
         return sqrt(vLatMs.pow(2) + vLngMs.pow(2))
     }
@@ -222,40 +223,5 @@ class LocationSmoother {
      */
     fun getLastSmoothedLocation(): LatLng? {
         return if (pLat < 0) null else LatLng(lat, lng)
-    }
-
-    /**
-     * Konvertiert Meter in Grad (approximativ)
-     */
-    private fun metersToDegreesApprox(meters: Double, atLatitude: Double): Double {
-        // 1 Grad ≈ 111km am Äquator, weniger an den Polen
-        val metersPerDegree = 111000.0 * kotlin.math.cos(Math.toRadians(atLatitude))
-        return if (metersPerDegree > 0) meters / metersPerDegree else meters / 111000.0
-    }
-
-    /**
-     * Konvertiert Grad in Meter (approximativ)
-     */
-    private fun degreesToMetersApprox(degrees: Double, atLatitude: Double): Double {
-        val metersPerDegree = 111000.0 * kotlin.math.cos(Math.toRadians(atLatitude))
-        return degrees * metersPerDegree
-    }
-
-    /**
-     * Berechnet Distanz zwischen zwei Koordinaten in Metern (Haversine)
-     */
-    private fun calculateDistance(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
-        val earthRadius = 6371000.0  // Meter
-
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLng = Math.toRadians(lng2 - lng1)
-
-        val a = kotlin.math.sin(dLat / 2).pow(2) +
-                kotlin.math.cos(Math.toRadians(lat1)) *
-                kotlin.math.cos(Math.toRadians(lat2)) *
-                kotlin.math.sin(dLng / 2).pow(2)
-
-        val c = 2 * kotlin.math.atan2(sqrt(a), sqrt(1 - a))
-        return earthRadius * c
     }
 }

@@ -2,6 +2,7 @@ package de.dalang.nav.navigation
 
 import de.dalang.nav.config.HereConfig
 import de.dalang.nav.util.CrashLogger
+import de.dalang.nav.util.GeoUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -108,7 +109,7 @@ class PoiRepository {
                             val distanceToRoute = minDistanceToRoute(poi.lat, poi.lng, routeGeometry)
                             if (distanceToRoute <= maxDistanceFromRouteKm) {
                                 // Entfernung vom aktuellen Standort berechnen
-                                val distanceFromCurrent = calculateDistance(
+                                val distanceFromCurrent = GeoUtils.calculateDistanceKilometers(
                                     currentLocation.lat, currentLocation.lng,
                                     poi.lat, poi.lng
                                 )
@@ -189,7 +190,7 @@ class PoiRepository {
         for (i in 1 until geometry.size) {
             val prev = geometry[i - 1]
             val curr = geometry[i]
-            val segmentDistance = calculateDistance(prev.lat, prev.lng, curr.lat, curr.lng)
+            val segmentDistance = GeoUtils.calculateDistanceKilometers(prev.lat, prev.lng, curr.lat, curr.lng)
             accumulatedDistance += segmentDistance
 
             if (accumulatedDistance >= sampleDistanceKm) {
@@ -214,7 +215,7 @@ class PoiRepository {
 
         var minDist = Double.MAX_VALUE
         for (point in routeGeometry) {
-            val dist = calculateDistance(lat, lng, point.lat, point.lng)
+            val dist = GeoUtils.calculateDistanceKilometers(lat, lng, point.lat, point.lng)
             if (dist < minDist) {
                 minDist = dist
             }
@@ -351,7 +352,7 @@ class PoiRepository {
                 }.ifEmpty { null }
             } else null
 
-            val distanceFromCurrent = calculateDistance(currentLocation.lat, currentLocation.lng, lat, lng)
+            val distanceFromCurrent = GeoUtils.calculateDistanceKilometers(currentLocation.lat, currentLocation.lng, lat, lng)
             val arrivalMinutes = estimateArrivalTime(distanceFromCurrent)
 
             // Umweg berechnen wenn Route vorhanden
@@ -563,7 +564,7 @@ class PoiRepository {
                     }.ifEmpty { null }
                 } else null
 
-                val distance = calculateDistance(center.lat, center.lng, lat, lng)
+                val distance = GeoUtils.calculateDistanceKilometers(center.lat, center.lng, lat, lng)
                 val arrivalMinutes = estimateArrivalTime(distance)
 
                 // Kraftstoffpreise - v3 nutzt "prices" Array mit fuelType ID
@@ -668,7 +669,7 @@ class PoiRepository {
                 val extratags = item.optJSONObject("extratags")
                 val openingHours = extratags?.optString("opening_hours", null)?.takeIf { it.isNotEmpty() }
 
-                val distance = calculateDistance(center.lat, center.lng, lat, lng)
+                val distance = GeoUtils.calculateDistanceKilometers(center.lat, center.lng, lat, lng)
                 val arrivalMinutes = estimateArrivalTime(distance)
 
                 results.add(
@@ -728,7 +729,7 @@ class PoiRepository {
                     if (locationKey !in seenLocations) {
                         val distanceToRoute = minDistanceToRoute(poi.lat, poi.lng, routeGeometry)
                         if (distanceToRoute <= maxDistanceFromRouteKm) {
-                            val distanceFromCurrent = calculateDistance(
+                            val distanceFromCurrent = GeoUtils.calculateDistanceKilometers(
                                 currentLocation.lat, currentLocation.lng,
                                 poi.lat, poi.lng
                             )
@@ -752,24 +753,6 @@ class PoiRepository {
             CrashLogger.logError("PoiRepository", "Nominatim gas station search failed", e)
             emptyList()
         }
-    }
-
-    /**
-     * Berechnet die Entfernung zwischen zwei Punkten in km (Haversine)
-     */
-    private fun calculateDistance(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
-        val r = 6371.0 // Erdradius in km
-
-        val lat1Rad = Math.toRadians(lat1)
-        val lat2Rad = Math.toRadians(lat2)
-        val deltaLat = Math.toRadians(lat2 - lat1)
-        val deltaLng = Math.toRadians(lng2 - lng1)
-
-        val a = sin(deltaLat / 2).pow(2) +
-                cos(lat1Rad) * cos(lat2Rad) * sin(deltaLng / 2).pow(2)
-        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
-
-        return r * c
     }
 
     /**

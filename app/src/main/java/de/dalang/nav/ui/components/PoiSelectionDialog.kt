@@ -21,6 +21,7 @@ import de.dalang.nav.navigation.FuelPrices
 import de.dalang.nav.navigation.Poi
 import de.dalang.nav.navigation.PoiType
 import de.dalang.nav.settings.FuelType
+import de.dalang.nav.util.DistanceFormatter
 import de.dalang.nav.util.OpeningHoursParser
 
 @Composable
@@ -234,7 +235,7 @@ private fun PoiListItem(
                 horizontalAlignment = Alignment.End
             ) {
                 Text(
-                    text = formatDistance(poi.distanceKm),
+                    text = DistanceFormatter.formatKilometersSimple(poi.distanceKm),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -320,10 +321,3 @@ private fun FuelPriceChip(label: String, price: Double, isCheapest: Boolean = fa
     }
 }
 
-private fun formatDistance(distanceKm: Double): String {
-    return if (distanceKm < 1.0) {
-        "${(distanceKm * 1000).toInt()} m"
-    } else {
-        String.format("%.1f km", distanceKm)
-    }
-}

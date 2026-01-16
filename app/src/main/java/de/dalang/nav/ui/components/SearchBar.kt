@@ -28,6 +28,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.dalang.nav.search.SearchResult
+import de.dalang.nav.util.DistanceFormatter
 
 @Composable
 fun SearchBar(
@@ -233,18 +234,10 @@ private fun SearchResultItem(
         // Distanz anzeigen wenn vorhanden
         if (result.distance > 0) {
             Text(
-                text = formatDistance(result.distance),
+                text = DistanceFormatter.formatKilometersSimple(result.distance),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-    }
-}
-
-private fun formatDistance(km: Double): String {
-    return when {
-        km < 1 -> "${(km * 1000).toInt()} m"
-        km < 10 -> String.format("%.1f km", km)
-        else -> "${km.toInt()} km"
     }
 }

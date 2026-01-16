@@ -1,6 +1,7 @@
 package de.dalang.nav.search
 
 import de.dalang.nav.util.CrashLogger
+import de.dalang.nav.util.GeoUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -125,9 +126,9 @@ class SearchRepository {
 
                 val displayName = displayParts.joinToString(", ")
 
-                // Distanz berechnen
+                // Distanz berechnen (in km)
                 val distance = if (currentLat != null && currentLon != null) {
-                    haversineDistance(currentLat, currentLon, lat, lon)
+                    GeoUtils.calculateDistanceKilometers(currentLat, currentLon, lat, lon)
                 } else {
                     0.0
                 }
@@ -155,17 +156,6 @@ class SearchRepository {
         } else {
             results
         }
-    }
-
-    private fun haversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val r = 6371.0
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLon = Math.toRadians(lon2 - lon1)
-        val a = sin(dLat / 2).pow(2) +
-                cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
-                sin(dLon / 2).pow(2)
-        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
-        return r * c
     }
 
     companion object {
