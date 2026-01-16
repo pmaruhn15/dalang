@@ -145,16 +145,27 @@ private fun ActiveNavigationContent(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Verbleibende Zeit (kompakt, rechts)
+            // Ankunftszeit prominent + Restinfos darunter
             Column(horizontalAlignment = Alignment.End) {
+                // ETA berechnen
+                val eta = remember(state.totalTimeRemaining) {
+                    Calendar.getInstance().apply {
+                        add(Calendar.SECOND, state.totalTimeRemaining.toInt())
+                    }
+                }
+                val etaFormat = remember { SimpleDateFormat("HH:mm", Locale.GERMANY) }
+
+                // Ankunftszeit GROSS
                 Text(
-                    text = state.totalTimeRemaining.formatDuration(),
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 14.sp,
+                    text = etaFormat.format(eta.time),
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
+
+                // Restdistanz und -zeit klein darunter
                 Text(
-                    text = state.totalDistanceRemaining.formatDistance(),
+                    text = "${state.totalDistanceRemaining.formatDistance()} • ${state.totalTimeRemaining.formatDuration()}",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
