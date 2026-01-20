@@ -15,7 +15,7 @@ data class LaneInfo(
 )
 
 data class Lane(
-    val direction: String,  // "straight", "left", "right", "slightLeft", etc.
+    val directions: List<String>,  // Mehrere Richtungen möglich: ["straight", "right"]
     val isRecommended: Boolean
 )
 
@@ -506,26 +506,28 @@ class RouteRepository {
                     val laneObj = lanesArray.getJSONObject(j)
                     val isValid = laneObj.optBoolean("valid", false)
 
-                    // indications ist ein Array von Richtungen pro Spur
+                    // indications ist ein Array von ALLEN Richtungen pro Spur
+                    // z.B. ["straight", "right"] für eine Spur die geradeaus ODER rechts führt
                     val indications = laneObj.optJSONArray("indications")
-                    val direction = if (indications != null && indications.length() > 0) {
-                        // Erste indication als Hauptrichtung, OSRM Format zu unserem konvertieren
-                        mapOsrmLaneDirection(indications.getString(0))
+                    val directions = if (indications != null && indications.length() > 0) {
+                        (0 until indications.length()).map { idx ->
+                            mapOsrmLaneDirection(indications.getString(idx))
+                        }
                     } else {
-                        "straight"
+                        listOf("straight")
                     }
 
                     if (isValid && recommendedIndex == -1) {
                         recommendedIndex = j
                     }
 
-                    lanes.add(Lane(direction = direction, isRecommended = isValid))
+                    lanes.add(Lane(directions = directions, isRecommended = isValid))
                 }
 
                 if (lanes.isNotEmpty()) {
-                    // Debug: Erste paar Lane-Infos loggen
+                    // Debug: Lane-Infos loggen mit allen Richtungen
                     if (lanes.size >= 2) {
-                        CrashLogger.log("RouteRepository: OSRM Lanes: ${lanes.map { "${it.direction}${if(it.isRecommended) "*" else ""}" }}")
+                        CrashLogger.log("RouteRepository: OSRM Lanes: ${lanes.map { "${it.directions.joinToString("+")}${if(it.isRecommended) "*" else ""}" }}")
                     }
                     return LaneInfo(lanes = lanes, recommendedLaneIndex = recommendedIndex)
                 }

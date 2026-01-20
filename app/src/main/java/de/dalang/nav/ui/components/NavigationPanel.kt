@@ -410,7 +410,7 @@ private fun LaneGuidancePanel(
     }
 }
 
-// Google-Style Lane Indicator: Nur Pfeil, empfohlene größer und dicker
+// Google-Style Lane Indicator: Pfeile pro Spur, mehrere Richtungen möglich
 @Composable
 private fun LaneIndicator(
     lane: Lane,
@@ -418,22 +418,42 @@ private fun LaneIndicator(
 ) {
     // Empfohlene Spur: größer, voll sichtbar
     // Andere Spuren: kleiner, transparent
-    val iconSize = if (lane.isRecommended) 44.dp else 32.dp
+    val baseIconSize = if (lane.isRecommended) 40.dp else 28.dp
     val iconAlpha = if (lane.isRecommended) 1f else 0.4f
     val iconColor = MaterialTheme.colorScheme.onSurface
 
     Box(
         modifier = modifier
-            .width(44.dp)
+            .width(48.dp)
             .height(56.dp),
         contentAlignment = Alignment.Center
     ) {
-        Image(
-            painter = painterResource(id = getLaneIconRes(lane.direction)),
-            contentDescription = lane.direction,
-            modifier = Modifier.size(iconSize),
-            colorFilter = ColorFilter.tint(iconColor.copy(alpha = iconAlpha))
-        )
+        // Bei mehreren Richtungen: Pfeile nebeneinander/übereinander zeigen
+        if (lane.directions.size == 1) {
+            // Einzelne Richtung - einfach zentriert
+            Image(
+                painter = painterResource(id = getLaneIconRes(lane.directions.first())),
+                contentDescription = lane.directions.first(),
+                modifier = Modifier.size(baseIconSize),
+                colorFilter = ColorFilter.tint(iconColor.copy(alpha = iconAlpha))
+            )
+        } else {
+            // Mehrere Richtungen - kompakt nebeneinander
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val smallIconSize = if (lane.isRecommended) 24.dp else 18.dp
+                lane.directions.take(3).forEach { direction ->  // Max 3 Richtungen anzeigen
+                    Image(
+                        painter = painterResource(id = getLaneIconRes(direction)),
+                        contentDescription = direction,
+                        modifier = Modifier.size(smallIconSize),
+                        colorFilter = ColorFilter.tint(iconColor.copy(alpha = iconAlpha))
+                    )
+                }
+            }
+        }
     }
 }
 
