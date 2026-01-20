@@ -37,11 +37,11 @@ class LocationSmoother {
     private var lastTimestamp: Long = 0
     private var lastGpsSpeed: Float = 0f
 
-    // Konfiguration
+    // Konfiguration - weniger aggressive Filterung für bessere Reaktion
     private val minAccuracyMeters = 50f  // Positionen mit schlechterer Accuracy werden ignoriert
     private val maxSpeedMs = 70f  // ~250 km/h - Ausreißer über dieser Geschwindigkeit werden gefiltert
-    private val processNoisePos = 0.00001  // Prozessrauschen Position (Grad²/s)
-    private val processNoiseVel = 0.0001   // Prozessrauschen Geschwindigkeit (Grad²/s³)
+    private val processNoisePos = 0.0001  // Prozessrauschen Position (10x höher für schnellere Reaktion)
+    private val processNoiseVel = 0.001   // Prozessrauschen Geschwindigkeit (10x höher)
 
     /**
      * Verarbeitet eine neue GPS-Position und gibt die geglättete Position zurück.
@@ -74,8 +74,9 @@ class LocationSmoother {
                     return null
                 }
 
-                // Plausibilitätsprüfung: Bei niedrigem GPS-Speed aber hohem berechneten Speed
-                if (gpsSpeed < 5f && calculatedSpeed > 15f) {
+                // Plausibilitätsprüfung: Bei niedrigem GPS-Speed aber sehr hohem berechneten Speed
+                // Weniger aggressiv: GPS meldet oft 0 auch bei langsamer Fahrt
+                if (gpsSpeed < 2f && calculatedSpeed > 25f) {
                     CrashLogger.log("LocationSmoother: Rejected jump (GPS: ${(gpsSpeed * 3.6).toInt()}, calc: ${(calculatedSpeed * 3.6).toInt()} km/h)")
                     return null
                 }

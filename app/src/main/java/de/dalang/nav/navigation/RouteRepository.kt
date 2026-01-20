@@ -96,12 +96,13 @@ class RouteRepository {
         try {
             val apiKey = HereConfig.getApiKey()
 
+            // HERE Routing v8 API - Lane guidance via turnByTurnActions
             val url = "${HereConfig.ROUTING_BASE_URL}/routes" +
                     "?origin=${from.lat},${from.lng}" +
                     "&destination=${to.lat},${to.lng}" +
                     "&transportMode=car" +
-                    "&return=polyline,actions,instructions,summary,typicalDuration" +
-                    "&spans=names,length,duration,speedLimit,laneAssistance" +
+                    "&return=polyline,actions,instructions,summary,typicalDuration,turnByTurnActions" +
+                    "&spans=names,length,duration,speedLimit" +
                     "&apiKey=$apiKey"
 
             val request = Request.Builder()
@@ -113,7 +114,11 @@ class RouteRepository {
             val body = response.body?.string()
 
             if (!response.isSuccessful || body == null) {
+                // Log error details for debugging
                 CrashLogger.logError("RouteRepository", "HERE API error: ${response.code} - ${response.message}")
+                if (body != null && body.length < 500) {
+                    CrashLogger.log("RouteRepository: Error response: $body")
+                }
                 return null
             }
 
