@@ -346,6 +346,9 @@ class RouteRepository {
                         stepGeometry.add(LatLng(coord.getDouble(1), coord.getDouble(0)))
                     }
 
+                    // Lane-Info aus intersections extrahieren (OSRM liefert lanes aus OSM turn:lanes Tag)
+                    val laneInfo = extractOsrmLaneInfo(step)
+
                     steps.add(
                         RouteStep(
                             instruction = step.optString("name", ""),
@@ -356,7 +359,8 @@ class RouteRepository {
                                 modifier = maneuverObj.optString("modifier", null),
                                 location = LatLng(location.getDouble(1), location.getDouble(0))
                             ),
-                            geometry = stepGeometry
+                            geometry = stepGeometry,
+                            laneInfo = laneInfo
                         )
                     )
                 }
@@ -372,6 +376,79 @@ class RouteRepository {
         } catch (e: Exception) {
             CrashLogger.logError("RouteRepository", "Parse OSRM route failed", e)
             return null
+        }
+    }
+
+    /**
+     * Extrahiert Lane-Info aus OSRM step.intersections[].lanes
+     * OSRM liefert Spurinformationen aus OSM turn:lanes Tags
+     */
+    private fun extractOsrmLaneInfo(step: JSONObject): LaneInfo? {
+        try {
+            val intersections = step.optJSONArray("intersections") ?: return null
+
+            // Erste Intersection mit lanes nehmen (normalerweise die relevante für das Manöver)
+            for (i in 0 until intersections.length()) {
+                val intersection = intersections.getJSONObject(i)
+                val lanesArray = intersection.optJSONArray("lanes") ?: continue
+
+                if (lanesArray.length() == 0) continue
+
+                val lanes = mutableListOf<Lane>()
+                var recommendedIndex = -1
+
+                for (j in 0 until lanesArray.length()) {
+                    val laneObj = lanesArray.getJSONObject(j)
+                    val isValid = laneObj.optBoolean("valid", false)
+
+                    // indications ist ein Array von Richtungen pro Spur
+                    val indications = laneObj.optJSONArray("indications")
+                    val direction = if (indications != null && indications.length() > 0) {
+                        // Erste indication als Hauptrichtung, OSRM Format zu unserem konvertieren
+                        mapOsrmLaneDirection(indications.getString(0))
+                    } else {
+                        "straight"
+                    }
+
+                    if (isValid && recommendedIndex == -1) {
+                        recommendedIndex = j
+                    }
+
+                    lanes.add(Lane(direction = direction, isRecommended = isValid))
+                }
+
+                if (lanes.isNotEmpty()) {
+                    // Debug: Erste paar Lane-Infos loggen
+                    if (lanes.size >= 2) {
+                        CrashLogger.log("RouteRepository: OSRM Lanes: ${lanes.map { "${it.direction}${if(it.isRecommended) "*" else ""}" }}")
+                    }
+                    return LaneInfo(lanes = lanes, recommendedLaneIndex = recommendedIndex)
+                }
+            }
+            return null
+        } catch (e: Exception) {
+            CrashLogger.logError("RouteRepository", "Failed to parse OSRM lanes", e)
+            return null
+        }
+    }
+
+    /**
+     * Konvertiert OSRM Lane-Richtungen zu unseren internen Namen
+     */
+    private fun mapOsrmLaneDirection(osrmDirection: String): String {
+        return when (osrmDirection) {
+            "left" -> "left"
+            "slight_left" -> "slightLeft"
+            "sharp_left" -> "sharpLeft"
+            "right" -> "right"
+            "slight_right" -> "slightRight"
+            "sharp_right" -> "sharpRight"
+            "straight" -> "straight"
+            "uturn" -> "uTurn"
+            "merge_to_left" -> "mergeLeft"
+            "merge_to_right" -> "mergeRight"
+            "none" -> "straight"  // Keine Markierung = geradeaus
+            else -> osrmDirection
         }
     }
 
