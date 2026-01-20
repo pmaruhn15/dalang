@@ -78,7 +78,8 @@ class RouteRepository {
         if (isConfigured && canMakeRequest) {
             val hereRoute = getRouteFromHere(from, to)
             if (hereRoute != null && hereRoute.geometry.isNotEmpty()) {
-                hereRoute
+                // HERE Route erfolgreich - jetzt OSRM Lane-Daten dazu holen
+                enrichRouteWithOsrmLanes(hereRoute, from, to)
             } else {
                 CrashLogger.log("RouteRepository: HERE failed, fallback to OSRM")
                 getRouteFromOsrm(from, to)
@@ -90,6 +91,110 @@ class RouteRepository {
             CrashLogger.log("RouteRepository: Using OSRM (HERE: key=$hasKey, enabled=$isEnabled, canRequest=$canMakeRequest)")
             getRouteFromOsrm(from, to)
         }
+    }
+
+    /**
+     * Reichert eine HERE-Route mit Lane-Daten von OSRM an.
+     * HERE REST API liefert keine Lane-Daten, aber OSRM hat sie aus OSM turn:lanes Tags.
+     */
+    private suspend fun enrichRouteWithOsrmLanes(hereRoute: Route, from: LatLng, to: LatLng): Route {
+        try {
+            // OSRM nur für Lane-Daten abfragen
+            val osrmLanes = getOsrmLaneData(from, to)
+            if (osrmLanes.isEmpty()) {
+                CrashLogger.log("RouteRepository: No OSRM lane data available")
+                return hereRoute
+            }
+
+            CrashLogger.log("RouteRepository: Enriching HERE route with ${osrmLanes.size} OSRM lane infos")
+
+            // Lane-Daten den HERE-Steps zuordnen basierend auf Location-Nähe
+            val enrichedSteps = hereRoute.steps.map { step ->
+                val nearestLaneInfo = findNearestLaneInfo(step.maneuver.location, osrmLanes)
+                if (nearestLaneInfo != null) {
+                    step.copy(laneInfo = nearestLaneInfo)
+                } else {
+                    step
+                }
+            }
+
+            return hereRoute.copy(steps = enrichedSteps)
+        } catch (e: Exception) {
+            CrashLogger.logError("RouteRepository", "Failed to enrich with OSRM lanes", e)
+            return hereRoute
+        }
+    }
+
+    /**
+     * Holt nur Lane-Daten von OSRM (ohne die Route selbst zu verwenden)
+     */
+    private fun getOsrmLaneData(from: LatLng, to: LatLng): List<Pair<LatLng, LaneInfo>> {
+        try {
+            val url = "$OSRM_BASE_URL/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}" +
+                    "?overview=false&geometries=geojson&steps=true"
+
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "DaLang Navigation App")
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: return emptyList()
+
+            return parseOsrmLaneData(body)
+        } catch (e: Exception) {
+            CrashLogger.logError("RouteRepository", "OSRM lane fetch failed", e)
+            return emptyList()
+        }
+    }
+
+    /**
+     * Parst nur die Lane-Daten aus OSRM Response (Location + LaneInfo Paare)
+     */
+    private fun parseOsrmLaneData(json: String): List<Pair<LatLng, LaneInfo>> {
+        val result = mutableListOf<Pair<LatLng, LaneInfo>>()
+        try {
+            val obj = JSONObject(json)
+            if (obj.getString("code") != "Ok") return emptyList()
+
+            val routes = obj.getJSONArray("routes")
+            if (routes.length() == 0) return emptyList()
+
+            val route = routes.getJSONObject(0)
+            val legs = route.getJSONArray("legs")
+
+            for (legIdx in 0 until legs.length()) {
+                val leg = legs.getJSONObject(legIdx)
+                val steps = leg.getJSONArray("steps")
+
+                for (stepIdx in 0 until steps.length()) {
+                    val step = steps.getJSONObject(stepIdx)
+                    val laneInfo = extractOsrmLaneInfo(step) ?: continue
+
+                    // Location aus maneuver extrahieren
+                    val maneuver = step.getJSONObject("maneuver")
+                    val location = maneuver.getJSONArray("location")
+                    val latLng = LatLng(location.getDouble(1), location.getDouble(0))
+
+                    result.add(latLng to laneInfo)
+                }
+            }
+        } catch (e: Exception) {
+            CrashLogger.logError("RouteRepository", "Parse OSRM lane data failed", e)
+        }
+        return result
+    }
+
+    /**
+     * Findet die nächste Lane-Info für eine gegebene Location (max 100m Abstand)
+     */
+    private fun findNearestLaneInfo(location: LatLng, laneData: List<Pair<LatLng, LaneInfo>>): LaneInfo? {
+        val maxDistance = 100.0 // Meter
+        return laneData
+            .map { (loc, info) -> loc.distanceTo(location) to info }
+            .filter { it.first < maxDistance }
+            .minByOrNull { it.first }
+            ?.second
     }
 
     private suspend fun getRouteFromHere(from: LatLng, to: LatLng): Route? {
