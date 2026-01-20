@@ -96,13 +96,16 @@ class RouteRepository {
         try {
             val apiKey = HereConfig.getApiKey()
 
-            // HERE Routing v8 API - Lane guidance via turnByTurnActions
+            // HERE Routing v8 API
+            // HINWEIS: Lane guidance (Spuranzeige) ist NUR im HERE SDK (Navigate Edition) verfügbar,
+            // NICHT in der REST API. Die REST API bietet keine laneAssistance in spans.
+            // Siehe: https://developer.here.com/documentation/android-sdk-navigate/dev_guide/topics/navigation.html
             val url = "${HereConfig.ROUTING_BASE_URL}/routes" +
                     "?origin=${from.lat},${from.lng}" +
                     "&destination=${to.lat},${to.lng}" +
                     "&transportMode=car" +
                     "&return=polyline,actions,instructions,summary,typicalDuration,turnByTurnActions" +
-                    "&spans=names,length,duration,speedLimit" +
+                    "&spans=names,length,duration,speedLimit,maxSpeed" +
                     "&apiKey=$apiKey"
 
             val request = Request.Builder()
@@ -177,52 +180,7 @@ class RouteRepository {
             val polyline = section.getString("polyline")
             val geometry = FlexiblePolyline.decode(polyline)
 
-            // Lane-Info aus Spans extrahieren
-            val laneInfoMap = mutableMapOf<Int, LaneInfo>()  // offset -> LaneInfo
-            val spans = section.optJSONArray("spans")
-            if (spans != null) {
-                var spansWithLanes = 0
-                for (i in 0 until spans.length()) {
-                    val span = spans.getJSONObject(i)
-                    val laneAssistanceArray = span.optJSONArray("laneAssistance")
-                    if (laneAssistanceArray != null && laneAssistanceArray.length() > 0) {
-                        spansWithLanes++
-                        val offset = span.optInt("offset", 0)
-                        val lanes = mutableListOf<Lane>()
-                        var recommendedIndex = -1
-
-                        // Erste lane group nehmen
-                        val laneGroup = laneAssistanceArray.getJSONObject(0)
-                        val lanesArray = laneGroup.optJSONArray("lanes")
-                        if (lanesArray != null) {
-                            for (j in 0 until lanesArray.length()) {
-                                val laneObj = lanesArray.getJSONObject(j)
-                                val directionsArray = laneObj.optJSONArray("directions")
-                                val direction = if (directionsArray != null && directionsArray.length() > 0) {
-                                    directionsArray.getString(0)
-                                } else {
-                                    "straight"
-                                }
-                                val isRecommended = laneObj.optBoolean("isRecommended", false)
-                                if (isRecommended && recommendedIndex == -1) {
-                                    recommendedIndex = j
-                                }
-                                lanes.add(Lane(direction = direction, isRecommended = isRecommended))
-                            }
-                        }
-                        if (lanes.isNotEmpty()) {
-                            laneInfoMap[offset] = LaneInfo(lanes = lanes, recommendedLaneIndex = recommendedIndex)
-                            // Debug: Log first few lane infos
-                            if (laneInfoMap.size <= 3) {
-                                CrashLogger.log("RouteRepository: Lane@$offset: ${lanes.map { "${it.direction}${if(it.isRecommended) "*" else ""}" }}")
-                            }
-                        }
-                    }
-                }
-                CrashLogger.log("RouteRepository: ${spans.length()} spans total, $spansWithLanes with laneAssistance, ${laneInfoMap.size} parsed")
-            } else {
-                CrashLogger.log("RouteRepository: No spans in response")
-            }
+            CrashLogger.log("RouteRepository: HERE route with ${geometry.size} points")
 
             // Actions/Instructions parsen
             val steps = mutableListOf<RouteStep>()
@@ -254,11 +212,6 @@ class RouteRepository {
                         nextOffset.coerceIn(0, geometry.size)
                     )
 
-                    // Lane-Info für diesen Offset oder nächstliegenden davor finden
-                    val laneInfo = laneInfoMap[offset] ?: laneInfoMap.entries
-                        .filter { it.key < offset }
-                        .maxByOrNull { it.key }?.value
-
                     steps.add(
                         RouteStep(
                             instruction = instruction,
@@ -270,7 +223,7 @@ class RouteRepository {
                                 location = location
                             ),
                             geometry = stepGeometry,
-                            laneInfo = laneInfo
+                            laneInfo = null  // Lane guidance nur im HERE SDK verfügbar, nicht REST API
                         )
                     )
                 }
