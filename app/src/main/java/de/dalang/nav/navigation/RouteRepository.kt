@@ -72,7 +72,10 @@ class RouteRepository {
 
     suspend fun getRoute(from: LatLng, to: LatLng): Route? = withContext(Dispatchers.IO) {
         // HERE API nutzen wenn konfiguriert UND Limit nicht erreicht
-        if (HereConfig.isConfigured() && HereConfig.canMakeRequest()) {
+        val isConfigured = HereConfig.isConfigured()
+        val canMakeRequest = HereConfig.canMakeRequest()
+
+        if (isConfigured && canMakeRequest) {
             val hereRoute = getRouteFromHere(from, to)
             if (hereRoute != null && hereRoute.geometry.isNotEmpty()) {
                 hereRoute
@@ -81,6 +84,10 @@ class RouteRepository {
                 getRouteFromOsrm(from, to)
             }
         } else {
+            // Debug: Warum wird HERE nicht verwendet?
+            val hasKey = HereConfig.getApiKey().isNotBlank()
+            val isEnabled = HereConfig.isEnabled()
+            CrashLogger.log("RouteRepository: Using OSRM (HERE: key=$hasKey, enabled=$isEnabled, canRequest=$canMakeRequest)")
             getRouteFromOsrm(from, to)
         }
     }
