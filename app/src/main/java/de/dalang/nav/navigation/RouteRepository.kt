@@ -73,24 +73,14 @@ class RouteRepository {
     suspend fun getRoute(from: LatLng, to: LatLng): Route? = withContext(Dispatchers.IO) {
         // HERE API nutzen wenn konfiguriert UND Limit nicht erreicht
         if (HereConfig.isConfigured() && HereConfig.canMakeRequest()) {
-            CrashLogger.log("RouteRepository: Using HERE API with traffic (${HereConfig.getMonthlyUsage()}/${HereConfig.getMonthlyLimit()} this month)")
             val hereRoute = getRouteFromHere(from, to)
             if (hereRoute != null && hereRoute.geometry.isNotEmpty()) {
-                CrashLogger.log("RouteRepository: HERE route OK with ${hereRoute.geometry.size} points")
                 hereRoute
             } else {
-                if (hereRoute != null) {
-                    CrashLogger.log("RouteRepository: HERE route has empty geometry, falling back to OSRM")
-                } else {
-                    CrashLogger.log("RouteRepository: HERE failed, falling back to OSRM")
-                }
+                CrashLogger.log("RouteRepository: HERE failed, fallback to OSRM")
                 getRouteFromOsrm(from, to)
             }
-        } else if (HereConfig.isConfigured() && !HereConfig.canMakeRequest()) {
-            CrashLogger.log("RouteRepository: HERE limit reached, falling back to OSRM")
-            getRouteFromOsrm(from, to)
         } else {
-            CrashLogger.log("RouteRepository: Using OSRM (no HERE API key)")
             getRouteFromOsrm(from, to)
         }
     }
@@ -98,36 +88,22 @@ class RouteRepository {
     private suspend fun getRouteFromHere(from: LatLng, to: LatLng): Route? {
         try {
             val apiKey = HereConfig.getApiKey()
-            CrashLogger.log("RouteRepository: HERE API key length: ${apiKey.length}")
 
             val url = "${HereConfig.ROUTING_BASE_URL}/routes" +
                     "?origin=${from.lat},${from.lng}" +
                     "&destination=${to.lat},${to.lng}" +
                     "&transportMode=car" +
                     "&return=polyline,actions,instructions,summary,typicalDuration" +
-                    "&spans=names,length,duration,speedLimit" +
+                    "&spans=names,length,duration,speedLimit,laneAssistance" +
                     "&apiKey=$apiKey"
-
-            CrashLogger.log("RouteRepository: HERE request from ${from.lat},${from.lng} to ${to.lat},${to.lng}")
 
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", "DaLang Navigation App")
                 .build()
 
-            CrashLogger.log("RouteRepository: Sending HERE request...")
             val response = client.newCall(request).execute()
             val body = response.body?.string()
-
-            CrashLogger.log("RouteRepository: HERE response code: ${response.code}")
-
-            if (body != null) {
-                // Log first 500 chars of response for debugging
-                val preview = if (body.length > 500) body.substring(0, 500) + "..." else body
-                CrashLogger.log("RouteRepository: HERE response preview: $preview")
-            } else {
-                CrashLogger.log("RouteRepository: HERE response body is NULL")
-            }
 
             if (!response.isSuccessful || body == null) {
                 CrashLogger.logError("RouteRepository", "HERE API error: ${response.code} - ${response.message}")
@@ -135,14 +111,11 @@ class RouteRepository {
             }
 
             // Zaehler erhoehen nach erfolgreicher Anfrage
-            val newCount = HereConfig.incrementUsage()
-            CrashLogger.log("RouteRepository: HERE usage now $newCount/${HereConfig.getMonthlyLimit()} this month")
+            HereConfig.incrementUsage()
 
             val route = parseHereRoute(body, from)
             if (route == null) {
                 CrashLogger.logError("RouteRepository", "HERE route parsing returned null")
-            } else {
-                CrashLogger.log("RouteRepository: HERE route parsed: ${route.distance}m, ${route.duration}s, ${route.geometry.size} points")
             }
             return route
         } catch (e: Exception) {
@@ -153,7 +126,6 @@ class RouteRepository {
 
     private fun parseHereRoute(json: String, origin: LatLng): Route? {
         try {
-            CrashLogger.log("RouteRepository: Parsing HERE response...")
             val obj = JSONObject(json)
 
             // Check for error response
@@ -165,12 +137,11 @@ class RouteRepository {
             }
 
             if (!obj.has("routes")) {
-                CrashLogger.logError("RouteRepository", "HERE response has no 'routes' field. Keys: ${obj.keys().asSequence().toList()}")
+                CrashLogger.logError("RouteRepository", "HERE response has no 'routes' field")
                 return null
             }
 
             val routes = obj.getJSONArray("routes")
-            CrashLogger.log("RouteRepository: Found ${routes.length()} routes")
             if (routes.length() == 0) {
                 CrashLogger.logError("RouteRepository", "HERE returned 0 routes")
                 return null
@@ -178,7 +149,6 @@ class RouteRepository {
 
             val route = routes.getJSONObject(0)
             val sections = route.getJSONArray("sections")
-            CrashLogger.log("RouteRepository: Route has ${sections.length()} sections")
             if (sections.length() == 0) {
                 CrashLogger.logError("RouteRepository", "HERE route has 0 sections")
                 return null
@@ -190,23 +160,21 @@ class RouteRepository {
             val distance = summary.getDouble("length")
             val duration = summary.getDouble("duration").toDouble()
             val typicalDuration = summary.optDouble("typicalDuration", duration)
-            CrashLogger.log("RouteRepository: Summary - distance: $distance, duration: $duration")
 
             // Geometrie dekodieren (HERE Flexible Polyline)
             val polyline = section.getString("polyline")
-            CrashLogger.log("RouteRepository: Polyline length: ${polyline.length}")
             val geometry = FlexiblePolyline.decode(polyline)
-
-            CrashLogger.log("RouteRepository: HERE route decoded with ${geometry.size} points")
 
             // Lane-Info aus Spans extrahieren
             val laneInfoMap = mutableMapOf<Int, LaneInfo>()  // offset -> LaneInfo
             val spans = section.optJSONArray("spans")
             if (spans != null) {
+                var spansWithLanes = 0
                 for (i in 0 until spans.length()) {
                     val span = spans.getJSONObject(i)
                     val laneAssistanceArray = span.optJSONArray("laneAssistance")
                     if (laneAssistanceArray != null && laneAssistanceArray.length() > 0) {
+                        spansWithLanes++
                         val offset = span.optInt("offset", 0)
                         val lanes = mutableListOf<Lane>()
                         var recommendedIndex = -1
@@ -232,11 +200,17 @@ class RouteRepository {
                         }
                         if (lanes.isNotEmpty()) {
                             laneInfoMap[offset] = LaneInfo(lanes = lanes, recommendedLaneIndex = recommendedIndex)
+                            // Debug: Log first few lane infos
+                            if (laneInfoMap.size <= 3) {
+                                CrashLogger.log("RouteRepository: Lane@$offset: ${lanes.map { "${it.direction}${if(it.isRecommended) "*" else ""}" }}")
+                            }
                         }
                     }
                 }
+                CrashLogger.log("RouteRepository: ${spans.length()} spans total, $spansWithLanes with laneAssistance, ${laneInfoMap.size} parsed")
+            } else {
+                CrashLogger.log("RouteRepository: No spans in response")
             }
-            CrashLogger.log("RouteRepository: Found ${laneInfoMap.size} spans with lane info")
 
             // Actions/Instructions parsen
             val steps = mutableListOf<RouteStep>()

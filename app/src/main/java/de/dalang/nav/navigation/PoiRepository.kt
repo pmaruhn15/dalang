@@ -91,16 +91,13 @@ class PoiRepository {
 
             // Für andere POIs (z.B. McDonald's): Sample-Punkte entlang der Route (alle ~5km)
             val samplePoints = sampleRoutePoints(routeGeometry, 5.0)
-            CrashLogger.log("PoiRepository: Using ${samplePoints.size} sample points for ${type.displayName}")
 
             val allResults = mutableListOf<Poi>()
             val seenLocations = mutableSetOf<String>()
 
             for ((index, samplePoint) in samplePoints.withIndex()) {
                 try {
-                    CrashLogger.log("PoiRepository: Querying sample point ${index + 1}/${samplePoints.size}")
                     val results = searchWithNominatim(type, samplePoint, maxDistanceFromRouteKm + 3.0)
-                    CrashLogger.log("PoiRepository: Sample point ${index + 1} returned ${results.size} results")
 
                     // Nur POIs hinzufügen, die nah an der Route sind und nicht schon vorhanden
                     for (poi in results) {
@@ -520,15 +517,10 @@ class PoiRepository {
             val stationsArray = json.optJSONArray("stations")
 
             if (stationsArray == null) {
-                CrashLogger.log("PoiRepository: HERE Fuel Prices - no stations array in response")
-                CrashLogger.log("PoiRepository: Response keys: ${json.keys().asSequence().toList()}")
-                // Log first 500 chars of response for debugging
-                CrashLogger.log("PoiRepository: Response preview: ${response.take(500)}")
+                CrashLogger.log("PoiRepository: HERE Fuel Prices - no stations in response, fallback to Nominatim")
                 return@withContext searchWithNominatim(PoiType.GAS_STATION, center, radiusKm)
             }
             val results = mutableListOf<Poi>()
-
-            CrashLogger.log("PoiRepository: Found ${stationsArray.length()} stations in HERE response")
 
             for (i in 0 until stationsArray.length()) {
                 val station = stationsArray.getJSONObject(i)
@@ -641,8 +633,6 @@ class PoiRepository {
                 "&viewbox=$minLng,$maxLat,$maxLng,$minLat" +
                 "&bounded=1" +
                 "&extratags=1"  // Für Öffnungszeiten
-
-            CrashLogger.log("PoiRepository: Nominatim URL: $url")
 
             val connection = URL(url).openConnection()
             connection.setRequestProperty("User-Agent", "DaLang Navigation App")
