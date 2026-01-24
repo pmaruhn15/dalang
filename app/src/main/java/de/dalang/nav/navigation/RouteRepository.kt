@@ -487,13 +487,20 @@ class RouteRepository {
     /**
      * Extrahiert Lane-Info aus OSRM step.intersections[].lanes
      * OSRM liefert Spurinformationen aus OSM turn:lanes Tags
+     *
+     * WICHTIG: Wir nehmen die LETZTE intersection mit lanes, da diese
+     * die Spuren direkt vor dem Manöver beschreibt (nicht die erste!)
      */
     private fun extractOsrmLaneInfo(step: JSONObject): LaneInfo? {
         try {
             val intersections = step.optJSONArray("intersections") ?: return null
 
-            // Erste Intersection mit lanes nehmen (normalerweise die relevante für das Manöver)
-            for (i in 0 until intersections.length()) {
+            // LETZTE Intersection mit lanes nehmen (direkt vor dem Manöver!)
+            // Rückwärts durch die Intersections gehen
+            var bestLaneInfo: LaneInfo? = null
+            var bestIntersectionIdx = -1
+
+            for (i in intersections.length() - 1 downTo 0) {
                 val intersection = intersections.getJSONObject(i)
                 val lanesArray = intersection.optJSONArray("lanes") ?: continue
 
@@ -525,14 +532,20 @@ class RouteRepository {
                 }
 
                 if (lanes.isNotEmpty()) {
-                    // Debug: Lane-Infos loggen mit allen Richtungen
-                    if (lanes.size >= 2) {
-                        CrashLogger.log("RouteRepository: OSRM Lanes: ${lanes.map { "${it.directions.joinToString("+")}${if(it.isRecommended) "*" else ""}" }}")
-                    }
-                    return LaneInfo(lanes = lanes, recommendedLaneIndex = recommendedIndex)
+                    bestLaneInfo = LaneInfo(lanes = lanes, recommendedLaneIndex = recommendedIndex)
+                    bestIntersectionIdx = i
+                    break  // Letzte gefundene nehmen (von hinten gezählt)
                 }
             }
-            return null
+
+            if (bestLaneInfo != null) {
+                // Debug: Lane-Infos loggen mit Intersection-Index
+                val stepName = step.optString("name", "unnamed")
+                CrashLogger.log("RouteRepository: OSRM Lanes at '$stepName' (intersection $bestIntersectionIdx/${intersections.length()-1}): " +
+                    "${bestLaneInfo.lanes.size} lanes: ${bestLaneInfo.lanes.map { "${it.directions.joinToString("+")}${if(it.isRecommended) "*" else ""}" }}")
+            }
+
+            return bestLaneInfo
         } catch (e: Exception) {
             CrashLogger.logError("RouteRepository", "Failed to parse OSRM lanes", e)
             return null

@@ -17,6 +17,8 @@ import de.dalang.nav.navigation.*
 import de.dalang.nav.search.SearchRepository
 import de.dalang.nav.search.SearchResult
 import de.dalang.nav.util.CrashLogger
+import de.dalang.nav.util.GpsTrackLogger
+import java.io.File
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -198,6 +200,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                             _currentLocation.value = smoothedLocation
 
+                            // GPS Track Logging für Debugging
+                            GpsTrackLogger.logPosition(
+                                location = smoothedLocation,
+                                speed = location.speed,
+                                bearing = location.bearing,
+                                accuracy = location.accuracy
+                            )
+
                             // Für Anzeige: Map-Matching wenn in Navigation
                             val route = _navigationState.value.route
                             if (_navigationState.value.isNavigating && route != null) {
@@ -345,6 +355,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return
             }
 
+            // GPS Track Session starten
+            GpsTrackLogger.startSession()
+
+            // Lane-Info des ersten Steps loggen falls vorhanden
+            state.route.steps.firstOrNull()?.laneInfo?.let { laneInfo ->
+                if (laneInfo.lanes.isNotEmpty()) {
+                    _currentLocation.value?.let { loc ->
+                        GpsTrackLogger.logLaneInfo(loc, laneInfo, "Start")
+                    }
+                }
+            }
+
             // Service binden falls noch nicht geschehen
             bindNavigationService()
 
@@ -378,6 +400,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun stopNavigation() {
         CrashLogger.log("MainViewModel: stopNavigation")
         try {
+            // GPS Track Session stoppen
+            GpsTrackLogger.stopSession()
+
             _navigationState.update {
                 NavigationState()
             }
@@ -395,6 +420,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             CrashLogger.logError("MainViewModel", "stopNavigation failed", e)
         }
+    }
+
+    /**
+     * Exportiert den GPS-Track als GPX-Datei für Debugging.
+     * Gibt den Dateipfad zurück oder null bei Fehler.
+     */
+    fun exportGpsTrack(): File? {
+        return try {
+            GpsTrackLogger.exportToGpx(getApplication())
+        } catch (e: Exception) {
+            CrashLogger.logError("MainViewModel", "exportGpsTrack failed", e)
+            null
+        }
+    }
+
+    /**
+     * Gibt eine Debug-Zusammenfassung des GPS-Tracks zurück
+     */
+    fun getGpsTrackDebugSummary(): String {
+        return GpsTrackLogger.getDebugSummary()
     }
 
     fun clearRoute() {
@@ -565,6 +610,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 distanceSmoother.setInitialDistance(nextDistance)
 
                 CrashLogger.log("MainViewModel: Advancing to step $nextIndex (${nextStep.maneuver.type})")
+
+                // GPS Track: Lane-Info loggen wenn vorhanden
+                nextStep.laneInfo?.let { laneInfo ->
+                    if (laneInfo.lanes.isNotEmpty()) {
+                        GpsTrackLogger.logLaneInfo(
+                            location = location,
+                            laneInfo = laneInfo,
+                            stepName = nextStep.instruction.ifBlank { "Step $nextIndex" }
+                        )
+                    }
+                }
 
                 _navigationState.update {
                     it.copy(

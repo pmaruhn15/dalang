@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- Sharp left turn arrow (more aggressive angle) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M4,32L4,12L12,20L12,16L24,16L24,44L16,44L16,24L12,24L12,20L4,28Z" />
+</vector>

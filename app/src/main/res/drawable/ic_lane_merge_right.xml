@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- Merge right arrow -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M24,4L24,18L32,18L32,10L40,18L32,26L32,22L28,22L28,44L20,44L20,22L16,22L16,18L24,18L24,4Z" />
+</vector>

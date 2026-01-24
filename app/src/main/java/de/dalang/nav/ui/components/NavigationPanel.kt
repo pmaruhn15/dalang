@@ -458,14 +458,19 @@ private fun LaneIndicator(
 }
 
 // Lane-Richtung zu Icon mappen
+// Richtungen kommen aus mapOsrmLaneDirection: straight, left, right, slightLeft, slightRight, sharpLeft, sharpRight, uTurn, mergeLeft, mergeRight
 private fun getLaneIconRes(direction: String): Int {
     return when (direction.lowercase()) {
-        "straight", "through" -> R.drawable.ic_turn_straight
-        "left", "sharpleft", "sharp left" -> R.drawable.ic_turn_left
-        "right", "sharpright", "sharp right" -> R.drawable.ic_turn_right
-        "slightleft", "slight left", "slightlyLeft" -> R.drawable.ic_turn_slight_left
-        "slightright", "slight right", "slightlyRight" -> R.drawable.ic_turn_slight_right
-        "uturn", "uturnleft", "uturnright" -> R.drawable.ic_turn_uturn
+        "straight", "through", "none" -> R.drawable.ic_turn_straight
+        "left" -> R.drawable.ic_turn_left
+        "right" -> R.drawable.ic_turn_right
+        "slightleft", "slight_left" -> R.drawable.ic_turn_slight_left
+        "slightright", "slight_right" -> R.drawable.ic_turn_slight_right
+        "sharpleft", "sharp_left" -> R.drawable.ic_turn_sharp_left
+        "sharpright", "sharp_right" -> R.drawable.ic_turn_sharp_right
+        "uturn", "uturnleft", "uturnright", "reverse" -> R.drawable.ic_turn_uturn
+        "mergeleft", "merge_to_left" -> R.drawable.ic_lane_merge_left
+        "mergeright", "merge_to_right" -> R.drawable.ic_lane_merge_right
         else -> R.drawable.ic_turn_straight
     }
 }
