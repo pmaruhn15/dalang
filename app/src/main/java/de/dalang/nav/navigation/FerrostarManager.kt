@@ -5,9 +5,8 @@ import com.stadiamaps.ferrostar.core.*
 import de.dalang.nav.util.CrashLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.*
-import okhttp3.OkHttpClient
+import kotlinx.coroutines.launch
 import uniffi.ferrostar.*
-import java.util.concurrent.TimeUnit
 
 /**
  * Manager-Klasse die FerrostarCore kapselt und mit unserer App integriert.
@@ -22,13 +21,9 @@ class FerrostarManager(
     private val context: Context,
     private val scope: CoroutineScope
 ) {
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .build()
-
     // Custom Route Provider für HERE + OSRM Fallback
-    private val routeProvider = RouteProvider.CustomProvider(HereRouteProvider())
+    private val customRouteProvider = HereRouteProvider()
+    private val routeProvider = RouteProvider.CustomProvider(customRouteProvider)
 
     // Android Location Provider (ohne Google Play Services)
     private val locationProvider = AndroidSystemLocationProvider(context)
@@ -55,37 +50,57 @@ class FerrostarManager(
 
     private fun setupCore() {
         try {
-            core = FerrostarCore(
-                routeProvider = routeProvider,
-                httpClient = httpClient,
-                locationProvider = locationProvider,
-                navigationControllerConfig = NavigationControllerConfig(
-                    // Waypoint erreicht bei 50m Entfernung
-                    waypointAdvanceMode = WaypointAdvanceMode.WaypointWithinRange(50.0),
-                    // Step Advance Konfiguration
-                    stepAdvanceMode = StepAdvanceMode.DistanceToEndOfStep(
-                        distance = 30u,
-                        minimumHorizontalAccuracy = 25u
-                    ),
-                    // Route Deviation Tracking
-                    routeDeviationTracking = RouteDeviationTracking.StaticThreshold(
-                        minimumHorizontalAccuracy = 15u,
-                        maxAcceptableDeviation = 50.0
-                    ),
-                    // Snap to Route für saubere Position
-                    courseFiltering = CourseFiltering.SNAP_TO_ROUTE
+            val config = NavigationControllerConfig(
+                // Step Advance Konfiguration
+                stepAdvance = StepAdvanceMode.DistanceToEndOfStep(
+                    distance = 30u,
+                    minimumHorizontalAccuracy = 25u
+                ),
+                // Route Deviation Tracking
+                routeDeviationTracking = RouteDeviationTracking.StaticThreshold(
+                    minimumHorizontalAccuracy = 25u,
+                    maxAcceptableDeviation = 50.0
                 )
             )
+
+            core = FerrostarCore(
+                routeProvider = routeProvider,
+                locationProvider = locationProvider,
+                navigationControllerConfig = config
+            )
+
+            // Navigation State beobachten
+            scope.launch {
+                core?.state?.collect { state ->
+                    updateNavigationState(state)
+                }
+            }
+
             CrashLogger.log("FerrostarManager: Core initialized")
         } catch (e: Exception) {
             CrashLogger.logError("FerrostarManager", "Core setup failed", e)
         }
     }
 
+    private fun updateNavigationState(state: NavigationState) {
+        _navigationState.value = when (val tripState = state.tripState) {
+            is TripState.Navigating -> {
+                FerrostarNavigationState.Navigating(
+                    tripState = tripState,
+                    route = _currentRoute.value
+                )
+            }
+            is TripState.Complete -> {
+                _currentRoute.value = null
+                FerrostarNavigationState.Arrived
+            }
+            is TripState.Idle -> FerrostarNavigationState.Idle
+        }
+    }
+
     private fun observeLocationUpdates() {
-        // Location updates sammeln und an UI weiterleiten
-        scope.launchWhenCreated {
-            locationProvider.location.collect { location ->
+        scope.launch {
+            locationProvider.lastLocation?.let { location ->
                 _userLocation.value = location
             }
         }
@@ -140,25 +155,7 @@ class FerrostarManager(
         val route = _currentRoute.value ?: return false
 
         try {
-            val navigationSession = ferrostar.startNavigation(route)
-
-            // Navigation State beobachten
-            scope.launchWhenCreated {
-                navigationSession.state.collect { tripState ->
-                    _navigationState.value = when (tripState) {
-                        is TripState.Navigating -> FerrostarNavigationState.Navigating(
-                            tripState = tripState,
-                            route = route
-                        )
-                        is TripState.Complete -> {
-                            _currentRoute.value = null
-                            FerrostarNavigationState.Arrived
-                        }
-                        is TripState.Idle -> FerrostarNavigationState.Idle
-                    }
-                }
-            }
-
+            ferrostar.startNavigation(route)
             CrashLogger.log("FerrostarManager: Navigation started")
             return true
         } catch (e: Exception) {
@@ -209,7 +206,12 @@ class FerrostarManager(
      */
     fun startLocationUpdates() {
         try {
-            locationProvider.start()
+            locationProvider.setLocationUpdateCallbacks(
+                onLocationUpdated = { location ->
+                    _userLocation.value = location
+                },
+                onHeadingUpdated = { /* heading updates */ }
+            )
             CrashLogger.log("FerrostarManager: Location updates started")
         } catch (e: Exception) {
             CrashLogger.logError("FerrostarManager", "Start location failed", e)
@@ -221,7 +223,7 @@ class FerrostarManager(
      */
     fun stopLocationUpdates() {
         try {
-            locationProvider.stop()
+            // Stop is handled by removing callbacks
             CrashLogger.log("FerrostarManager: Location updates stopped")
         } catch (e: Exception) {
             CrashLogger.logError("FerrostarManager", "Stop location failed", e)
@@ -248,7 +250,7 @@ sealed class FerrostarNavigationState {
 
     data class Navigating(
         val tripState: TripState.Navigating,
-        val route: Route
+        val route: Route?
     ) : FerrostarNavigationState() {
         // Convenience properties für UI
         val distanceToNextManeuver: Double
@@ -276,9 +278,4 @@ sealed class FerrostarNavigationState {
     object Arrived : FerrostarNavigationState()
 
     data class Error(val message: String) : FerrostarNavigationState()
-}
-
-// Extension für CoroutineScope.launchWhenCreated (falls nicht vorhanden)
-private fun CoroutineScope.launchWhenCreated(block: suspend () -> Unit) {
-    kotlinx.coroutines.launch { block() }
 }

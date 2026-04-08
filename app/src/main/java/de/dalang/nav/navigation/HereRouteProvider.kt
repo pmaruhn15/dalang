@@ -1,6 +1,6 @@
 package de.dalang.nav.navigation
 
-import com.stadiamaps.ferrostar.core.RouteProvider
+import com.stadiamaps.ferrostar.core.CustomRouteProvider
 import de.dalang.nav.config.HereConfig
 import de.dalang.nav.util.CrashLogger
 import kotlinx.coroutines.Dispatchers
@@ -9,7 +9,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import uniffi.ferrostar.*
-import java.time.Instant
 import java.util.concurrent.TimeUnit
 
 /**
@@ -21,7 +20,7 @@ import java.util.concurrent.TimeUnit
  * - OSRM Fallback (kostenlos, ohne Traffic)
  * - Konvertiert Responses zu Ferrostar Route Format
  */
-class HereRouteProvider : RouteProvider.CustomProvider {
+class HereRouteProvider : CustomRouteProvider {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -180,20 +179,13 @@ class HereRouteProvider : RouteProvider.CustomProvider {
 
             // If no steps, create a simple one
             if (steps.isEmpty()) {
-                steps.add(
-                    RouteStep(
-                        geometry = geometry,
-                        distance = distance,
-                        duration = duration,
-                        roadName = null,
-                        instruction = "Route folgen",
-                        visualInstructions = emptyList(),
-                        spokenInstructions = emptyList(),
-                        annotations = null,
-                        incidents = emptyList(),
-                        drivingSide = DrivingSide.RIGHT
-                    )
-                )
+                steps.add(createRouteStep(
+                    geometry = geometry,
+                    distance = distance,
+                    duration = duration,
+                    roadName = null,
+                    instruction = "Route folgen"
+                ))
             }
 
             return Route(
@@ -223,17 +215,12 @@ class HereRouteProvider : RouteProvider.CustomProvider {
                 nextOffset.coerceIn(0, fullGeometry.size)
             ).ifEmpty { listOf(fullGeometry.getOrElse(offset) { fullGeometry.first() }) }
 
-            return RouteStep(
+            return createRouteStep(
                 geometry = stepGeometry,
                 distance = actionLength,
                 duration = actionDuration,
                 roadName = action.optString("currentRoad.name.value", null),
-                instruction = instruction,
-                visualInstructions = emptyList(),  // TODO: Parse visual instructions
-                spokenInstructions = emptyList(),  // TODO: Parse spoken instructions
-                annotations = null,
-                incidents = emptyList(),
-                drivingSide = DrivingSide.RIGHT
+                instruction = instruction
             )
         } catch (e: Exception) {
             return null
@@ -287,20 +274,13 @@ class HereRouteProvider : RouteProvider.CustomProvider {
                     val maneuverType = maneuver.getString("type")
                     val modifier = maneuver.optString("modifier", "")
 
-                    steps.add(
-                        RouteStep(
-                            geometry = stepGeometry,
-                            distance = step.getDouble("distance"),
-                            duration = step.getDouble("duration"),
-                            roadName = step.optString("name", null).takeIf { it.isNotBlank() },
-                            instruction = buildInstruction(maneuverType, modifier),
-                            visualInstructions = emptyList(),
-                            spokenInstructions = emptyList(),
-                            annotations = null,
-                            incidents = emptyList(),
-                            drivingSide = DrivingSide.RIGHT
-                        )
-                    )
+                    steps.add(createRouteStep(
+                        geometry = stepGeometry,
+                        distance = step.getDouble("distance"),
+                        duration = step.getDouble("duration"),
+                        roadName = step.optString("name", null).takeIf { it.isNotBlank() },
+                        instruction = buildInstruction(maneuverType, modifier)
+                    ))
                 }
             }
 
@@ -357,6 +337,35 @@ class HereRouteProvider : RouteProvider.CustomProvider {
             "fork" -> if (modifier.contains("left")) "Links halten" else "Rechts halten"
             else -> "Weiter"
         }
+    }
+
+    /**
+     * Helper to create RouteStep with all required fields.
+     * This ensures we always provide the correct structure expected by Ferrostar.
+     */
+    private fun createRouteStep(
+        geometry: List<GeographicCoordinate>,
+        distance: Double,
+        duration: Double,
+        roadName: String?,
+        instruction: String,
+        exits: List<String> = emptyList(),
+        roundaboutExitNumber: UByte? = null
+    ): RouteStep {
+        return RouteStep(
+            geometry = geometry,
+            distance = distance,
+            duration = duration,
+            roadName = roadName,
+            exits = exits,
+            instruction = instruction,
+            visualInstructions = emptyList(),
+            spokenInstructions = emptyList(),
+            annotations = null,
+            incidents = emptyList(),
+            drivingSide = DrivingSide.RIGHT,
+            roundaboutExitNumber = roundaboutExitNumber
+        )
     }
 
     companion object {
