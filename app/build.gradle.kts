@@ -75,7 +75,7 @@ dependencies {
     // Ferrostar Navigation SDK
     val ferrostarVersion = "0.49.0"
     implementation("com.stadiamaps.ferrostar:core:$ferrostarVersion")
-    implementation("com.stadiamaps.ferrostar:composeui:$ferrostarVersion")
+    implementation("com.stadiamaps.ferrostar:ui-compose:$ferrostarVersion")
 
     // MapLibre for OpenStreetMap
     implementation("org.maplibre.gl:android-sdk:11.0.0")
