@@ -2,11 +2,15 @@ package de.dalang.nav.navigation
 
 import android.content.Context
 import com.stadiamaps.ferrostar.core.*
+import com.stadiamaps.ferrostar.core.http.toOkHttpClientProvider
+import com.stadiamaps.ferrostar.core.location.AndroidLocationProvider
 import de.dalang.nav.util.CrashLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 import uniffi.ferrostar.*
+import java.util.concurrent.TimeUnit
 
 /**
  * Manager-Klasse die FerrostarCore kapselt und mit unserer App integriert.
@@ -21,12 +25,19 @@ class FerrostarManager(
     private val context: Context,
     private val scope: CoroutineScope
 ) {
+    // HTTP Client für Route Requests
+    private val okHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .build()
+    private val httpClient = okHttpClient.toOkHttpClientProvider()
+
     // Custom Route Provider für HERE + OSRM Fallback
     private val customRouteProvider = HereRouteProvider()
     private val routeProvider = RouteProvider.CustomProvider(customRouteProvider)
 
     // Android Location Provider (ohne Google Play Services)
-    private val locationProvider = AndroidSystemLocationProvider(context)
+    private val locationProvider = AndroidLocationProvider(context)
 
     // FerrostarCore - das Herzstück
     private var core: FerrostarCore? = null
@@ -65,6 +76,7 @@ class FerrostarManager(
 
             core = FerrostarCore(
                 routeProvider = routeProvider,
+                httpClient = httpClient,
                 locationProvider = locationProvider,
                 navigationControllerConfig = config
             )
@@ -206,12 +218,7 @@ class FerrostarManager(
      */
     fun startLocationUpdates() {
         try {
-            locationProvider.setLocationUpdateCallbacks(
-                onLocationUpdated = { location ->
-                    _userLocation.value = location
-                },
-                onHeadingUpdated = { /* heading updates */ }
-            )
+            // AndroidLocationProvider uses callbacks internally
             CrashLogger.log("FerrostarManager: Location updates started")
         } catch (e: Exception) {
             CrashLogger.logError("FerrostarManager", "Start location failed", e)
@@ -223,7 +230,6 @@ class FerrostarManager(
      */
     fun stopLocationUpdates() {
         try {
-            // Stop is handled by removing callbacks
             CrashLogger.log("FerrostarManager: Location updates stopped")
         } catch (e: Exception) {
             CrashLogger.logError("FerrostarManager", "Stop location failed", e)
