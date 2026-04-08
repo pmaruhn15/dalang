@@ -37,11 +37,11 @@ class LocationSmoother {
     private var lastTimestamp: Long = 0
     private var lastGpsSpeed: Float = 0f
 
-    // Konfiguration - weniger aggressive Filterung für bessere Reaktion
+    // Konfiguration - reaktivere Werte für bessere Echtzeit-Tracking
     private val minAccuracyMeters = 50f  // Positionen mit schlechterer Accuracy werden ignoriert
     private val maxSpeedMs = 70f  // ~250 km/h - Ausreißer über dieser Geschwindigkeit werden gefiltert
-    private val processNoisePos = 0.0001  // Prozessrauschen Position (10x höher für schnellere Reaktion)
-    private val processNoiseVel = 0.001   // Prozessrauschen Geschwindigkeit (10x höher)
+    private val processNoisePos = 0.0005  // Prozessrauschen Position - höher = reaktiver
+    private val processNoiseVel = 0.005   // Prozessrauschen Geschwindigkeit - höher = schnellere Anpassung
 
     /**
      * Verarbeitet eine neue GPS-Position und gibt die geglättete Position zurück.
@@ -142,7 +142,7 @@ class LocationSmoother {
 
             // Update Geschwindigkeit basierend auf Innovation
             // Je größer die Innovation, desto mehr passen wir die Geschwindigkeit an
-            val kVel = 0.3  // Geschwindigkeits-Lernrate
+            val kVel = 0.5  // Geschwindigkeits-Lernrate (höher = schnellere Anpassung)
             vLat = predVLat + kVel * innovLat / dt
             vLng = predVLng + kVel * innovLng / dt
 
