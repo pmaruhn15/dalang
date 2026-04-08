@@ -20,8 +20,8 @@ android {
         applicationId = "de.dalang.nav"
         minSdk = 29
         targetSdk = 34
-        versionCode = 103
-        versionName = "1.4.0-alpha"
+        versionCode = 102
+        versionName = "1.3.2"
     }
 
     buildTypes {
@@ -71,11 +71,6 @@ dependencies {
 
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.7")
-
-    // Ferrostar Navigation SDK
-    val ferrostarVersion = "0.49.0"
-    implementation("com.stadiamaps.ferrostar:core:$ferrostarVersion")
-    implementation("com.stadiamaps.ferrostar:composeui:$ferrostarVersion")
 
     // MapLibre for OpenStreetMap
     implementation("org.maplibre.gl:android-sdk:11.0.0")
