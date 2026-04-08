@@ -65,11 +65,12 @@ fun MapViewComposable(
     poiSettingsVersion: Int = 0,  // Trigger für POI Layer Visibility Update
     onMapClick: ((LatLng) -> Unit)? = null,
     onPoiClick: ((Poi) -> Unit)? = null,  // Callback wenn POI-Marker geklickt wird
+    isDarkThemeOverride: Boolean? = null,  // null = System entscheidet
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val isDarkTheme = isSystemInDarkTheme()
+    val isDarkTheme = isDarkThemeOverride ?: isSystemInDarkTheme()
 
     // MapTiler API Key aus Settings
     val settingsRepository = remember { SettingsRepository(context) }

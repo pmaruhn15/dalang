@@ -164,6 +164,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         CrashLogger.log("MainViewModel initialized")
+        // Theme-Mode beim Start setzen
+        when (settingsRepo.themeMode) {
+            ThemeMode.LIGHT -> _isDarkOverride.value = false
+            ThemeMode.DARK -> _isDarkOverride.value = true
+            ThemeMode.SYSTEM -> _isDarkOverride.value = null
+            ThemeMode.AUTO -> {
+                // Wird vom BrightnessSensor gesetzt, initial null (System)
+                _isDarkOverride.value = null
+            }
+        }
         startBrightnessSensor()
     }
 

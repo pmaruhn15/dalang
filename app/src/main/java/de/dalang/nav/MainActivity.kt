@@ -189,6 +189,7 @@ fun DaLangAppContent(viewModel: MainViewModel) {
     val errorMessage by viewModel.errorMessage.collectAsState()
     val infoMessage by viewModel.infoMessage.collectAsState()
     val isRecalculatingRoute by viewModel.isRecalculatingRoute.collectAsState()
+    val isDarkOverride by viewModel.isDarkOverride.collectAsState()
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -385,6 +386,7 @@ fun DaLangAppContent(viewModel: MainViewModel) {
                 }
             },
             onPoiClick = null,  // POIs werden jetzt über Dialog ausgewählt
+            isDarkThemeOverride = isDarkOverride,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -766,51 +768,42 @@ fun DrawerContent(
 
         // Theme-Modus Einstellung
         var currentThemeMode by remember { mutableStateOf(settingsRepository.themeMode) }
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Erscheinungsbild",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = currentThemeMode.displayName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Row {
+            Text(
+                text = "Erscheinungsbild",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
                 ThemeMode.entries.forEach { mode ->
                     val isSelected = currentThemeMode == mode
-                    TextButton(
+                    FilterChip(
+                        selected = isSelected,
                         onClick = {
                             currentThemeMode = mode
                             settingsRepository.themeMode = mode
                             onSettingsChanged()
                         },
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = if (isSelected)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = when (mode) {
-                                ThemeMode.AUTO -> "Auto"
-                                ThemeMode.LIGHT -> "Hell"
-                                ThemeMode.DARK -> "Dunkel"
-                                ThemeMode.SYSTEM -> "System"
-                            },
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
+                        label = {
+                            Text(
+                                text = when (mode) {
+                                    ThemeMode.AUTO -> "Auto"
+                                    ThemeMode.LIGHT -> "Hell"
+                                    ThemeMode.DARK -> "Dunkel"
+                                    ThemeMode.SYSTEM -> "System"
+                                },
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    )
                 }
             }
         }
