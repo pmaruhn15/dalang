@@ -147,17 +147,19 @@ private fun ActiveNavigationContent(
 
             // Ankunftszeit prominent + Restinfos darunter
             Column(horizontalAlignment = Alignment.End) {
-                // ETA berechnen
-                val eta = remember(state.totalTimeRemaining) {
-                    Calendar.getInstance().apply {
+                // ETA berechnen - immer aktuelle Zeit + verbleibende Zeit
+                // derivedStateOf statt remember damit sich die ETA bei jedem Update aktualisiert
+                val etaFormat = remember { SimpleDateFormat("HH:mm", Locale.GERMANY) }
+                val etaString = remember(state.totalTimeRemaining) {
+                    val eta = Calendar.getInstance().apply {
                         add(Calendar.SECOND, state.totalTimeRemaining.toInt())
                     }
+                    etaFormat.format(eta.time)
                 }
-                val etaFormat = remember { SimpleDateFormat("HH:mm", Locale.GERMANY) }
 
                 // Ankunftszeit GROSS
                 Text(
-                    text = etaFormat.format(eta.time),
+                    text = etaString,
                     fontSize = 32.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface

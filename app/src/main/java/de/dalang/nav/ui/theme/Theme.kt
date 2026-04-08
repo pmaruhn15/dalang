@@ -73,9 +73,10 @@ private val DarkColorScheme = darkColorScheme(
 
 @Composable
 fun DaLangTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkThemeOverride: Boolean? = null,  // null = System entscheidet
     content: @Composable () -> Unit
 ) {
+    val darkTheme = darkThemeOverride ?: isSystemInDarkTheme()
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
     val view = LocalView.current

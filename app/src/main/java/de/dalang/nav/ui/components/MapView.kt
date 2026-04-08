@@ -81,6 +81,10 @@ fun MapViewComposable(
     var hasCenteredOnLocation by remember { mutableStateOf(false) }
     var styleVersion by remember { mutableIntStateOf(0) }
 
+    // Stabilisierter Zoom-Level: nur ändern wenn signifikante Differenz (> 0.3)
+    // Verhindert Flackern der Straßennamen-Labels durch Micro-Zoom-Änderungen
+    var stableZoom by remember { mutableStateOf(16.0) }
+
     // POIs für Klick-Erkennung merken
     val currentPois = remember(pois) { pois }
 
@@ -206,16 +210,24 @@ fun MapViewComposable(
                             // Dynamischer Zoom basierend auf Geschwindigkeit und Distanz zum nächsten Manöver
                             val dynamicZoom = calculateDynamicZoom(speed, distanceToNextManeuver)
 
-                            map.animateCamera(
+                            // Zoom nur aktualisieren wenn Differenz > 0.3 (verhindert Flackern)
+                            if (kotlin.math.abs(dynamicZoom - stableZoom) > 0.3) {
+                                stableZoom = dynamicZoom
+                            }
+
+                            // easeCamera statt animateCamera: verhindert "Durchschieben"
+                            // und arbeitet besser mit dem Marker-Animator zusammen
+                            map.easeCamera(
                                 CameraUpdateFactory.newCameraPosition(
                                     CameraPosition.Builder()
                                         .target(pos)
-                                        .zoom(dynamicZoom)
+                                        .zoom(stableZoom)
                                         .bearing(bearing.toDouble())  // Karte in Fahrtrichtung
                                         .tilt(60.0)  // Stärkerer Tilt für bessere 3D-Ansicht
                                         .build()
                                 ),
-                                500
+                                1000,  // Gleiche Dauer wie Marker-Animation
+                                false  // Nicht abbrechbar durch Gesten
                             )
                         } else if (!hasCenteredOnLocation) {
                             // Einmalig auf Standort zentrieren beim App-Start

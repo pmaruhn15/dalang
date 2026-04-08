@@ -46,6 +46,7 @@ import de.dalang.nav.navigation.WaypointType
 import de.dalang.nav.search.SearchResult
 import de.dalang.nav.settings.FuelType
 import de.dalang.nav.settings.SettingsRepository
+import de.dalang.nav.settings.ThemeMode
 import de.dalang.nav.ui.components.FavoriteAddressDialog
 import de.dalang.nav.ui.components.HereSettingsDialog
 import de.dalang.nav.ui.components.MapViewComposable
@@ -102,7 +103,8 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            DaLangTheme {
+            val isDarkOverride by viewModel.isDarkOverride.collectAsState()
+            DaLangTheme(darkThemeOverride = isDarkOverride) {
                 DaLangAppContent(viewModel = viewModel)
             }
         }
@@ -345,6 +347,8 @@ fun DaLangAppContent(viewModel: MainViewModel) {
                         preferredFuelType = settingsRepository.preferredFuelType
                         vehicleRangeKm = settingsRepository.vehicleRangeKm
                         poiSettingsVersion++  // POI Layer Update triggern
+                        // Theme-Modus aktualisieren
+                        viewModel.setThemeMode(settingsRepository.themeMode)
                     }
                 )
             }
@@ -750,6 +754,63 @@ fun DrawerContent(
                     showHotels = it
                     settingsRepository.showPoiHotels = it
                     onSettingsChanged()
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        HorizontalDivider()
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Theme-Modus Einstellung
+        var currentThemeMode by remember { mutableStateOf(settingsRepository.themeMode) }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Erscheinungsbild",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = currentThemeMode.displayName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Row {
+                ThemeMode.entries.forEach { mode ->
+                    val isSelected = currentThemeMode == mode
+                    TextButton(
+                        onClick = {
+                            currentThemeMode = mode
+                            settingsRepository.themeMode = mode
+                            onSettingsChanged()
+                        },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = if (isSelected)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = when (mode) {
+                                ThemeMode.AUTO -> "Auto"
+                                ThemeMode.LIGHT -> "Hell"
+                                ThemeMode.DARK -> "Dunkel"
+                                ThemeMode.SYSTEM -> "System"
+                            },
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
                 }
             }
         }

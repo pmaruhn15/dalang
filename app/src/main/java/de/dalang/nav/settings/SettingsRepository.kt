@@ -16,6 +16,16 @@ enum class FuelType(val displayName: String) {
 }
 
 /**
+ * Theme-Modus: Auto (Helligkeitssensor), Hell, Dunkel, System
+ */
+enum class ThemeMode(val displayName: String) {
+    AUTO("Auto (Sensor)"),
+    LIGHT("Hell"),
+    DARK("Dunkel"),
+    SYSTEM("System")
+}
+
+/**
  * API Usage Info für Fortschrittsanzeige
  */
 data class ApiUsageInfo(
@@ -82,6 +92,23 @@ class SettingsRepository(context: Context) {
     var vehicleRangeKm: Int
         get() = prefs.getInt(KEY_VEHICLE_RANGE_KM, 0) // 0 = nicht gesetzt/unbegrenzt
         set(value) = prefs.edit { putInt(KEY_VEHICLE_RANGE_KM, value) }
+
+    // Theme-Modus (Auto/Hell/Dunkel/System)
+    var themeMode: ThemeMode
+        get() {
+            val stored = prefs.getString(KEY_THEME_MODE, ThemeMode.AUTO.name) ?: ThemeMode.AUTO.name
+            return try {
+                ThemeMode.valueOf(stored)
+            } catch (e: Exception) {
+                ThemeMode.AUTO
+            }
+        }
+        set(value) = prefs.edit { putString(KEY_THEME_MODE, value.name) }
+
+    // Helligkeits-Schwellwert für Auto-Modus (Lux). Unter diesem Wert = Dark Mode
+    var darkThresholdLux: Float
+        get() = prefs.getFloat(KEY_DARK_THRESHOLD_LUX, 10f)  // 10 Lux = sehr dunkel
+        set(value) = prefs.edit { putFloat(KEY_DARK_THRESHOLD_LUX, value) }
 
     // MapTiler API Key für Karten-Tiles
     var mapTilerApiKey: String
@@ -327,6 +354,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_PIPER_TTS_ENABLED = "piper_tts_enabled"
         private const val KEY_FUEL_TYPE = "preferred_fuel_type"
         private const val KEY_VEHICLE_RANGE_KM = "vehicle_range_km"
+        private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_DARK_THRESHOLD_LUX = "dark_threshold_lux"
         private const val KEY_MAPTILER_API_KEY = "maptiler_api_key"
 
         // HERE Usage Tracking (monatlich)

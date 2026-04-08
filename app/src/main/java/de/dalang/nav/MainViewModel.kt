@@ -8,6 +8,7 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import de.dalang.nav.location.BrightnessProvider
 import de.dalang.nav.location.DistanceSmoother
 import de.dalang.nav.location.HeadingProvider
 import de.dalang.nav.location.LocationProvider
@@ -16,6 +17,8 @@ import de.dalang.nav.location.MapMatcher
 import de.dalang.nav.navigation.*
 import de.dalang.nav.search.SearchRepository
 import de.dalang.nav.search.SearchResult
+import de.dalang.nav.settings.SettingsRepository
+import de.dalang.nav.settings.ThemeMode
 import de.dalang.nav.util.CrashLogger
 import de.dalang.nav.util.GpsTrackLogger
 import java.io.File
@@ -46,6 +49,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         null
     }
 
+    private val brightnessProvider: BrightnessProvider? = try {
+        BrightnessProvider(application)
+    } catch (e: Exception) {
+        CrashLogger.logError("MainViewModel", "BrightnessProvider init failed", e)
+        null
+    }
+
+    private val settingsRepo = SettingsRepository(application)
     private val searchRepository: SearchRepository = SearchRepository()
     private val routeRepository: RouteRepository = RouteRepository()
     private val locationSmoother = LocationSmoother()
@@ -99,6 +110,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isRecalculatingRoute = MutableStateFlow(false)
     val isRecalculatingRoute: StateFlow<Boolean> = _isRecalculatingRoute.asStateFlow()
 
+    // Theme: null = System-Default verwenden (kein Override)
+    private val _isDarkOverride = MutableStateFlow<Boolean?>(null)
+    val isDarkOverride: StateFlow<Boolean?> = _isDarkOverride.asStateFlow()
+
+    private val _themeMode = MutableStateFlow(settingsRepo.themeMode)
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    // Aktuelle Helligkeit in Lux (für Debug)
+    private val _currentLux = MutableStateFlow(0f)
+    val currentLux: StateFlow<Float> = _currentLux.asStateFlow()
+
+    private var brightnessJob: Job? = null
+
     // Off-route Schwellenwert in Metern
     private val OFF_ROUTE_THRESHOLD = 40.0
     // Cooldown um nicht zu oft neu zu berechnen
@@ -140,6 +164,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         CrashLogger.log("MainViewModel initialized")
+        startBrightnessSensor()
+    }
+
+    /**
+     * Startet den Helligkeitssensor für Auto-Dark-Mode.
+     * Bei ThemeMode.AUTO wird dark mode nur bei <= 10 Lux aktiviert (sehr dunkel).
+     */
+    private fun startBrightnessSensor() {
+        val provider = brightnessProvider ?: return
+        if (!provider.isAvailable) {
+            CrashLogger.log("MainViewModel: No light sensor, using system theme")
+            return
+        }
+
+        brightnessJob?.cancel()
+        brightnessJob = viewModelScope.launch(exceptionHandler) {
+            // Hysterese: Dark bei < threshold, Light bei > threshold + 5 Lux
+            // Verhindert ständiges Hin-und-Her-Schalten bei Grenzwerten
+            var currentlyDark = false
+
+            provider.brightnessUpdates()
+                .catch { e ->
+                    CrashLogger.logError("MainViewModel", "Brightness updates error", e)
+                }
+                .collect { lux ->
+                    _currentLux.value = lux
+                    val threshold = settingsRepo.darkThresholdLux
+
+                    val shouldBeDark = if (currentlyDark) {
+                        // Aktuell dunkel -> erst bei threshold + 5 Lux aufhellen (Hysterese)
+                        lux < threshold + 5f
+                    } else {
+                        // Aktuell hell -> erst bei threshold abdunkeln
+                        lux < threshold
+                    }
+
+                    if (shouldBeDark != currentlyDark) {
+                        currentlyDark = shouldBeDark
+                        // Nur bei AUTO-Modus den Override setzen
+                        if (_themeMode.value == ThemeMode.AUTO) {
+                            _isDarkOverride.value = shouldBeDark
+                            CrashLogger.log("MainViewModel: Auto theme -> ${if (shouldBeDark) "DARK" else "LIGHT"} (${lux.toInt()} lux)")
+                        }
+                    }
+                }
+        }
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        _themeMode.value = mode
+        settingsRepo.themeMode = mode
+
+        when (mode) {
+            ThemeMode.AUTO -> {
+                // Sofort basierend auf aktuellem Lux-Wert entscheiden
+                val threshold = settingsRepo.darkThresholdLux
+                _isDarkOverride.value = _currentLux.value < threshold
+            }
+            ThemeMode.LIGHT -> _isDarkOverride.value = false
+            ThemeMode.DARK -> _isDarkOverride.value = true
+            ThemeMode.SYSTEM -> _isDarkOverride.value = null  // System entscheidet
+        }
+        CrashLogger.log("MainViewModel: Theme mode set to $mode")
     }
 
     private fun bindNavigationService() {
@@ -761,7 +848,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             var remaining = 0.0
             var remainingTime = 0.0
 
-            for (i in fromStep until route.steps.size) {
+            // Aktuellen Step anteilig berechnen (nicht volle Duration/Distance)
+            val currentStep = route.steps.getOrNull(fromStep)
+            if (currentStep != null && currentStep.distance > 0) {
+                val distToManeuver = location.distanceTo(currentStep.maneuver.location)
+                // Anteil des aktuellen Steps der noch übrig ist
+                val fractionRemaining = (distToManeuver / currentStep.distance).coerceIn(0.0, 1.0)
+                remaining += currentStep.distance * fractionRemaining
+                remainingTime += currentStep.duration * fractionRemaining
+            }
+
+            // Restliche Steps voll addieren (ab fromStep + 1)
+            for (i in (fromStep + 1) until route.steps.size) {
                 remaining += route.steps[i].distance
                 remainingTime += route.steps[i].duration
             }
