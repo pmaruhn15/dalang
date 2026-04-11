@@ -1,6 +1,7 @@
 package de.dalang.nav.ui.components
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,8 +16,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -29,7 +34,9 @@ import de.dalang.nav.navigation.*
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 @Composable
 fun NavigationPanel(
@@ -119,11 +126,17 @@ private fun ActiveNavigationContent(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Lane-Anzeige wenn verfügbar, sonst Richtungspfeil
+            // Lane-Anzeige wenn verfügbar, sonst Richtungspfeil oder Kreisverkehr
             if (displayStep?.laneInfo != null && displayStep.laneInfo.lanes.isNotEmpty()) {
                 LaneGuidancePanel(
                     laneInfo = displayStep.laneInfo,
                     modifier = Modifier.weight(1f)
+                )
+            } else if (displayStep.isRoundabout() && displayStep?.maneuver?.exit != null) {
+                // Dynamische Kreisverkehr-Visualisierung mit Ausfahrt
+                RoundaboutVisualization(
+                    exitNumber = displayStep.maneuver.exit,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             } else {
                 // Fallback: Richtungspfeil
@@ -499,7 +512,145 @@ private fun getTurnIconRes(step: RouteStep?): Int {
             "right" -> R.drawable.ic_turn_slight_right
             else -> R.drawable.ic_turn_straight
         }
+        // Kreisverkehr: Fallback auf Icon wenn keine Exit-Nummer
         "roundabout", "rotary", "exit roundabout", "exit rotary" -> R.drawable.ic_roundabout
         else -> R.drawable.ic_turn_straight
+    }
+}
+
+// Prüft ob ein Schritt ein Kreisverkehr-Manöver ist
+private fun RouteStep?.isRoundabout(): Boolean {
+    return this?.maneuver?.type in listOf("roundabout", "rotary", "exit roundabout", "exit rotary")
+}
+
+/**
+ * Dynamische Kreisverkehr-Visualisierung
+ * Zeigt den Kreisverkehr mit der korrekten Ausfahrt an
+ *
+ * @param exitNumber Die Ausfahrt (1 = erste Ausfahrt rechts, 2 = zweite, etc.)
+ * @param color Die Farbe für die Darstellung
+ */
+@Composable
+private fun RoundaboutVisualization(
+    exitNumber: Int,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier.size(64.dp)) {
+        val centerX = size.width / 2
+        val centerY = size.height / 2
+        val outerRadius = size.minDimension / 2 - 4.dp.toPx()
+        val innerRadius = outerRadius * 0.5f
+        val roadWidth = 8.dp.toPx()
+        val arrowSize = 10.dp.toPx()
+
+        // Kreisverkehr-Ring (Donut)
+        drawCircle(
+            color = color,
+            radius = outerRadius,
+            center = Offset(centerX, centerY),
+            style = Stroke(width = roadWidth)
+        )
+
+        // Innerer Kreis (Insel)
+        drawCircle(
+            color = color.copy(alpha = 0.3f),
+            radius = innerRadius,
+            center = Offset(centerX, centerY)
+        )
+
+        // Einfahrt von unten (immer)
+        drawLine(
+            color = color,
+            start = Offset(centerX, size.height),
+            end = Offset(centerX, centerY + outerRadius - roadWidth / 2),
+            strokeWidth = roadWidth,
+            cap = StrokeCap.Round
+        )
+
+        // Ausfahrt basierend auf Exit-Nummer
+        // In Deutschland: Kreisverkehr im Uhrzeigersinn
+        // Exit 1 = erste Ausfahrt (ca. 90° = rechts)
+        // Exit 2 = zweite Ausfahrt (ca. 0° = oben)
+        // Exit 3 = dritte Ausfahrt (ca. 270° = links)
+        // Exit 4 = vierte Ausfahrt (ca. 180° = zurück/unten)
+
+        // Winkel für Ausfahrt berechnen (0° = oben, im Uhrzeigersinn)
+        // Einfahrt ist bei 180° (unten)
+        // Exit 1 = 90° (rechts), Exit 2 = 0° (oben), Exit 3 = 270° (links)
+        val exitAngle = when (exitNumber) {
+            1 -> 90f   // Rechts
+            2 -> 0f    // Oben (geradeaus durch)
+            3 -> 270f  // Links
+            4 -> 180f  // Zurück (U-Turn)
+            else -> ((exitNumber - 1) * 90f) % 360f
+        }
+
+        val exitAngleRad = Math.toRadians(exitAngle.toDouble())
+        val exitX = centerX + (outerRadius * sin(exitAngleRad)).toFloat()
+        val exitY = centerY - (outerRadius * cos(exitAngleRad)).toFloat()
+
+        // Ausfahrtlinie
+        val exitEndX = centerX + ((outerRadius + 20.dp.toPx()) * sin(exitAngleRad)).toFloat()
+        val exitEndY = centerY - ((outerRadius + 20.dp.toPx()) * cos(exitAngleRad)).toFloat()
+
+        drawLine(
+            color = color,
+            start = Offset(exitX, exitY),
+            end = Offset(exitEndX, exitEndY),
+            strokeWidth = roadWidth,
+            cap = StrokeCap.Round
+        )
+
+        // Pfeilspitze an der Ausfahrt
+        val arrowAngleRad = exitAngleRad
+        val arrowTipX = exitEndX
+        val arrowTipY = exitEndY
+
+        // Pfeilflügel
+        val wingAngle1 = arrowAngleRad + Math.toRadians(150.0)
+        val wingAngle2 = arrowAngleRad - Math.toRadians(150.0)
+
+        val wing1X = arrowTipX + (arrowSize * sin(wingAngle1)).toFloat()
+        val wing1Y = arrowTipY - (arrowSize * cos(wingAngle1)).toFloat()
+        val wing2X = arrowTipX + (arrowSize * sin(wingAngle2)).toFloat()
+        val wing2Y = arrowTipY - (arrowSize * cos(wingAngle2)).toFloat()
+
+        val arrowPath = Path().apply {
+            moveTo(arrowTipX, arrowTipY)
+            lineTo(wing1X, wing1Y)
+            lineTo(wing2X, wing2Y)
+            close()
+        }
+        drawPath(arrowPath, color = color)
+
+        // Richtungspfeil auf dem Ring (im Uhrzeigersinn)
+        // Kleiner Pfeil bei 45° um Fahrtrichtung anzuzeigen
+        val indicatorAngle = Math.toRadians(135.0) // Zwischen Einfahrt und erster Ausfahrt
+        val indicatorX = centerX + ((outerRadius) * sin(indicatorAngle)).toFloat()
+        val indicatorY = centerY - ((outerRadius) * cos(indicatorAngle)).toFloat()
+
+        // Kleiner Richtungspfeil im Uhrzeigersinn
+        val smallArrowAngle = indicatorAngle + Math.toRadians(90.0) // Tangential
+        val smallArrowSize = 6.dp.toPx()
+        val smallWing1 = smallArrowAngle + Math.toRadians(140.0)
+        val smallWing2 = smallArrowAngle - Math.toRadians(140.0)
+
+        val smallPath = Path().apply {
+            moveTo(
+                indicatorX + (smallArrowSize * sin(smallArrowAngle)).toFloat(),
+                indicatorY - (smallArrowSize * cos(smallArrowAngle)).toFloat()
+            )
+            lineTo(
+                indicatorX + (smallArrowSize * sin(smallWing1)).toFloat(),
+                indicatorY - (smallArrowSize * cos(smallWing1)).toFloat()
+            )
+            lineTo(
+                indicatorX + (smallArrowSize * sin(smallWing2)).toFloat(),
+                indicatorY - (smallArrowSize * cos(smallWing2)).toFloat()
+            )
+            close()
+        }
+        drawPath(smallPath, color = color)
     }
 }

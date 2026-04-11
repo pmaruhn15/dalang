@@ -31,7 +31,8 @@ data class RouteStep(
 data class Maneuver(
     val type: String,
     val modifier: String?,
-    val location: LatLng
+    val location: LatLng,
+    val exit: Int? = null  // Kreisverkehr-Ausfahrt (1, 2, 3, etc.)
 )
 
 data class LatLng(
@@ -306,6 +307,11 @@ class RouteRepository {
                     // HERE action types zu OSRM-kompatiblen Typen mappen
                     val (maneuverType, modifier) = mapHereAction(actionType, action.optString("direction", ""))
 
+                    // Kreisverkehr-Ausfahrt extrahieren (HERE liefert "roundaboutExitNumber")
+                    val exitNumber = if (actionType in listOf("roundaboutEnter", "roundaboutExit")) {
+                        action.optInt("roundaboutExitNumber", 0).takeIf { it > 0 }
+                    } else null
+
                     // Geometrie-Segment fuer diesen Schritt
                     val nextOffset = if (i < actions.length() - 1) {
                         actions.getJSONObject(i + 1).optInt("offset", geometry.size)
@@ -325,7 +331,8 @@ class RouteRepository {
                             maneuver = Maneuver(
                                 type = maneuverType,
                                 modifier = modifier,
-                                location = location
+                                location = location,
+                                exit = exitNumber
                             ),
                             geometry = stepGeometry,
                             laneInfo = null  // Lane guidance nur im HERE SDK verfügbar, nicht REST API
@@ -454,15 +461,22 @@ class RouteRepository {
                     // Lane-Info aus intersections extrahieren (OSRM liefert lanes aus OSM turn:lanes Tag)
                     val laneInfo = extractOsrmLaneInfo(step)
 
+                    // Kreisverkehr-Ausfahrt extrahieren (OSRM liefert "exit" bei roundabout/rotary)
+                    val maneuverType = maneuverObj.getString("type")
+                    val exitNumber = if (maneuverType in listOf("roundabout", "rotary", "exit roundabout", "exit rotary")) {
+                        maneuverObj.optInt("exit", 0).takeIf { it > 0 }
+                    } else null
+
                     steps.add(
                         RouteStep(
                             instruction = step.optString("name", ""),
                             distance = step.getDouble("distance"),
                             duration = step.getDouble("duration"),
                             maneuver = Maneuver(
-                                type = maneuverObj.getString("type"),
+                                type = maneuverType,
                                 modifier = maneuverObj.optString("modifier", null),
-                                location = LatLng(location.getDouble(1), location.getDouble(0))
+                                location = LatLng(location.getDouble(1), location.getDouble(0)),
+                                exit = exitNumber
                             ),
                             geometry = stepGeometry,
                             laneInfo = laneInfo
