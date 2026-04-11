@@ -88,7 +88,9 @@ private fun ActiveNavigationContent(
     onGasStationClick: () -> Unit,
     isMcDonaldsLoading: Boolean = false
 ) {
-    val currentStep = state.currentStep
+    // Zeige das nächste RELEVANTE Manöver (überspringt "Geradeaus" auf Landstraßen etc.)
+    val displayStep = state.nextRelevantStep ?: state.currentStep
+    val distanceToDisplay = state.distanceToNextRelevantStep()
 
     // Panel ausgeklappt State - standardmäßig eingeklappt
     var isExpanded by remember { mutableStateOf(false) }
@@ -118,15 +120,15 @@ private fun ActiveNavigationContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Lane-Anzeige wenn verfügbar, sonst Richtungspfeil
-            if (currentStep?.laneInfo != null && currentStep.laneInfo.lanes.isNotEmpty()) {
+            if (displayStep?.laneInfo != null && displayStep.laneInfo.lanes.isNotEmpty()) {
                 LaneGuidancePanel(
-                    laneInfo = currentStep.laneInfo,
+                    laneInfo = displayStep.laneInfo,
                     modifier = Modifier.weight(1f)
                 )
             } else {
                 // Fallback: Richtungspfeil
                 Image(
-                    painter = painterResource(id = getTurnIconRes(currentStep)),
+                    painter = painterResource(id = getTurnIconRes(displayStep)),
                     contentDescription = "Richtung",
                     modifier = Modifier.size(64.dp),
                     colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
@@ -135,9 +137,9 @@ private fun ActiveNavigationContent(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Distanz
+            // Distanz zum nächsten relevanten Manöver
             Text(
-                text = state.distanceToNextStep.formatDistance(),
+                text = distanceToDisplay.formatDistance(),
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -497,7 +499,7 @@ private fun getTurnIconRes(step: RouteStep?): Int {
             "right" -> R.drawable.ic_turn_slight_right
             else -> R.drawable.ic_turn_straight
         }
-        "roundabout", "rotary", "exit roundabout", "exit rotary" -> R.drawable.ic_turn_right
+        "roundabout", "rotary", "exit roundabout", "exit rotary" -> R.drawable.ic_roundabout
         else -> R.drawable.ic_turn_straight
     }
 }

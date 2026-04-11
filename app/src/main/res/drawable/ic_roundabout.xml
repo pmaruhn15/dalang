@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- Roundabout: circle with clockwise arrow and exit indicator -->
+    <!-- Outer circle ring -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M24,6C14.06,6 6,14.06 6,24C6,33.94 14.06,42 24,42C33.94,42 42,33.94 42,24C42,14.06 33.94,6 24,6ZM24,34C18.48,34 14,29.52 14,24C14,18.48 18.48,14 24,14C29.52,14 34,18.48 34,24C34,29.52 29.52,34 24,34Z" />
+
+    <!-- Clockwise arrow on circle (top-right) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,18L42,12L42,24Z" />
+
+</vector>

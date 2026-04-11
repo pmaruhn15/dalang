@@ -52,6 +52,31 @@ data class NavigationState(
             val index = findNextRelevantStepIndex() ?: return null
             return route?.steps?.getOrNull(index)
         }
+
+    /**
+     * Berechnet die Distanz zum nächsten relevanten Manöver.
+     * Wenn der aktuelle Schritt relevant ist, wird distanceToNextStep zurückgegeben.
+     * Sonst werden die Distanzen der irrelevanten Schritte aufaddiert.
+     */
+    fun distanceToNextRelevantStep(): Double {
+        val steps = route?.steps ?: return distanceToNextStep
+        val relevantIndex = findNextRelevantStepIndex() ?: return distanceToNextStep
+
+        // Wenn der aktuelle Schritt bereits relevant ist, einfach die normale Distanz
+        if (relevantIndex == currentStepIndex) {
+            return distanceToNextStep
+        }
+
+        // Ansonsten: Distanz zum aktuellen Manöver + Distanzen aller Schritte dazwischen
+        var totalDistance = distanceToNextStep
+        for (i in (currentStepIndex + 1) until relevantIndex) {
+            totalDistance += steps.getOrNull(i)?.distance ?: 0.0
+        }
+        // Plus die Distanz des relevanten Schritts selbst (bis zu seinem Manöver-Punkt)
+        totalDistance += steps.getOrNull(relevantIndex)?.distance ?: 0.0
+
+        return totalDistance
+    }
 }
 
 sealed class NavigationEvent {
