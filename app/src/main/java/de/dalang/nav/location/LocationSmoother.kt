@@ -38,7 +38,7 @@ class LocationSmoother {
     private var lastGpsSpeed: Float = 0f
 
     // Konfiguration - reaktivere Werte für bessere Echtzeit-Tracking
-    private val minAccuracyMeters = 50f  // Positionen mit schlechterer Accuracy werden ignoriert
+    private val minAccuracyMeters = 100f  // Positionen mit schlechterer Accuracy werden ignoriert (100m erlaubt auch Highway-GPS)
     private val maxSpeedMs = 70f  // ~250 km/h - Ausreißer über dieser Geschwindigkeit werden gefiltert
     private val processNoisePos = 0.0005  // Prozessrauschen Position - höher = reaktiver
     private val processNoiseVel = 0.005   // Prozessrauschen Geschwindigkeit - höher = schnellere Anpassung

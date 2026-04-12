@@ -181,8 +181,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Startet den Helligkeitssensor für Auto-Dark-Mode.
      * Bei ThemeMode.AUTO wird dark mode nur bei <= 10 Lux aktiviert (sehr dunkel).
      *
-     * Verwendet große Hysterese (15 Lux) und Debounce (3 Sekunden) um
-     * flackern bei wechselnden Lichtverhältnissen (z.B. Tunnel, Schatten) zu vermeiden.
+     * Verwendet gleitenden Durchschnitt und Debounce um Flackern zu vermeiden.
+     * - Erste Messung: Sofort anwenden
+     * - Danach: 5-Sekunden gleitender Durchschnitt mit 3-Sekunden Debounce
      */
     private fun startBrightnessSensor() {
         val provider = brightnessProvider ?: return
@@ -193,13 +194,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         brightnessJob?.cancel()
         brightnessJob = viewModelScope.launch(exceptionHandler) {
-            // Hysterese: Dark bei < threshold, Light bei > threshold + 15 Lux
-            // Plus Debounce: 3 Sekunden stabil bevor Wechsel
-            var currentlyDark = false
-            var pendingSwitch: Boolean? = null
-            var switchRequestTime = 0L
-            val debounceMs = 3000L  // 3 Sekunden Debounce
-            val hysteresis = 15f    // 15 Lux Hysterese (statt 5)
+            var currentlyDark: Boolean? = null  // null = noch nicht initialisiert
+            var lastSwitchTime = 0L
+            val minSwitchInterval = 10_000L  // Mindestens 10 Sekunden zwischen Wechseln
+            val hysteresis = 15f             // 15 Lux Hysterese
+
+            // Gleitender Durchschnitt der letzten Messungen
+            val luxHistory = ArrayDeque<Float>(10)
+            val maxHistorySize = 10  // ~5 Sekunden bei 2 Messungen/Sekunde
 
             provider.brightnessUpdates()
                 .catch { e ->
@@ -208,39 +210,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .collect { lux ->
                     _currentLux.value = lux
                     val threshold = settingsRepo.darkThresholdLux
-
-                    val shouldBeDark = if (currentlyDark) {
-                        // Aktuell dunkel -> erst bei threshold + hysteresis aufhellen
-                        lux < threshold + hysteresis
-                    } else {
-                        // Aktuell hell -> erst bei threshold abdunkeln
-                        lux < threshold
-                    }
-
                     val now = System.currentTimeMillis()
 
-                    if (shouldBeDark != currentlyDark) {
-                        // Wechsel gewünscht - Debounce prüfen
-                        if (pendingSwitch == shouldBeDark) {
-                            // Gleicher pending switch - Zeit prüfen
-                            if (now - switchRequestTime >= debounceMs) {
-                                // Debounce abgelaufen -> wirklich wechseln
-                                currentlyDark = shouldBeDark
-                                pendingSwitch = null
-                                if (_themeMode.value == ThemeMode.AUTO) {
-                                    _isDarkOverride.value = shouldBeDark
-                                    CrashLogger.log("MainViewModel: Auto theme -> ${if (shouldBeDark) "DARK" else "LIGHT"} (${lux.toInt()} lux)")
-                                }
-                            }
-                            // Sonst weiter warten
-                        } else {
-                            // Neuer oder geänderter pending switch - Timer starten
-                            pendingSwitch = shouldBeDark
-                            switchRequestTime = now
+                    // Lux-Historie aktualisieren
+                    luxHistory.addLast(lux)
+                    if (luxHistory.size > maxHistorySize) {
+                        luxHistory.removeFirst()
+                    }
+
+                    // Durchschnitt berechnen
+                    val avgLux = luxHistory.average().toFloat()
+
+                    // ERSTE Messung: Sofort anwenden (kein Debounce)
+                    if (currentlyDark == null) {
+                        currentlyDark = avgLux < threshold
+                        if (_themeMode.value == ThemeMode.AUTO) {
+                            _isDarkOverride.value = currentlyDark
+                            CrashLogger.log("MainViewModel: Auto theme initial -> ${if (currentlyDark!!) "DARK" else "LIGHT"} (${avgLux.toInt()} lux avg)")
                         }
+                        lastSwitchTime = now
+                        return@collect
+                    }
+
+                    // Berechne ob Wechsel gewünscht ist (mit Hysterese)
+                    val shouldBeDark = if (currentlyDark!!) {
+                        // Aktuell dunkel -> erst bei threshold + hysteresis aufhellen
+                        avgLux < threshold + hysteresis
                     } else {
-                        // Kein Wechsel nötig - pending switch zurücksetzen
-                        pendingSwitch = null
+                        // Aktuell hell -> erst bei threshold abdunkeln
+                        avgLux < threshold
+                    }
+
+                    // Wechsel nur wenn:
+                    // 1. Tatsächlich ein Wechsel nötig ist
+                    // 2. Mindestens minSwitchInterval seit letztem Wechsel vergangen
+                    if (shouldBeDark != currentlyDark && (now - lastSwitchTime) >= minSwitchInterval) {
+                        currentlyDark = shouldBeDark
+                        lastSwitchTime = now
+                        if (_themeMode.value == ThemeMode.AUTO) {
+                            _isDarkOverride.value = shouldBeDark
+                            CrashLogger.log("MainViewModel: Auto theme -> ${if (shouldBeDark) "DARK" else "LIGHT"} (${avgLux.toInt()} lux avg)")
+                        }
                     }
                 }
         }
