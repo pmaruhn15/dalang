@@ -180,6 +180,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Startet den Helligkeitssensor für Auto-Dark-Mode.
      * Bei ThemeMode.AUTO wird dark mode nur bei <= 10 Lux aktiviert (sehr dunkel).
+     *
+     * Verwendet große Hysterese (15 Lux) und Debounce (3 Sekunden) um
+     * flackern bei wechselnden Lichtverhältnissen (z.B. Tunnel, Schatten) zu vermeiden.
      */
     private fun startBrightnessSensor() {
         val provider = brightnessProvider ?: return
@@ -190,9 +193,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         brightnessJob?.cancel()
         brightnessJob = viewModelScope.launch(exceptionHandler) {
-            // Hysterese: Dark bei < threshold, Light bei > threshold + 5 Lux
-            // Verhindert ständiges Hin-und-Her-Schalten bei Grenzwerten
+            // Hysterese: Dark bei < threshold, Light bei > threshold + 15 Lux
+            // Plus Debounce: 3 Sekunden stabil bevor Wechsel
             var currentlyDark = false
+            var pendingSwitch: Boolean? = null
+            var switchRequestTime = 0L
+            val debounceMs = 3000L  // 3 Sekunden Debounce
+            val hysteresis = 15f    // 15 Lux Hysterese (statt 5)
 
             provider.brightnessUpdates()
                 .catch { e ->
@@ -203,20 +210,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val threshold = settingsRepo.darkThresholdLux
 
                     val shouldBeDark = if (currentlyDark) {
-                        // Aktuell dunkel -> erst bei threshold + 5 Lux aufhellen (Hysterese)
-                        lux < threshold + 5f
+                        // Aktuell dunkel -> erst bei threshold + hysteresis aufhellen
+                        lux < threshold + hysteresis
                     } else {
                         // Aktuell hell -> erst bei threshold abdunkeln
                         lux < threshold
                     }
 
+                    val now = System.currentTimeMillis()
+
                     if (shouldBeDark != currentlyDark) {
-                        currentlyDark = shouldBeDark
-                        // Nur bei AUTO-Modus den Override setzen
-                        if (_themeMode.value == ThemeMode.AUTO) {
-                            _isDarkOverride.value = shouldBeDark
-                            CrashLogger.log("MainViewModel: Auto theme -> ${if (shouldBeDark) "DARK" else "LIGHT"} (${lux.toInt()} lux)")
+                        // Wechsel gewünscht - Debounce prüfen
+                        if (pendingSwitch == shouldBeDark) {
+                            // Gleicher pending switch - Zeit prüfen
+                            if (now - switchRequestTime >= debounceMs) {
+                                // Debounce abgelaufen -> wirklich wechseln
+                                currentlyDark = shouldBeDark
+                                pendingSwitch = null
+                                if (_themeMode.value == ThemeMode.AUTO) {
+                                    _isDarkOverride.value = shouldBeDark
+                                    CrashLogger.log("MainViewModel: Auto theme -> ${if (shouldBeDark) "DARK" else "LIGHT"} (${lux.toInt()} lux)")
+                                }
+                            }
+                            // Sonst weiter warten
+                        } else {
+                            // Neuer oder geänderter pending switch - Timer starten
+                            pendingSwitch = shouldBeDark
+                            switchRequestTime = now
                         }
+                    } else {
+                        // Kein Wechsel nötig - pending switch zurücksetzen
+                        pendingSwitch = null
                     }
                 }
         }
