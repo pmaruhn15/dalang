@@ -1107,6 +1107,48 @@ private fun createPriceLabelBitmap(price: Double, isCheapest: Boolean, isDarkThe
 }
 
 /**
+ * Erstellt ein Bitmap mit Zeit-Differenz-Label für alternative Routen
+ * Rot für länger (+X Min), Grün für kürzer (-X Min)
+ */
+private fun createTimeDiffBitmap(diffMinutes: Int, isDarkTheme: Boolean): Bitmap {
+    val text = if (diffMinutes > 0) "+$diffMinutes Min" else "$diffMinutes Min"
+    val isLonger = diffMinutes > 0
+
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 32f
+        typeface = Typeface.DEFAULT_BOLD
+        color = Color.WHITE
+    }
+
+    val textBounds = Rect()
+    paint.getTextBounds(text, 0, text.length, textBounds)
+
+    val padding = 12
+    val width = textBounds.width() + padding * 2
+    val height = textBounds.height() + padding * 2
+
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+
+    // Hintergrund: Orange/Rot für länger, Grün für kürzer
+    val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = if (isLonger) Color.parseColor("#FF5722") else Color.parseColor("#4CAF50")
+        style = Paint.Style.FILL
+    }
+    canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 8f, 8f, bgPaint)
+
+    // Text
+    canvas.drawText(
+        text,
+        padding.toFloat(),
+        height.toFloat() - padding + 2,
+        paint
+    )
+
+    return bitmap
+}
+
+/**
  * Berechnet dynamischen Zoom basierend auf Geschwindigkeit und Distanz zum nächsten Manöver
  * - Bei niedriger Geschwindigkeit (Stadt): Zoom 17-18
  * - Bei hoher Geschwindigkeit (Autobahn): Zoom 14-15
@@ -1229,13 +1271,14 @@ private fun drawTrafficRoute(style: Style, route: Route, isDarkTheme: Boolean) {
  * - Während Navigation: Nur abweichende Teile mit Badge am Abzweigpunkt
  */
 private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boolean, isNavigating: Boolean) {
-    // Alte Alternative-Layer entfernen
+    // Alte Alternative-Layer und Icons entfernen
     for (i in 0 until 5) {
         try {
             style.removeLayer("alternative-layer-$i")
             style.removeSource("alternative-source-$i")
             style.removeLayer("alternative-badge-layer-$i")
             style.removeSource("alternative-badge-source-$i")
+            style.removeImage("alt-badge-$i")
         } catch (e: Exception) { /* ignorieren */ }
     }
 
@@ -1290,9 +1333,8 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
                 style.addLayer(lineLayer)
             }
 
-            // Zeit-Badge
+            // Zeit-Badge als Bitmap (SymbolLayer Text funktioniert nicht ohne Fonts im Style)
             val diffMinutes = (alt.durationDifference / 60).toInt()
-            val badgeText = if (diffMinutes > 0) "+$diffMinutes Min" else "$diffMinutes Min"
 
             // Badge-Position: Bei Navigation am Abzweigpunkt, sonst in der Mitte der Route
             val badgePoint = if (isNavigating) {
@@ -1303,15 +1345,17 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
                 geometryToShow[midIndex]
             }
 
+            // Bitmap erstellen und als Icon registrieren
+            val badgeIconName = "alt-badge-$index"
+            val badgeBitmap = createTimeDiffBitmap(diffMinutes, isDarkTheme)
+            style.addImage(badgeIconName, badgeBitmap)
+
             val badgeGeoJson = """
                 {
                     "type": "Feature",
                     "geometry": {
                         "type": "Point",
                         "coordinates": [${badgePoint.lng}, ${badgePoint.lat}]
-                    },
-                    "properties": {
-                        "text": "$badgeText"
                     }
                 }
             """.trimIndent()
@@ -1321,13 +1365,9 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
 
             val badgeLayer = SymbolLayer("alternative-badge-layer-$index", "alternative-badge-source-$index").apply {
                 setProperties(
-                    PropertyFactory.textField("{text}"),
-                    PropertyFactory.textSize(14f),
-                    PropertyFactory.textColor(if (diffMinutes > 0) Color.parseColor("#FF5722") else Color.parseColor("#4CAF50")),
-                    PropertyFactory.textHaloColor(if (isDarkTheme) Color.BLACK else Color.WHITE),
-                    PropertyFactory.textHaloWidth(2f),
-                    PropertyFactory.textOffset(arrayOf(0f, -1.5f)),
-                    PropertyFactory.textFont(arrayOf("Open Sans Bold", "Arial Unicode MS Bold"))
+                    PropertyFactory.iconImage(badgeIconName),
+                    PropertyFactory.iconAllowOverlap(true),
+                    PropertyFactory.iconIgnorePlacement(true)
                 )
             }
             style.addLayer(badgeLayer)

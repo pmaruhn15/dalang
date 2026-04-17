@@ -320,9 +320,10 @@ class RouteRepository {
             // Differenz zur Hauptroute berechnen
             val durationDiff = alt.duration - mainRoute.duration
 
-            // Filter: Nur Alternativen die nicht viel länger sind (max +20 Min)
-            // und nicht sinnlos kurz (Unterschied < 30 Sekunden bei gleichem Weg)
-            if (durationDiff > 20 * 60 || kotlin.math.abs(durationDiff) < 30) {
+            // Filter: Nur Alternativen die nicht DOPPELT so lang sind wie Hauptroute
+            // Und nicht sinnlos kurz (Unterschied < 30 Sekunden bei gleichem Weg)
+            val maxDurationDiff = mainRoute.duration  // Max 100% länger
+            if (durationDiff > maxDurationDiff || kotlin.math.abs(durationDiff) < 30) {
                 continue
             }
 
