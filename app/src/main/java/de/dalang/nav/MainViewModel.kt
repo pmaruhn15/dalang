@@ -124,7 +124,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var brightnessJob: Job? = null
 
     // Off-route Schwellenwert in Metern
-    private val OFF_ROUTE_THRESHOLD = 40.0
+    private val OFF_ROUTE_THRESHOLD = 60.0
     // Cooldown um nicht zu oft neu zu berechnen
     private var lastRecalculationTime = 0L
     private val RECALCULATION_COOLDOWN_MS = 5000L
@@ -307,8 +307,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _currentLocation.value = LatLng(location.latitude, location.longitude)
                 }
 
-                // Live-Updates
-                provider.locationUpdates(1000L)
+                // Live-Updates (GPS only - Network Provider liefert nur Cell-Tower-Mist mit 9km Ungenauigkeit)
+                provider.locationUpdates(1000L, useNetworkProvider = false)
                     .catch { e ->
                         CrashLogger.logError("MainViewModel", "Location updates error", e)
                     }

@@ -73,8 +73,8 @@ class LocationProvider(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    fun locationUpdates(intervalMs: Long = 1000L): Flow<Location> = callbackFlow {
-        CrashLogger.log("LocationProvider: Starting location updates")
+    fun locationUpdates(intervalMs: Long = 1000L, useNetworkProvider: Boolean = true): Flow<Location> = callbackFlow {
+        CrashLogger.log("LocationProvider: Starting location updates (network=$useNetworkProvider)")
 
         val manager = locationManager
         if (manager == null) {
@@ -138,7 +138,7 @@ class LocationProvider(private val context: Context) {
                 false
             }
 
-            if (networkEnabled) {
+            if (networkEnabled && useNetworkProvider) {
                 try {
                     CrashLogger.log("LocationProvider: Requesting Network updates")
                     manager.requestLocationUpdates(
@@ -151,6 +151,8 @@ class LocationProvider(private val context: Context) {
                 } catch (e: Exception) {
                     CrashLogger.logError("LocationProvider", "Network requestLocationUpdates failed", e)
                 }
+            } else if (!useNetworkProvider) {
+                CrashLogger.log("LocationProvider: Network provider disabled (GPS-only mode)")
             }
 
             if (!gpsEnabled && !networkEnabled) {
