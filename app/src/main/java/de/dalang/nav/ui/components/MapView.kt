@@ -68,6 +68,7 @@ fun MapViewComposable(
     poiSettingsVersion: Int = 0,  // Trigger für POI Layer Visibility Update
     onMapClick: ((LatLng) -> Unit)? = null,
     onPoiClick: ((Poi) -> Unit)? = null,  // Callback wenn POI-Marker geklickt wird
+    onAlternativeRouteClick: ((Int) -> Unit)? = null,  // Callback wenn Alternative geklickt (Index)
     isDarkThemeOverride: Boolean? = null,  // null = System entscheidet
     modifier: Modifier = Modifier
 ) {
@@ -179,6 +180,18 @@ fun MapViewComposable(
                                                     onPoiClick?.invoke(nearestPoi)
                                                     return@addOnMapClickListener true
                                                 }
+                                            }
+                                        }
+
+                                        // Prüfe ob Alternative Route geklickt wurde (vor Navigation)
+                                        if (!isNavigating && route?.alternatives?.isNotEmpty() == true && onAlternativeRouteClick != null) {
+                                            val clickedLatLng = LatLng(point.latitude, point.longitude)
+                                            // Finde nächste Alternative (Mindestentfernung zur Route-Linie)
+                                            val clickedAltIndex = findClickedAlternativeRoute(clickedLatLng, route.alternatives, route.geometry)
+                                            if (clickedAltIndex != null) {
+                                                CrashLogger.log("MapView: Alternative route $clickedAltIndex clicked")
+                                                onAlternativeRouteClick.invoke(clickedAltIndex)
+                                                return@addOnMapClickListener true
                                             }
                                         }
 
@@ -1108,11 +1121,10 @@ private fun createPriceLabelBitmap(price: Double, isCheapest: Boolean, isDarkThe
 
 /**
  * Erstellt ein Bitmap mit Zeit-Differenz-Label für alternative Routen
- * Rot für länger (+X Min), Grün für kürzer (-X Min)
+ * Weißer Text auf halbtransparentem dunklen Hintergrund für gute Lesbarkeit
  */
 private fun createTimeDiffBitmap(diffMinutes: Int, isDarkTheme: Boolean): Bitmap {
     val text = if (diffMinutes > 0) "+$diffMinutes Min" else "$diffMinutes Min"
-    val isLonger = diffMinutes > 0
 
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 32f
@@ -1130,9 +1142,9 @@ private fun createTimeDiffBitmap(diffMinutes: Int, isDarkTheme: Boolean): Bitmap
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
-    // Hintergrund: Orange/Rot für länger, Grün für kürzer
+    // Halbtransparenter dunkler Hintergrund für gute Lesbarkeit auf jeder Karte
     val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = if (isLonger) Color.parseColor("#FF5722") else Color.parseColor("#4CAF50")
+        color = Color.parseColor("#CC333333")  // 80% opak dunkelgrau
         style = Paint.Style.FILL
     }
     canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 8f, 8f, bgPaint)
@@ -1146,6 +1158,54 @@ private fun createTimeDiffBitmap(diffMinutes: Int, isDarkTheme: Boolean): Bitmap
     )
 
     return bitmap
+}
+
+/**
+ * Findet welche Alternative Route geklickt wurde (wenn überhaupt).
+ * Gibt Index zurück oder null wenn keine Alternative in Klick-Nähe.
+ */
+private fun findClickedAlternativeRoute(
+    clickPoint: LatLng,
+    alternatives: List<AlternativeRoute>,
+    mainRouteGeometry: List<LatLng>
+): Int? {
+    val clickTolerance = 200.0  // Meter - Toleranz für Klick auf Route
+
+    // Prüfe zuerst ob Klick näher an Hauptroute ist - dann ignorieren
+    val distToMain = minDistanceToRoute(clickPoint, mainRouteGeometry)
+    if (distToMain < clickTolerance * 0.5) {
+        return null  // Zu nah an Hauptroute
+    }
+
+    // Finde nächste Alternative
+    var minDist = Double.MAX_VALUE
+    var closestIndex: Int? = null
+
+    alternatives.forEachIndexed { index, alt ->
+        val dist = minDistanceToRoute(clickPoint, alt.geometry)
+        if (dist < minDist && dist < clickTolerance) {
+            minDist = dist
+            closestIndex = index
+        }
+    }
+
+    return closestIndex
+}
+
+/**
+ * Berechnet minimale Distanz von Punkt zu Route-Geometrie
+ */
+private fun minDistanceToRoute(point: LatLng, geometry: List<LatLng>): Double {
+    if (geometry.isEmpty()) return Double.MAX_VALUE
+
+    var minDist = Double.MAX_VALUE
+    for (routePoint in geometry) {
+        val dist = point.distanceTo(routePoint)
+        if (dist < minDist) {
+            minDist = dist
+        }
+    }
+    return minDist
 }
 
 /**

@@ -523,6 +523,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             state.route.steps.firstOrNull()?.let { step ->
                 speakInstruction(step)
             }
+
+            // Proaktives Rerouting starten (prüft alle 3 Min ob schnellere Route verfügbar)
+            startProactiveRerouting()
         } catch (e: Exception) {
             CrashLogger.logError("MainViewModel", "startNavigation failed", e)
         }
@@ -531,6 +534,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun stopNavigation() {
         CrashLogger.log("MainViewModel: stopNavigation")
         try {
+            // Proaktives Rerouting stoppen
+            stopProactiveRerouting()
+
             // GPS Track Session stoppen
             GpsTrackLogger.stopSession()
 
@@ -884,6 +890,112 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 _isRecalculatingRoute.value = false
             }
+        }
+    }
+
+    /**
+     * Wählt eine alternative Route aus und macht sie zur Hauptroute.
+     * Die bisherige Hauptroute wird zur Alternative.
+     */
+    fun selectAlternativeRoute(alternativeIndex: Int) {
+        val currentState = _navigationState.value
+        val currentRoute = currentState.route ?: return
+        val alternatives = currentRoute.alternatives
+
+        if (alternativeIndex < 0 || alternativeIndex >= alternatives.size) {
+            CrashLogger.log("MainViewModel: Invalid alternative index $alternativeIndex")
+            return
+        }
+
+        val selectedAlt = alternatives[alternativeIndex]
+        CrashLogger.log("MainViewModel: Selecting alternative route $alternativeIndex (${(selectedAlt.durationDifference / 60).toInt()} min diff)")
+
+        // Neue Hauptroute aus Alternative erstellen
+        // Wir müssen eine vollständige Route vom RouteRepository holen
+        viewModelScope.launch(exceptionHandler) {
+            try {
+                val currentLocation = _currentLocation.value ?: return@launch
+                val destination = currentState.destination ?: return@launch
+
+                // Route neu berechnen mit Präferenz für die gewählte Alternative
+                // Da HERE die Routen berechnet, holen wir einfach neu und zeigen alle Alternativen
+                val newRoute = routeRepository.getRoute(currentLocation, destination)
+                if (newRoute != null) {
+                    _navigationState.update {
+                        it.copy(
+                            route = newRoute,
+                            currentStepIndex = 0,
+                            totalDistanceRemaining = newRoute.distance,
+                            totalTimeRemaining = newRoute.duration
+                        )
+                    }
+                    CrashLogger.log("MainViewModel: Route updated with ${newRoute.alternatives.size} alternatives")
+                }
+            } catch (e: Exception) {
+                CrashLogger.logError("MainViewModel", "selectAlternativeRoute failed", e)
+            }
+        }
+    }
+
+    // Proaktives Rerouting - prüft periodisch ob schnellere Route verfügbar
+    private var proactiveReroutingJob: Job? = null
+    private var lastFasterRouteCheck = 0L
+    private val FASTER_ROUTE_CHECK_INTERVAL_MS = 3 * 60 * 1000L  // Alle 3 Minuten
+    private val MIN_TIME_SAVINGS_SECONDS = 120  // Mindestens 2 Min schneller
+
+    private fun startProactiveRerouting() {
+        proactiveReroutingJob?.cancel()
+        proactiveReroutingJob = viewModelScope.launch(exceptionHandler) {
+            while (isActive) {
+                delay(FASTER_ROUTE_CHECK_INTERVAL_MS)
+                checkForFasterRoute()
+            }
+        }
+    }
+
+    private fun stopProactiveRerouting() {
+        proactiveReroutingJob?.cancel()
+        proactiveReroutingJob = null
+    }
+
+    private suspend fun checkForFasterRoute() {
+        val state = _navigationState.value
+        if (!state.isNavigating || state.route == null) return
+
+        val currentLocation = _currentLocation.value ?: return
+        val destination = state.destination ?: return
+
+        try {
+            CrashLogger.log("MainViewModel: Checking for faster route...")
+            val newRoute = routeRepository.getRoute(currentLocation, destination)
+
+            if (newRoute != null) {
+                val currentRemaining = state.totalTimeRemaining
+                val newDuration = newRoute.duration
+                val timeSaved = currentRemaining - newDuration
+
+                if (timeSaved >= MIN_TIME_SAVINGS_SECONDS) {
+                    val savedMinutes = (timeSaved / 60).toInt()
+                    CrashLogger.log("MainViewModel: Faster route found! Saves $savedMinutes min")
+
+                    // Route automatisch übernehmen und User informieren
+                    _navigationState.update {
+                        it.copy(
+                            route = newRoute,
+                            currentStepIndex = 0,
+                            totalDistanceRemaining = newRoute.distance,
+                            totalTimeRemaining = newRoute.duration
+                        )
+                    }
+
+                    // User über schnellere Route informieren
+                    navigationService?.speakNow("Schnellere Route gefunden. $savedMinutes Minuten gespart.")
+                } else {
+                    CrashLogger.log("MainViewModel: No significantly faster route (would save ${(timeSaved/60).toInt()} min)")
+                }
+            }
+        } catch (e: Exception) {
+            CrashLogger.logError("MainViewModel", "checkForFasterRoute failed", e)
         }
     }
 

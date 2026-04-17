@@ -386,6 +386,9 @@ fun DaLangAppContent(viewModel: MainViewModel) {
                 }
             },
             onPoiClick = null,  // POIs werden jetzt über Dialog ausgewählt
+            onAlternativeRouteClick = { index ->
+                viewModel.selectAlternativeRoute(index)
+            },
             isDarkThemeOverride = isDarkOverride,
             modifier = Modifier.fillMaxSize()
         )
