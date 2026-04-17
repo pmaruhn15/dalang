@@ -18,10 +18,13 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import de.dalang.nav.R
+import de.dalang.nav.navigation.AlternativeRoute
 import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.navigation.Poi
 import de.dalang.nav.navigation.PoiType
 import de.dalang.nav.navigation.Route
+import de.dalang.nav.navigation.TrafficLevel
+import de.dalang.nav.navigation.TrafficSegment
 import de.dalang.nav.settings.FuelType
 import de.dalang.nav.settings.SettingsRepository
 import de.dalang.nav.ui.theme.MapColors
@@ -524,50 +527,68 @@ fun MapViewComposable(
         }
     }
 
-    // Route zeichnen
-    LaunchedEffect(route, isMapReady, styleVersion) {
+    // Route zeichnen (mit Traffic-Farben wenn verfügbar)
+    LaunchedEffect(route, isMapReady, styleVersion, isDarkTheme) {
         if (!isMapReady) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
 
         try {
             map.getStyle { style ->
                 try {
-                    // Vorhandene Route entfernen
+                    // Vorhandene Route und Traffic-Layer entfernen
                     try {
                         style.removeLayer("route-layer")
                         style.removeSource("route-source")
+                        // Traffic-Segmente entfernen
+                        for (level in listOf("green", "yellow", "orange", "red")) {
+                            try {
+                                style.removeLayer("traffic-layer-$level")
+                                style.removeSource("traffic-source-$level")
+                            } catch (e: Exception) { /* ignorieren */ }
+                        }
                     } catch (e: Exception) {
                         // Layer existiert nicht
                     }
 
                     if (route != null && route.geometry.isNotEmpty()) {
-                        val coordinatesJson = route.geometry.joinToString(",") { pt ->
-                            "[${pt.lng},${pt.lat}]"
-                        }
-                        val geoJson = """
-                            {
-                                "type": "Feature",
-                                "geometry": {
-                                    "type": "LineString",
-                                    "coordinates": [$coordinatesJson]
-                                }
+                        // Traffic-Segmente zeichnen wenn vorhanden
+                        if (route.trafficSegments.isNotEmpty()) {
+                            drawTrafficRoute(style, route, isDarkTheme)
+                            CrashLogger.log("MapView: Route drawn with ${route.geometry.size} points and ${route.trafficSegments.size} traffic segments")
+                        } else {
+                            // Fallback: Einfarbige Route
+                            val coordinatesJson = route.geometry.joinToString(",") { pt ->
+                                "[${pt.lng},${pt.lat}]"
                             }
-                        """.trimIndent()
+                            val geoJson = """
+                                {
+                                    "type": "Feature",
+                                    "geometry": {
+                                        "type": "LineString",
+                                        "coordinates": [$coordinatesJson]
+                                    }
+                                }
+                            """.trimIndent()
 
-                        val source = GeoJsonSource("route-source", geoJson)
-                        style.addSource(source)
+                            val source = GeoJsonSource("route-source", geoJson)
+                            style.addSource(source)
 
-                        val lineLayer = LineLayer("route-layer", "route-source").apply {
-                            setProperties(
-                                PropertyFactory.lineColor(MapColors.routeColor(isDarkTheme)),
-                                PropertyFactory.lineWidth(6f),
-                                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
-                                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
-                            )
+                            val lineLayer = LineLayer("route-layer", "route-source").apply {
+                                setProperties(
+                                    PropertyFactory.lineColor(MapColors.routeColor(isDarkTheme)),
+                                    PropertyFactory.lineWidth(6f),
+                                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                                    PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+                                )
+                            }
+                            style.addLayer(lineLayer)
+                            CrashLogger.log("MapView: Route drawn with ${route.geometry.size} points (no traffic data)")
                         }
-                        style.addLayer(lineLayer)
 
-                        CrashLogger.log("MapView: Route drawn with ${route.geometry.size} points")
+                        // Alternative Routen zeichnen (grau, gestrichelt, mit Zeit-Badge)
+                        if (route.alternatives.isNotEmpty()) {
+                            drawAlternativeRoutes(style, route, isDarkTheme)
+                        }
 
                         // Kamera auf Route zentrieren
                         if (!isNavigating && route.geometry.size >= 2) {
@@ -1110,4 +1131,183 @@ private fun calculateDynamicZoom(speedMs: Float, distanceToManeuver: Double): Do
 
     // Kombination: Basis-Zoom + Distanz-Bonus, max 18.5
     return (speedZoom + distanceBonus).coerceIn(14.0, 18.5)
+}
+
+/**
+ * Zeichnet die Route mit Traffic-Farben.
+ * Erstellt separate LineLayer für jede Verkehrsstufe (grün/gelb/orange/rot).
+ */
+private fun drawTrafficRoute(style: Style, route: Route, isDarkTheme: Boolean) {
+    // 1. Basis-Route als Outline (breiter, dunkel) zuerst zeichnen
+    val coordinatesJson = route.geometry.joinToString(",") { pt ->
+        "[${pt.lng},${pt.lat}]"
+    }
+    val baseGeoJson = """
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [$coordinatesJson]
+            }
+        }
+    """.trimIndent()
+
+    val baseSource = GeoJsonSource("route-source", baseGeoJson)
+    style.addSource(baseSource)
+
+    val baseLayer = LineLayer("route-layer", "route-source").apply {
+        setProperties(
+            PropertyFactory.lineColor(if (isDarkTheme) Color.DKGRAY else Color.parseColor("#424242")),
+            PropertyFactory.lineWidth(8f),
+            PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+            PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+        )
+    }
+    style.addLayer(baseLayer)
+
+    // 2. Traffic-Segmente nach Level gruppieren und darüber zeichnen
+    val segmentsByLevel = route.trafficSegments.groupBy { it.level }
+
+    for ((level, segments) in segmentsByLevel) {
+        val levelName = level.name.lowercase()
+        val color = when (level) {
+            TrafficLevel.GREEN -> MapColors.TRAFFIC_GREEN
+            TrafficLevel.YELLOW -> MapColors.TRAFFIC_YELLOW
+            TrafficLevel.ORANGE -> MapColors.TRAFFIC_ORANGE
+            TrafficLevel.RED -> MapColors.TRAFFIC_RED
+        }
+
+        // MultiLineString aus allen Segmenten dieses Levels
+        val lineStrings = segments.mapNotNull { segment ->
+            val startIdx = segment.startIndex.coerceIn(0, route.geometry.size - 1)
+            val endIdx = segment.endIndex.coerceIn(startIdx + 1, route.geometry.size)
+
+            if (endIdx > startIdx && startIdx < route.geometry.size) {
+                val points = route.geometry.subList(startIdx, endIdx.coerceAtMost(route.geometry.size))
+                if (points.size >= 2) {
+                    val coords = points.joinToString(",") { "[${it.lng},${it.lat}]" }
+                    "[$coords]"
+                } else null
+            } else null
+        }
+
+        if (lineStrings.isNotEmpty()) {
+            val geoJson = """
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "MultiLineString",
+                        "coordinates": [${lineStrings.joinToString(",")}]
+                    }
+                }
+            """.trimIndent()
+
+            val source = GeoJsonSource("traffic-source-$levelName", geoJson)
+            style.addSource(source)
+
+            val lineLayer = LineLayer("traffic-layer-$levelName", "traffic-source-$levelName").apply {
+                setProperties(
+                    PropertyFactory.lineColor(color),
+                    PropertyFactory.lineWidth(5f),
+                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                    PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+                )
+            }
+            style.addLayer(lineLayer)
+        }
+    }
+}
+
+/**
+ * Zeichnet alternative Routen als graue gestrichelte Linien.
+ * Zeigt Zeitdifferenz-Badge am Abzweigpunkt.
+ */
+private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boolean) {
+    // Alte Alternative-Layer entfernen
+    for (i in 0 until 5) {
+        try {
+            style.removeLayer("alternative-layer-$i")
+            style.removeSource("alternative-source-$i")
+            style.removeLayer("alternative-badge-layer-$i")
+            style.removeSource("alternative-badge-source-$i")
+        } catch (e: Exception) { /* ignorieren */ }
+    }
+
+    route.alternatives.forEachIndexed { index, alt ->
+        // Nur den abweichenden Teil zeichnen (nicht die gesamte Route)
+        if (alt.divergingGeometry.size >= 2) {
+            val coords = alt.divergingGeometry.joinToString(",") { "[${it.lng},${it.lat}]" }
+            val geoJson = """
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [$coords]
+                    }
+                }
+            """.trimIndent()
+
+            val source = GeoJsonSource("alternative-source-$index", geoJson)
+            style.addSource(source)
+
+            // Grau, semi-transparent, gestrichelt
+            val altColor = if (isDarkTheme) Color.LTGRAY else Color.DKGRAY
+            val lineLayer = LineLayer("alternative-layer-$index", "alternative-source-$index").apply {
+                setProperties(
+                    PropertyFactory.lineColor(altColor),
+                    PropertyFactory.lineWidth(4f),
+                    PropertyFactory.lineOpacity(0.6f),
+                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                    PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+                    PropertyFactory.lineDasharray(arrayOf(2f, 2f))  // Gestrichelt
+                )
+            }
+            // Unter der Hauptroute einfügen
+            try {
+                style.addLayerBelow(lineLayer, "route-layer")
+            } catch (e: Exception) {
+                style.addLayer(lineLayer)
+            }
+
+            // Zeit-Badge am Abzweigpunkt
+            val diffMinutes = (alt.durationDifference / 60).toInt()
+            val badgeText = if (diffMinutes > 0) "+$diffMinutes Min" else "$diffMinutes Min"
+
+            // Badge als Point Feature
+            val badgeGeoJson = """
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [${alt.divergePoint.lng}, ${alt.divergePoint.lat}]
+                    },
+                    "properties": {
+                        "text": "$badgeText"
+                    }
+                }
+            """.trimIndent()
+
+            val badgeSource = GeoJsonSource("alternative-badge-source-$index", badgeGeoJson)
+            style.addSource(badgeSource)
+
+            // Symbol-Layer für Text-Badge (MapLibre erfordert spezielle Formatierung)
+            // Für simplere Lösung verwenden wir ein SymbolLayer mit Text
+            val badgeLayer = SymbolLayer("alternative-badge-layer-$index", "alternative-badge-source-$index").apply {
+                setProperties(
+                    PropertyFactory.textField("{text}"),
+                    PropertyFactory.textSize(12f),
+                    PropertyFactory.textColor(if (diffMinutes > 0) Color.parseColor("#FF5722") else Color.parseColor("#4CAF50")),
+                    PropertyFactory.textHaloColor(if (isDarkTheme) Color.BLACK else Color.WHITE),
+                    PropertyFactory.textHaloWidth(2f),
+                    PropertyFactory.textOffset(arrayOf(0f, -1.5f)),
+                    PropertyFactory.textFont(arrayOf("Open Sans Bold", "Arial Unicode MS Bold"))
+                )
+            }
+            style.addLayer(badgeLayer)
+        }
+    }
+
+    if (route.alternatives.isNotEmpty()) {
+        CrashLogger.log("MapView: Drew ${route.alternatives.size} alternative routes")
+    }
 }

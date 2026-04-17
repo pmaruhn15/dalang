@@ -32,6 +32,12 @@ object MapColors {
     fun routeColor(isDark: Boolean): Int =
         if (isDark) android.graphics.Color.WHITE else android.graphics.Color.BLACK
 
+    // Traffic-Farben (Google Maps Stil)
+    val TRAFFIC_GREEN: Int = android.graphics.Color.parseColor("#4CAF50")   // Frei fließend
+    val TRAFFIC_YELLOW: Int = android.graphics.Color.parseColor("#FFC107")  // Leicht verlangsamt
+    val TRAFFIC_ORANGE: Int = android.graphics.Color.parseColor("#FF9800")  // Zähfließend
+    val TRAFFIC_RED: Int = android.graphics.Color.parseColor("#F44336")     // Stau
+
     // Label-Hintergrund: Dunkel auf dunkler Karte, Hell auf heller Karte
     fun labelBackground(isDark: Boolean): Int =
         if (isDark) android.graphics.Color.parseColor("#1A1A1A") else android.graphics.Color.parseColor("#FFFFFF")

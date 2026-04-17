@@ -892,14 +892,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             var remaining = 0.0
             var remainingTime = 0.0
 
-            // Aktuellen Step anteilig berechnen (nicht volle Duration/Distance)
+            // Aktuellen Step anteilig berechnen
+            // WICHTIG: maneuver.location ist am ANFANG des Steps (wo das Manöver stattfindet).
+            // Das ENDE des Steps ist der Anfang des nächsten Steps.
             val currentStep = route.steps.getOrNull(fromStep)
+            val nextStepManeuver = route.steps.getOrNull(fromStep + 1)?.maneuver?.location
+
             if (currentStep != null && currentStep.distance > 0) {
-                val distToManeuver = location.distanceTo(currentStep.maneuver.location)
-                // Anteil des aktuellen Steps der noch übrig ist
-                val fractionRemaining = (distToManeuver / currentStep.distance).coerceIn(0.0, 1.0)
-                remaining += currentStep.distance * fractionRemaining
-                remainingTime += currentStep.duration * fractionRemaining
+                if (nextStepManeuver != null) {
+                    // Distanz zum ENDE des aktuellen Steps (= Anfang des nächsten Steps)
+                    val distToStepEnd = location.distanceTo(nextStepManeuver)
+                    val fractionRemaining = (distToStepEnd / currentStep.distance).coerceIn(0.0, 1.0)
+                    remaining += currentStep.distance * fractionRemaining
+                    remainingTime += currentStep.duration * fractionRemaining
+                } else {
+                    // Letzter Step (arrive) - Distanz zum Ziel
+                    val distToEnd = location.distanceTo(currentStep.maneuver.location)
+                    remaining += distToEnd.coerceAtMost(currentStep.distance)
+                    val fractionRemaining = (distToEnd / currentStep.distance.coerceAtLeast(1.0)).coerceIn(0.0, 1.0)
+                    remainingTime += currentStep.duration * fractionRemaining
+                }
             }
 
             // Restliche Steps voll addieren (ab fromStep + 1)

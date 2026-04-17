@@ -55,13 +55,46 @@ data class LatLng(
     }
 }
 
+/**
+ * Traffic-Stufe basierend auf jamFactor (HERE) oder Geschwindigkeitsverhältnis
+ * GREEN: Frei fließend (jamFactor 0-3)
+ * YELLOW: Leicht verlangsamt (jamFactor 3-6)
+ * ORANGE: Zähfließend (jamFactor 6-8)
+ * RED: Stau (jamFactor 8-10)
+ */
+enum class TrafficLevel {
+    GREEN, YELLOW, ORANGE, RED
+}
+
+data class TrafficSegment(
+    val startIndex: Int,  // Index in route geometry
+    val endIndex: Int,
+    val level: TrafficLevel
+)
+
+/**
+ * Alternative Route an einer Abzweigung.
+ * Zeigt den abweichenden Pfad und die Zeitdifferenz zur Hauptroute.
+ */
+data class AlternativeRoute(
+    val divergePoint: LatLng,           // Punkt wo Alternative abzweigt
+    val divergePointIndex: Int,         // Index in Hauptrouten-Geometrie
+    val geometry: List<LatLng>,         // Komplette alternative Geometrie
+    val divergingGeometry: List<LatLng>, // Nur der abweichende Teil (für Anzeige)
+    val duration: Double,               // Gesamtdauer der Alternative
+    val durationDifference: Double,     // Differenz zur Hauptroute (+ = länger)
+    val distance: Double                // Gesamtdistanz der Alternative
+)
+
 data class Route(
     val distance: Double,
     val duration: Double,
     val geometry: List<LatLng>,
     val steps: List<RouteStep>,
     val hasTrafficData: Boolean = false,
-    val typicalDuration: Double? = null  // Typische Dauer ohne Verkehr
+    val typicalDuration: Double? = null,  // Typische Dauer ohne Verkehr
+    val trafficSegments: List<TrafficSegment> = emptyList(),  // Verkehrs-Segmente für Farbcodierung
+    val alternatives: List<AlternativeRoute> = emptyList()    // Alternative Routen an Abzweigungen
 )
 
 class RouteRepository {
@@ -77,10 +110,17 @@ class RouteRepository {
         val canMakeRequest = HereConfig.canMakeRequest()
 
         if (isConfigured && canMakeRequest) {
-            val hereRoute = getRouteFromHere(from, to)
-            if (hereRoute != null && hereRoute.geometry.isNotEmpty()) {
+            val hereResult = getRouteFromHereWithAlternatives(from, to)
+            if (hereResult != null && hereResult.first.geometry.isNotEmpty()) {
+                val mainRoute = hereResult.first
+                val alternatives = hereResult.second
+
                 // HERE Route erfolgreich - jetzt OSRM Lane-Daten dazu holen
-                enrichRouteWithOsrmLanes(hereRoute, from, to)
+                val enrichedRoute = enrichRouteWithOsrmLanes(mainRoute, from, to)
+
+                // Alternativen analysieren und an Abzweigpunkten einfügen
+                val processedAlternatives = processAlternatives(enrichedRoute, alternatives)
+                enrichedRoute.copy(alternatives = processedAlternatives)
             } else {
                 CrashLogger.log("RouteRepository: HERE failed, fallback to OSRM")
                 getRouteFromOsrm(from, to)
@@ -198,20 +238,22 @@ class RouteRepository {
             ?.second
     }
 
-    private suspend fun getRouteFromHere(from: LatLng, to: LatLng): Route? {
+    /**
+     * Holt Route mit Alternativen von HERE.
+     * Gibt Pair zurück: (Hauptroute, Liste von Alternativ-Routen)
+     */
+    private suspend fun getRouteFromHereWithAlternatives(from: LatLng, to: LatLng): Pair<Route, List<Route>>? {
         try {
             val apiKey = HereConfig.getApiKey()
 
-            // HERE Routing v8 API
-            // HINWEIS: Lane guidance (Spuranzeige) ist NUR im HERE SDK (Navigate Edition) verfügbar,
-            // NICHT in der REST API. Die REST API bietet keine laneAssistance in spans.
-            // Siehe: https://developer.here.com/documentation/android-sdk-navigate/dev_guide/topics/navigation.html
+            // HERE Routing v8 API mit alternatives=3
             val url = "${HereConfig.ROUTING_BASE_URL}/routes" +
                     "?origin=${from.lat},${from.lng}" +
                     "&destination=${to.lat},${to.lng}" +
                     "&transportMode=car" +
+                    "&alternatives=3" +
                     "&return=polyline,actions,instructions,summary,typicalDuration,turnByTurnActions" +
-                    "&spans=names,length,duration,speedLimit,maxSpeed" +
+                    "&spans=names,length,duration,speedLimit,maxSpeed,dynamicSpeedInfo" +
                     "&apiKey=$apiKey"
 
             val request = Request.Builder()
@@ -223,26 +265,157 @@ class RouteRepository {
             val body = response.body?.string()
 
             if (!response.isSuccessful || body == null) {
-                // Log error details for debugging
                 CrashLogger.logError("RouteRepository", "HERE API error: ${response.code} - ${response.message}")
-                if (body != null && body.length < 500) {
-                    CrashLogger.log("RouteRepository: Error response: $body")
-                }
                 return null
             }
 
-            // Zaehler erhoehen nach erfolgreicher Anfrage
             HereConfig.incrementUsage()
 
-            val route = parseHereRoute(body, from)
-            if (route == null) {
-                CrashLogger.logError("RouteRepository", "HERE route parsing returned null")
-            }
-            return route
+            return parseHereRoutesWithAlternatives(body, from)
         } catch (e: Exception) {
-            CrashLogger.logError("RouteRepository", "HERE routing failed: ${e.javaClass.simpleName}: ${e.message}", e)
+            CrashLogger.logError("RouteRepository", "HERE routing with alternatives failed", e)
             return null
         }
+    }
+
+    /**
+     * Parst HERE Response mit mehreren Routen.
+     */
+    private fun parseHereRoutesWithAlternatives(json: String, origin: LatLng): Pair<Route, List<Route>>? {
+        try {
+            val obj = JSONObject(json)
+            if (!obj.has("routes")) return null
+
+            val routes = obj.getJSONArray("routes")
+            if (routes.length() == 0) return null
+
+            // Erste Route ist die Hauptroute
+            val mainRoute = parseHereRouteFromJson(routes.getJSONObject(0), origin) ?: return null
+
+            // Restliche Routen sind Alternativen
+            val alternatives = mutableListOf<Route>()
+            for (i in 1 until routes.length()) {
+                val altRoute = parseHereRouteFromJson(routes.getJSONObject(i), origin)
+                if (altRoute != null) {
+                    alternatives.add(altRoute)
+                }
+            }
+
+            CrashLogger.log("RouteRepository: Parsed ${alternatives.size} alternative routes")
+            return mainRoute to alternatives
+        } catch (e: Exception) {
+            CrashLogger.logError("RouteRepository", "parseHereRoutesWithAlternatives failed", e)
+            return null
+        }
+    }
+
+    /**
+     * Analysiert Alternativen und findet Abzweigpunkte.
+     * Filtert sinnlose Alternativen (z.B. Ausfahrt und wieder Auffahrt auf gleiche Autobahn).
+     */
+    private fun processAlternatives(mainRoute: Route, alternatives: List<Route>): List<AlternativeRoute> {
+        val result = mutableListOf<AlternativeRoute>()
+
+        for (alt in alternatives) {
+            // Differenz zur Hauptroute berechnen
+            val durationDiff = alt.duration - mainRoute.duration
+
+            // Filter: Nur Alternativen die nicht viel länger sind (max +20 Min)
+            // und nicht sinnlos kurz (Unterschied < 30 Sekunden bei gleichem Weg)
+            if (durationDiff > 20 * 60 || kotlin.math.abs(durationDiff) < 30) {
+                continue
+            }
+
+            // Abzweigpunkt finden: Wo divergiert die Alternative von der Hauptroute?
+            val divergeResult = findDivergencePoint(mainRoute.geometry, alt.geometry)
+            if (divergeResult == null) {
+                continue
+            }
+
+            val (divergeIndex, convergIndex, altDivergeIndex, altConvergeIndex) = divergeResult
+
+            // Nur anzeigen wenn Abzweigung sinnvoll ist (nicht zu früh, nicht zu spät)
+            if (divergeIndex < 5 || divergeIndex > mainRoute.geometry.size - 20) {
+                continue
+            }
+
+            // Abweichenden Teil extrahieren
+            val divergingGeometry = if (altDivergeIndex < altConvergeIndex && altConvergeIndex <= alt.geometry.size) {
+                alt.geometry.subList(altDivergeIndex, altConvergeIndex.coerceAtMost(alt.geometry.size))
+            } else {
+                continue
+            }
+
+            // Filter: Abweichender Teil muss substanziell sein
+            if (divergingGeometry.size < 10) {
+                continue
+            }
+
+            result.add(AlternativeRoute(
+                divergePoint = mainRoute.geometry[divergeIndex],
+                divergePointIndex = divergeIndex,
+                geometry = alt.geometry,
+                divergingGeometry = divergingGeometry,
+                duration = alt.duration,
+                durationDifference = durationDiff,
+                distance = alt.distance
+            ))
+        }
+
+        CrashLogger.log("RouteRepository: ${result.size} valid alternatives after filtering")
+        return result
+    }
+
+    /**
+     * Findet den Punkt wo zwei Routen divergieren und wieder zusammenkommen.
+     * Gibt (mainDivergeIdx, mainConvergeIdx, altDivergeIdx, altConvergeIdx) zurück.
+     */
+    private fun findDivergencePoint(mainGeom: List<LatLng>, altGeom: List<LatLng>): IntArray? {
+        val threshold = 50.0 // Meter - Punkte näher als das gelten als "gleich"
+
+        // Divergenzpunkt finden (wo Routen auseinander gehen)
+        var divergeMainIdx = 0
+        var divergeAltIdx = 0
+
+        for (i in mainGeom.indices) {
+            if (i >= altGeom.size) break
+            val dist = mainGeom[i].distanceTo(altGeom[i])
+            if (dist > threshold) {
+                divergeMainIdx = i
+                divergeAltIdx = i
+                break
+            }
+        }
+
+        // Konvergenzpunkt finden (wo Routen wieder zusammenkommen)
+        // Suche vom Ende rückwärts
+        var convergeMainIdx = mainGeom.size - 1
+        var convergeAltIdx = altGeom.size - 1
+
+        for (i in 0 until minOf(mainGeom.size, altGeom.size)) {
+            val mainIdx = mainGeom.size - 1 - i
+            val altIdx = altGeom.size - 1 - i
+            if (mainIdx < 0 || altIdx < 0) break
+
+            val dist = mainGeom[mainIdx].distanceTo(altGeom[altIdx])
+            if (dist > threshold) {
+                convergeMainIdx = mainIdx + 1
+                convergeAltIdx = altIdx + 1
+                break
+            }
+        }
+
+        // Sanity check
+        if (divergeMainIdx >= convergeMainIdx || divergeAltIdx >= convergeAltIdx) {
+            return null
+        }
+
+        return intArrayOf(divergeMainIdx, convergeMainIdx, divergeAltIdx, convergeAltIdx)
+    }
+
+    private suspend fun getRouteFromHere(from: LatLng, to: LatLng): Route? {
+        val result = getRouteFromHereWithAlternatives(from, to)
+        return result?.first
     }
 
     private fun parseHereRoute(json: String, origin: LatLng): Route? {
@@ -268,7 +441,18 @@ class RouteRepository {
                 return null
             }
 
-            val route = routes.getJSONObject(0)
+            return parseHereRouteFromJson(routes.getJSONObject(0), origin)
+        } catch (e: Exception) {
+            CrashLogger.logError("RouteRepository", "Parse HERE route failed: ${e.javaClass.simpleName}: ${e.message}", e)
+            return null
+        }
+    }
+
+    /**
+     * Parst ein einzelnes Route-Objekt aus HERE JSON.
+     */
+    private fun parseHereRouteFromJson(route: JSONObject, origin: LatLng): Route? {
+        try {
             val sections = route.getJSONArray("sections")
             if (sections.length() == 0) {
                 CrashLogger.logError("RouteRepository", "HERE route has 0 sections")
@@ -358,13 +542,17 @@ class RouteRepository {
                 )
             }
 
+            // Traffic-Segmente aus spans parsen
+            val trafficSegments = parseTrafficSpans(section)
+
             return Route(
                 distance = distance,
                 duration = duration,
                 geometry = geometry,
                 steps = steps,
-                hasTrafficData = true,
-                typicalDuration = typicalDuration
+                hasTrafficData = trafficSegments.isNotEmpty(),
+                typicalDuration = typicalDuration,
+                trafficSegments = trafficSegments
             )
         } catch (e: Exception) {
             CrashLogger.logError("RouteRepository", "Parse HERE route failed: ${e.javaClass.simpleName}: ${e.message}", e)
@@ -394,6 +582,90 @@ class RouteRepository {
             "highway" -> "new name" to null
             else -> action to null
         }
+    }
+
+    /**
+     * Parst Traffic-Segmente aus HERE spans.
+     * HERE liefert dynamicSpeedInfo mit trafficSpeed, baseSpeed, jamFactor etc.
+     */
+    private fun parseTrafficSpans(section: JSONObject): List<TrafficSegment> {
+        val segments = mutableListOf<TrafficSegment>()
+        try {
+            val spans = section.optJSONArray("spans") ?: return emptyList()
+
+            for (i in 0 until spans.length()) {
+                val span = spans.getJSONObject(i)
+                val offset = span.optInt("offset", 0)
+
+                // Nächsten Span-Offset ermitteln oder Ende der Geometrie
+                val nextOffset = if (i < spans.length() - 1) {
+                    spans.getJSONObject(i + 1).optInt("offset", offset + 1)
+                } else {
+                    offset + 100  // Approximation für letzten Span
+                }
+
+                // dynamicSpeedInfo enthält Traffic-Daten
+                val dynamicSpeed = span.optJSONObject("dynamicSpeedInfo")
+                if (dynamicSpeed != null) {
+                    val trafficSpeed = dynamicSpeed.optDouble("trafficSpeed", -1.0)
+                    val baseSpeed = dynamicSpeed.optDouble("baseSpeed", -1.0)
+                    val jamFactor = dynamicSpeed.optDouble("jamFactor", -1.0)
+
+                    val level = when {
+                        jamFactor >= 0 -> jamFactorToLevel(jamFactor)
+                        trafficSpeed > 0 && baseSpeed > 0 -> speedRatioToLevel(trafficSpeed / baseSpeed)
+                        else -> TrafficLevel.GREEN  // Default: frei
+                    }
+
+                    segments.add(TrafficSegment(offset, nextOffset, level))
+                }
+            }
+
+            // Benachbarte Segmente mit gleicher Farbe zusammenfassen
+            return mergeTrafficSegments(segments)
+        } catch (e: Exception) {
+            CrashLogger.logError("RouteRepository", "parseTrafficSpans failed", e)
+            return emptyList()
+        }
+    }
+
+    private fun jamFactorToLevel(jamFactor: Double): TrafficLevel {
+        return when {
+            jamFactor <= 3.0 -> TrafficLevel.GREEN   // Frei fließend
+            jamFactor <= 6.0 -> TrafficLevel.YELLOW  // Leicht verlangsamt
+            jamFactor <= 8.0 -> TrafficLevel.ORANGE  // Zähfließend
+            else -> TrafficLevel.RED                  // Stau
+        }
+    }
+
+    private fun speedRatioToLevel(ratio: Double): TrafficLevel {
+        return when {
+            ratio >= 0.8 -> TrafficLevel.GREEN   // >= 80% der Normalgeschwindigkeit
+            ratio >= 0.5 -> TrafficLevel.YELLOW  // 50-80%
+            ratio >= 0.25 -> TrafficLevel.ORANGE // 25-50%
+            else -> TrafficLevel.RED              // < 25%
+        }
+    }
+
+    private fun mergeTrafficSegments(segments: List<TrafficSegment>): List<TrafficSegment> {
+        if (segments.isEmpty()) return emptyList()
+
+        val merged = mutableListOf<TrafficSegment>()
+        var current = segments.first()
+
+        for (i in 1 until segments.size) {
+            val next = segments[i]
+            if (next.level == current.level && next.startIndex == current.endIndex) {
+                // Zusammenfassen
+                current = current.copy(endIndex = next.endIndex)
+            } else {
+                merged.add(current)
+                current = next
+            }
+        }
+        merged.add(current)
+
+        return merged
     }
 
     private suspend fun getRouteFromOsrm(from: LatLng, to: LatLng): Route? {
