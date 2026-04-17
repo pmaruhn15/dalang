@@ -585,9 +585,11 @@ fun MapViewComposable(
                             CrashLogger.log("MapView: Route drawn with ${route.geometry.size} points (no traffic data)")
                         }
 
-                        // Alternative Routen zeichnen (grau, gestrichelt, mit Zeit-Badge)
+                        // Alternative Routen zeichnen
+                        // Bei Routenübersicht: Komplette Routen mit +X Min
+                        // Bei Navigation: Nur abweichende Teile
                         if (route.alternatives.isNotEmpty()) {
-                            drawAlternativeRoutes(style, route, isDarkTheme)
+                            drawAlternativeRoutes(style, route, isDarkTheme, isNavigating)
                         }
 
                         // Kamera auf Route zentrieren
@@ -1155,23 +1157,26 @@ private fun drawTrafficRoute(style: Style, route: Route, isDarkTheme: Boolean) {
     val baseSource = GeoJsonSource("route-source", baseGeoJson)
     style.addSource(baseSource)
 
+    // Hauptroute in normaler Farbe (Traffic-Segmente werden darüber gezeichnet)
     val baseLayer = LineLayer("route-layer", "route-source").apply {
         setProperties(
-            PropertyFactory.lineColor(if (isDarkTheme) Color.DKGRAY else Color.parseColor("#424242")),
-            PropertyFactory.lineWidth(8f),
+            PropertyFactory.lineColor(MapColors.routeColor(isDarkTheme)),
+            PropertyFactory.lineWidth(6f),
             PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
             PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
         )
     }
     style.addLayer(baseLayer)
 
-    // 2. Traffic-Segmente nach Level gruppieren und darüber zeichnen
-    val segmentsByLevel = route.trafficSegments.groupBy { it.level }
+    // 2. Traffic-Segmente nach Level gruppieren und darüber zeichnen (nur Stau, nicht grün)
+    val segmentsByLevel = route.trafficSegments
+        .filter { it.level != TrafficLevel.GREEN }  // Grün nicht einfärben
+        .groupBy { it.level }
 
     for ((level, segments) in segmentsByLevel) {
         val levelName = level.name.lowercase()
         val color = when (level) {
-            TrafficLevel.GREEN -> MapColors.TRAFFIC_GREEN
+            TrafficLevel.GREEN -> continue  // Sollte nicht vorkommen wegen filter
             TrafficLevel.YELLOW -> MapColors.TRAFFIC_YELLOW
             TrafficLevel.ORANGE -> MapColors.TRAFFIC_ORANGE
             TrafficLevel.RED -> MapColors.TRAFFIC_RED
@@ -1219,10 +1224,11 @@ private fun drawTrafficRoute(style: Style, route: Route, isDarkTheme: Boolean) {
 }
 
 /**
- * Zeichnet alternative Routen als graue gestrichelte Linien.
- * Zeigt Zeitdifferenz-Badge am Abzweigpunkt.
+ * Zeichnet alternative Routen.
+ * - Route-Übersicht (nicht navigierend): Komplette Routen mit +X Min Badge in Mitte
+ * - Während Navigation: Nur abweichende Teile mit Badge am Abzweigpunkt
  */
-private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boolean) {
+private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boolean, isNavigating: Boolean) {
     // Alte Alternative-Layer entfernen
     for (i in 0 until 5) {
         try {
@@ -1234,9 +1240,12 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
     }
 
     route.alternatives.forEachIndexed { index, alt ->
-        // Nur den abweichenden Teil zeichnen (nicht die gesamte Route)
-        if (alt.divergingGeometry.size >= 2) {
-            val coords = alt.divergingGeometry.joinToString(",") { "[${it.lng},${it.lat}]" }
+        // Bei Routenübersicht: Komplette Alternative zeigen
+        // Bei Navigation: Nur abweichenden Teil zeigen
+        val geometryToShow = if (isNavigating) alt.divergingGeometry else alt.geometry
+
+        if (geometryToShow.size >= 2) {
+            val coords = geometryToShow.joinToString(",") { "[${it.lng},${it.lat}]" }
             val geoJson = """
                 {
                     "type": "Feature",
@@ -1250,17 +1259,29 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
             val source = GeoJsonSource("alternative-source-$index", geoJson)
             style.addSource(source)
 
-            // Grau, semi-transparent, gestrichelt
+            // Grau, semi-transparent
             val altColor = if (isDarkTheme) Color.LTGRAY else Color.DKGRAY
             val lineLayer = LineLayer("alternative-layer-$index", "alternative-source-$index").apply {
-                setProperties(
-                    PropertyFactory.lineColor(altColor),
-                    PropertyFactory.lineWidth(4f),
-                    PropertyFactory.lineOpacity(0.6f),
-                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
-                    PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
-                    PropertyFactory.lineDasharray(arrayOf(2f, 2f))  // Gestrichelt
-                )
+                if (isNavigating) {
+                    // Während Navigation: dünner, gestrichelt
+                    setProperties(
+                        PropertyFactory.lineColor(altColor),
+                        PropertyFactory.lineWidth(4f),
+                        PropertyFactory.lineOpacity(0.6f),
+                        PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                        PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+                        PropertyFactory.lineDasharray(arrayOf(2f, 2f))
+                    )
+                } else {
+                    // Route-Übersicht: dicker, durchgezogen
+                    setProperties(
+                        PropertyFactory.lineColor(altColor),
+                        PropertyFactory.lineWidth(5f),
+                        PropertyFactory.lineOpacity(0.8f),
+                        PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                        PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+                    )
+                }
             }
             // Unter der Hauptroute einfügen
             try {
@@ -1269,17 +1290,25 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
                 style.addLayer(lineLayer)
             }
 
-            // Zeit-Badge am Abzweigpunkt
+            // Zeit-Badge
             val diffMinutes = (alt.durationDifference / 60).toInt()
             val badgeText = if (diffMinutes > 0) "+$diffMinutes Min" else "$diffMinutes Min"
 
-            // Badge als Point Feature
+            // Badge-Position: Bei Navigation am Abzweigpunkt, sonst in der Mitte der Route
+            val badgePoint = if (isNavigating) {
+                alt.divergePoint
+            } else {
+                // Mitte der alternativen Route
+                val midIndex = geometryToShow.size / 2
+                geometryToShow[midIndex]
+            }
+
             val badgeGeoJson = """
                 {
                     "type": "Feature",
                     "geometry": {
                         "type": "Point",
-                        "coordinates": [${alt.divergePoint.lng}, ${alt.divergePoint.lat}]
+                        "coordinates": [${badgePoint.lng}, ${badgePoint.lat}]
                     },
                     "properties": {
                         "text": "$badgeText"
@@ -1290,12 +1319,10 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
             val badgeSource = GeoJsonSource("alternative-badge-source-$index", badgeGeoJson)
             style.addSource(badgeSource)
 
-            // Symbol-Layer für Text-Badge (MapLibre erfordert spezielle Formatierung)
-            // Für simplere Lösung verwenden wir ein SymbolLayer mit Text
             val badgeLayer = SymbolLayer("alternative-badge-layer-$index", "alternative-badge-source-$index").apply {
                 setProperties(
                     PropertyFactory.textField("{text}"),
-                    PropertyFactory.textSize(12f),
+                    PropertyFactory.textSize(14f),
                     PropertyFactory.textColor(if (diffMinutes > 0) Color.parseColor("#FF5722") else Color.parseColor("#4CAF50")),
                     PropertyFactory.textHaloColor(if (isDarkTheme) Color.BLACK else Color.WHITE),
                     PropertyFactory.textHaloWidth(2f),
@@ -1308,6 +1335,6 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
     }
 
     if (route.alternatives.isNotEmpty()) {
-        CrashLogger.log("MapView: Drew ${route.alternatives.size} alternative routes")
+        CrashLogger.log("MapView: Drew ${route.alternatives.size} alternative routes (navigating=$isNavigating)")
     }
 }
