@@ -1448,10 +1448,6 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
 private fun bringLocationLayerToTop(style: Style) {
     try {
         val locationLayer = style.getLayer("location-layer") ?: return
-        val locationSource = style.getSourceAs<GeoJsonSource>("location-source") ?: return
-
-        // Layer-Properties sichern
-        val props = locationLayer.filter
 
         // Layer entfernen und wieder hinzufügen (fügt am Ende/oben hinzu)
         style.removeLayer("location-layer")
