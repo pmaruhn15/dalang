@@ -946,7 +946,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startProactiveRerouting() {
         proactiveReroutingJob?.cancel()
         proactiveReroutingJob = viewModelScope.launch(exceptionHandler) {
-            while (isActive) {
+            while (coroutineContext.isActive) {
                 delay(FASTER_ROUTE_CHECK_INTERVAL_MS)
                 checkForFasterRoute()
             }
