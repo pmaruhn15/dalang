@@ -605,6 +605,9 @@ fun MapViewComposable(
                             drawAlternativeRoutes(style, route, isDarkTheme, isNavigating)
                         }
 
+                        // Location-Layer nach oben bringen (über Route)
+                        bringLocationLayerToTop(style)
+
                         // Kamera auf Route zentrieren
                         if (!isNavigating && route.geometry.size >= 2) {
                             try {
@@ -1142,9 +1145,9 @@ private fun createTimeDiffBitmap(diffMinutes: Int, isDarkTheme: Boolean): Bitmap
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
-    // Halbtransparenter dunkler Hintergrund für gute Lesbarkeit auf jeder Karte
+    // Schwarzer Hintergrund für gute Lesbarkeit auf jeder Karte
     val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#CC333333")  // 80% opak dunkelgrau
+        color = Color.parseColor("#E0000000")  // 88% opak schwarz
         style = Paint.Style.FILL
     }
     canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 8f, 8f, bgPaint)
@@ -1270,16 +1273,16 @@ private fun drawTrafficRoute(style: Style, route: Route, isDarkTheme: Boolean) {
     }
     style.addLayer(baseLayer)
 
-    // 2. Traffic-Segmente nach Level gruppieren und darüber zeichnen (nur Stau, nicht grün)
+    // 2. Traffic-Segmente nach Level gruppieren und darüber zeichnen (nur echter Stau: orange/rot)
     val segmentsByLevel = route.trafficSegments
-        .filter { it.level != TrafficLevel.GREEN }  // Grün nicht einfärben
+        .filter { it.level == TrafficLevel.ORANGE || it.level == TrafficLevel.RED }
         .groupBy { it.level }
 
     for ((level, segments) in segmentsByLevel) {
         val levelName = level.name.lowercase()
         val color = when (level) {
-            TrafficLevel.GREEN -> continue  // Sollte nicht vorkommen wegen filter
-            TrafficLevel.YELLOW -> MapColors.TRAFFIC_YELLOW
+            TrafficLevel.GREEN -> continue
+            TrafficLevel.YELLOW -> continue  // Leichte Verlangsamung nicht anzeigen
             TrafficLevel.ORANGE -> MapColors.TRAFFIC_ORANGE
             TrafficLevel.RED -> MapColors.TRAFFIC_RED
         }
@@ -1366,21 +1369,20 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
             val altColor = if (isDarkTheme) Color.LTGRAY else Color.DKGRAY
             val lineLayer = LineLayer("alternative-layer-$index", "alternative-source-$index").apply {
                 if (isNavigating) {
-                    // Während Navigation: dünner, gestrichelt
+                    // Während Navigation: transparent, nicht gestrichelt
                     setProperties(
                         PropertyFactory.lineColor(altColor),
-                        PropertyFactory.lineWidth(4f),
-                        PropertyFactory.lineOpacity(0.6f),
+                        PropertyFactory.lineWidth(5f),
+                        PropertyFactory.lineOpacity(0.4f),
                         PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
-                        PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
-                        PropertyFactory.lineDasharray(arrayOf(2f, 2f))
+                        PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
                     )
                 } else {
                     // Route-Übersicht: dicker, durchgezogen
                     setProperties(
                         PropertyFactory.lineColor(altColor),
                         PropertyFactory.lineWidth(5f),
-                        PropertyFactory.lineOpacity(0.8f),
+                        PropertyFactory.lineOpacity(0.5f),
                         PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                         PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
                     )
@@ -1436,5 +1438,25 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
 
     if (route.alternatives.isNotEmpty()) {
         CrashLogger.log("MapView: Drew ${route.alternatives.size} alternative routes (navigating=$isNavigating)")
+    }
+}
+
+/**
+ * Bringt den Location-Layer nach ganz oben (über alle anderen Layer).
+ * Muss aufgerufen werden nachdem Route/Traffic gezeichnet wurden.
+ */
+private fun bringLocationLayerToTop(style: Style) {
+    try {
+        val locationLayer = style.getLayer("location-layer") ?: return
+        val locationSource = style.getSourceAs<GeoJsonSource>("location-source") ?: return
+
+        // Layer-Properties sichern
+        val props = locationLayer.filter
+
+        // Layer entfernen und wieder hinzufügen (fügt am Ende/oben hinzu)
+        style.removeLayer("location-layer")
+        style.addLayer(locationLayer)
+    } catch (e: Exception) {
+        // Location layer existiert evtl. noch nicht
     }
 }
