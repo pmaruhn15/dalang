@@ -33,10 +33,15 @@ data class NavigationState(
     /**
      * Findet das nächste relevante Manöver (überspringt "Geradeaus" etc.)
      * Gibt den Index des Steps zurück oder null wenn keins gefunden.
+     *
+     * Why: step.maneuver.location liegt am ANFANG des Steps. currentStepIndex
+     * zeigt auf den Step durch dessen Geometrie wir gerade fahren — sein
+     * Manöver liegt also hinter uns. Das nächste anstehende Manöver beginnt
+     * bei currentStepIndex + 1.
      */
     fun findNextRelevantStepIndex(): Int? {
         val steps = route?.steps ?: return null
-        for (i in currentStepIndex until steps.size) {
+        for (i in (currentStepIndex + 1) until steps.size) {
             if (steps[i].isRelevantManeuver()) {
                 return i
             }
@@ -54,29 +59,26 @@ data class NavigationState(
         }
 
     /**
-     * Berechnet die Distanz zum nächsten relevanten Manöver.
-     * Wenn der aktuelle Schritt relevant ist, wird distanceToNextStep zurückgegeben.
-     * Sonst werden die Distanzen der irrelevanten Schritte dazwischen aufaddiert.
+     * Distanz zum nächsten relevanten Manöver.
      *
-     * WICHTIG: Das Manöver eines Steps ist am ANFANG des Steps (z.B. der Abbiegepunkt),
-     * daher addieren wir NICHT die Distanz des relevanten Steps selbst.
+     * distanceToNextStep enthält die Distanz zum Anfang von Step (currentStepIndex + 1)
+     * — also zum direkt nächsten Manöver. Liegt das nächste relevante Manöver
+     * weiter hinten, addiere die Längen der dazwischenliegenden Steps.
      */
     fun distanceToNextRelevantStep(): Double {
         val steps = route?.steps ?: return distanceToNextStep
         val relevantIndex = findNextRelevantStepIndex() ?: return distanceToNextStep
 
-        // Wenn der aktuelle Schritt bereits relevant ist, einfach die normale Distanz
-        if (relevantIndex == currentStepIndex) {
+        // Direkt nächstes Manöver ist relevant — distanceToNextStep ist schon dorthin gemessen.
+        if (relevantIndex == currentStepIndex + 1) {
             return distanceToNextStep
         }
 
-        // Distanz zum Ende des aktuellen Schritts + alle Schritte bis zum relevanten
-        // (aber NICHT den relevanten Step selbst, da dessen Manöver am Anfang liegt)
+        // Sonst: Distanz zum nächsten Manöver + Längen der Steps dazwischen.
         var totalDistance = distanceToNextStep
         for (i in (currentStepIndex + 1) until relevantIndex) {
             totalDistance += steps.getOrNull(i)?.distance ?: 0.0
         }
-
         return totalDistance
     }
 }

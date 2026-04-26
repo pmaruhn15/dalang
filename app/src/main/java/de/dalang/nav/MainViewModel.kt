@@ -716,40 +716,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Distanz zum aktuellen Manöver (roh)
-            val rawDistanceToManeuver = location.distanceTo(currentStep.maneuver.location)
+            // Das anstehende Manöver liegt am Anfang von Step (currentStepIndex + 1).
+            // currentStep.maneuver liegt bereits hinter uns (= Anfang des aktuellen Steps).
+            val nextStep = route.steps.getOrNull(state.currentStepIndex + 1)
+            val stepAfterNext = route.steps.getOrNull(state.currentStepIndex + 2)
 
-            // Distanz glätten um Sprünge zu vermeiden
-            val distanceToManeuver = distanceSmoother.process(rawDistanceToManeuver)
-
-            // Prüfen ob wir den nächsten Schritt erreicht haben
-            // Bedingungen:
-            // 1. Wir sind nah am Manöver-Punkt (< 30m)
-            // 2. Es gibt einen nächsten Schritt
-            // 3. WICHTIG: Wir sind näher am nächsten Manöver als am aktuellen (= wir haben passiert)
-            val shouldAdvanceStep = if (state.currentStepIndex < route.steps.size - 1) {
-                val nextStep = route.steps[state.currentStepIndex + 1]
-                val distanceToNext = location.distanceTo(nextStep.maneuver.location)
-
-                // Manöver abgeschlossen wenn:
-                // - Sehr nah am aktuellen Manöver (< 20m) ODER
-                // - Näher am nächsten Manöver als am aktuellen (= passiert)
-                rawDistanceToManeuver < 20 || distanceToNext < rawDistanceToManeuver
-            } else {
-                false
+            if (nextStep == null) {
+                // Letzter Step (arrive) — Step-Fortschritt ist abgeschlossen, Arrival
+                // wird über destination-distance geprüft.
+                updateRemainingDistance(location, route, state.currentStepIndex, state.waypoint)
+                return
             }
+
+            val rawDistanceToNext = location.distanceTo(nextStep.maneuver.location)
+            val distanceToNext = distanceSmoother.process(rawDistanceToNext)
+
+            // Step-Advance triggern wenn wir nahe am nächsten Manöver sind ODER
+            // bereits dahinter (= näher am übernächsten als am nächsten).
+            val passedNext = stepAfterNext != null &&
+                location.distanceTo(stepAfterNext.maneuver.location) < rawDistanceToNext
+            val shouldAdvanceStep = rawDistanceToNext < 25 || passedNext
 
             if (shouldAdvanceStep) {
                 val nextIndex = state.currentStepIndex + 1
-                val nextStep = route.steps[nextIndex]
+                val newDistanceToNext = stepAfterNext?.let { location.distanceTo(it.maneuver.location) } ?: 0.0
+                distanceSmoother.setInitialDistance(newDistanceToNext)
 
-                // Distance Smoother für neuen Schritt zurücksetzen
-                val nextDistance = location.distanceTo(nextStep.maneuver.location)
-                distanceSmoother.setInitialDistance(nextDistance)
+                CrashLogger.log("MainViewModel: Advancing past step $nextIndex (${nextStep.maneuver.type}) — newDistToNext=${newDistanceToNext.toInt()}m, passedNext=$passedNext")
 
-                CrashLogger.log("MainViewModel: Advancing to step $nextIndex (${nextStep.maneuver.type})")
-
-                // GPS Track: Lane-Info loggen wenn vorhanden
                 nextStep.laneInfo?.let { laneInfo ->
                     if (laneInfo.lanes.isNotEmpty()) {
                         GpsTrackLogger.logLaneInfo(
@@ -763,22 +757,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _navigationState.update {
                     it.copy(
                         currentStepIndex = nextIndex,
-                        distanceToNextStep = nextDistance
+                        distanceToNextStep = newDistanceToNext
                     )
                 }
 
-                speakInstruction(nextStep)
-                updateServiceNotification(nextStep, nextDistance)
+                // Sprache: das neu anstehende Manöver ansagen (= stepAfterNext nach Advance).
+                stepAfterNext?.let {
+                    speakInstruction(it)
+                    updateServiceNotification(it, newDistanceToNext)
+                }
             } else {
                 _navigationState.update {
-                    it.copy(distanceToNextStep = distanceToManeuver)
+                    it.copy(distanceToNextStep = distanceToNext)
                 }
 
-                // Voransage bei 200m, 100m, 50m (basierend auf roher Distanz für Timing)
+                // Voransage bei 200m, 100m, 50m zum *nächsten* Manöver.
                 when {
-                    rawDistanceToManeuver in 190.0..210.0 -> speakDistance(200, currentStep)
-                    rawDistanceToManeuver in 90.0..110.0 -> speakDistance(100, currentStep)
-                    rawDistanceToManeuver in 45.0..55.0 -> speakDistance(50, currentStep)
+                    rawDistanceToNext in 190.0..210.0 -> speakDistance(200, nextStep)
+                    rawDistanceToNext in 90.0..110.0 -> speakDistance(100, nextStep)
+                    rawDistanceToNext in 45.0..55.0 -> speakDistance(50, nextStep)
                 }
             }
 
@@ -1041,10 +1038,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     timeToWaypoint = waypointTime
                 )
             }
+
+            // Diagnostik: ETA-Berechnung sichtbar machen — gedrosselt auf alle ~5 Updates,
+            // um den Log nicht zu fluten.
+            etaLogTick++
+            if (etaLogTick % 5 == 0) {
+                CrashLogger.log("MainViewModel: ETA tick — fromStep=$fromStep remaining=${remaining.toInt()}m time=${remainingTime.toInt()}s")
+            }
         } catch (e: Exception) {
             CrashLogger.logError("MainViewModel", "updateRemainingDistance failed", e)
         }
     }
+
+    private var etaLogTick = 0
 
     private fun speakInstruction(step: RouteStep) {
         try {
