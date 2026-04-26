@@ -121,34 +121,37 @@ private fun ActiveNavigationContent(
                 isExpanded = !isExpanded
             }
     ) {
-        // Lane-Visualisierung + Distanz (immer sichtbar)
+        val hasLanes = displayStep?.laneInfo != null && displayStep.laneInfo.lanes.isNotEmpty()
+
+        // Bei Lane-Info: eigene Zeile mit voller Breite, damit auch 4–6 Spuren reinpassen.
+        if (hasLanes) {
+            LaneGuidancePanel(
+                laneInfo = displayStep!!.laneInfo!!,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            )
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Lane-Anzeige wenn verfügbar, sonst Richtungspfeil oder Kreisverkehr
-            if (displayStep?.laneInfo != null && displayStep.laneInfo.lanes.isNotEmpty()) {
-                LaneGuidancePanel(
-                    laneInfo = displayStep.laneInfo,
-                    modifier = Modifier.weight(1f)
-                )
-            } else if (displayStep.isRoundabout() && displayStep?.maneuver?.exit != null) {
-                // Dynamische Kreisverkehr-Visualisierung mit Ausfahrt
-                RoundaboutVisualization(
-                    exitNumber = displayStep.maneuver.exit,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            } else {
-                // Fallback: Richtungspfeil
-                Image(
-                    painter = painterResource(id = getTurnIconRes(displayStep)),
-                    contentDescription = "Richtung",
-                    modifier = Modifier.size(64.dp),
-                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
-                )
+            // Pfeil/Roundabout nur wenn KEINE Lane-Info — sonst zeigt die Lane-Reihe oben das Manöver.
+            if (!hasLanes) {
+                if (displayStep.isRoundabout() && displayStep?.maneuver?.exit != null) {
+                    RoundaboutVisualization(
+                        exitNumber = displayStep.maneuver.exit,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                } else {
+                    Image(
+                        painter = painterResource(id = getTurnIconRes(displayStep)),
+                        contentDescription = "Richtung",
+                        modifier = Modifier.size(64.dp),
+                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
             }
-
-            Spacer(modifier = Modifier.width(12.dp))
 
             // Distanz zum nächsten relevanten Manöver
             Text(
@@ -162,8 +165,6 @@ private fun ActiveNavigationContent(
 
             // Ankunftszeit prominent + Restinfos darunter
             Column(horizontalAlignment = Alignment.End) {
-                // ETA berechnen - immer aktuelle Zeit + verbleibende Zeit
-                // derivedStateOf statt remember damit sich die ETA bei jedem Update aktualisiert
                 val etaFormat = remember { SimpleDateFormat("HH:mm", Locale.GERMANY) }
                 val etaString = remember(state.totalTimeRemaining) {
                     val eta = Calendar.getInstance().apply {
@@ -172,7 +173,6 @@ private fun ActiveNavigationContent(
                     etaFormat.format(eta.time)
                 }
 
-                // Ankunftszeit GROSS
                 Text(
                     text = etaString,
                     fontSize = 32.sp,
@@ -180,7 +180,6 @@ private fun ActiveNavigationContent(
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
-                // Restdistanz und -zeit klein darunter
                 Text(
                     text = "${state.totalDistanceRemaining.formatDistance()} • ${state.totalTimeRemaining.formatDuration()}",
                     fontSize = 12.sp,
