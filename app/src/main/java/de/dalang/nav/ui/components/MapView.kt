@@ -90,8 +90,16 @@ fun MapViewComposable(
     // Verhindert Flackern der Straßennamen-Labels durch Micro-Zoom-Änderungen
     var stableZoom by remember { mutableStateOf(16.0) }
 
-    // POIs für Klick-Erkennung merken
-    val currentPois = remember(pois) { pois }
+    // Aktuelle Werte für den Map-Click-Listener.
+    // Why: addOnMapClickListener wird einmalig beim Map-Setup registriert und
+    // würde sonst die initialen (null) Werte von route/pois/Callbacks für immer
+    // einfangen — Klicks auf Alternativrouten oder POIs würden ins Leere gehen.
+    val currentPois by rememberUpdatedState(pois)
+    val currentRoute by rememberUpdatedState(route)
+    val currentIsNavigating by rememberUpdatedState(isNavigating)
+    val currentOnAlternativeRouteClick by rememberUpdatedState(onAlternativeRouteClick)
+    val currentOnPoiClick by rememberUpdatedState(onPoiClick)
+    val currentOnMapClick by rememberUpdatedState(onMapClick)
 
     // Style-Konfiguration: MapTiler wenn Key vorhanden, sonst OpenFreeMap
     val styleUrl = if (mapTilerKey.isNotBlank()) {
@@ -157,7 +165,9 @@ fun MapViewComposable(
 
                                     // Klick-Handler fuer Kartenklicks (inkl. POI-Erkennung)
                                     map.addOnMapClickListener { point ->
-                                        CrashLogger.log("MapView: Map clicked at ${point.latitude}, ${point.longitude}")
+                                        val routeNow = currentRoute
+                                        val altClick = currentOnAlternativeRouteClick
+                                        CrashLogger.log("MapView: Map clicked at ${point.latitude}, ${point.longitude} (alts=${routeNow?.alternatives?.size ?: 0}, navigating=$currentIsNavigating)")
 
                                         // Prüfe ob in der Nähe eines POI geklickt wurde (distanzbasiert)
                                         if (currentPois.isNotEmpty()) {
@@ -177,25 +187,32 @@ fun MapViewComposable(
                                                 }
                                                 if (distanceToPoi < clickTolerance) {
                                                     CrashLogger.log("MapView: POI clicked: ${nearestPoi.name} (distance: ${distanceToPoi.toInt()}m, zoom: $zoomLevel)")
-                                                    onPoiClick?.invoke(nearestPoi)
+                                                    currentOnPoiClick?.invoke(nearestPoi)
                                                     return@addOnMapClickListener true
                                                 }
                                             }
                                         }
 
                                         // Prüfe ob Alternative Route geklickt wurde (vor Navigation)
-                                        if (!isNavigating && route?.alternatives?.isNotEmpty() == true && onAlternativeRouteClick != null) {
+                                        if (!currentIsNavigating && routeNow?.alternatives?.isNotEmpty() == true && altClick != null) {
                                             val clickedLatLng = LatLng(point.latitude, point.longitude)
                                             // Finde nächste Alternative (Mindestentfernung zur Route-Linie)
-                                            val clickedAltIndex = findClickedAlternativeRoute(clickedLatLng, route.alternatives, route.geometry)
+                                            val clickedAltIndex = findClickedAlternativeRoute(
+                                                clickedLatLng,
+                                                routeNow.alternatives,
+                                                routeNow.geometry,
+                                                map.cameraPosition.zoom
+                                            )
                                             if (clickedAltIndex != null) {
                                                 CrashLogger.log("MapView: Alternative route $clickedAltIndex clicked")
-                                                onAlternativeRouteClick.invoke(clickedAltIndex)
+                                                altClick.invoke(clickedAltIndex)
                                                 return@addOnMapClickListener true
+                                            } else {
+                                                CrashLogger.log("MapView: Click not within tolerance of any alternative route")
                                             }
                                         }
 
-                                        onMapClick?.invoke(LatLng(point.latitude, point.longitude))
+                                        currentOnMapClick?.invoke(LatLng(point.latitude, point.longitude))
                                         true
                                     }
 
@@ -606,7 +623,7 @@ fun MapViewComposable(
                         }
 
                         // Location-Layer nach oben bringen (über Route)
-                        bringLocationLayerToTop(style)
+                        bringLocationLayerToTop(style, animatedRotation)
 
                         // Kamera auf Route zentrieren
                         if (!isNavigating && route.geometry.size >= 2) {
@@ -1170,17 +1187,23 @@ private fun createTimeDiffBitmap(diffMinutes: Int, isDarkTheme: Boolean): Bitmap
 private fun findClickedAlternativeRoute(
     clickPoint: LatLng,
     alternatives: List<AlternativeRoute>,
-    mainRouteGeometry: List<LatLng>
+    mainRouteGeometry: List<LatLng>,
+    zoomLevel: Double
 ): Int? {
-    val clickTolerance = 200.0  // Meter - Toleranz für Klick auf Route
-
-    // Prüfe zuerst ob Klick näher an Hauptroute ist - dann ignorieren
-    val distToMain = minDistanceToRoute(clickPoint, mainRouteGeometry)
-    if (distToMain < clickTolerance * 0.5) {
-        return null  // Zu nah an Hauptroute
+    // Zoom-abhängige Toleranz — bei Übersichts-Zoom sind sichtbare Routen optisch nah,
+    // ein "fingerbreiter" Klick deckt mehrere hundert Meter ab.
+    val clickTolerance = when {
+        zoomLevel >= 15 -> 120.0
+        zoomLevel >= 13 -> 250.0
+        zoomLevel >= 11 -> 500.0
+        else -> 1000.0
     }
 
-    // Finde nächste Alternative
+    val distToMain = minDistanceToRoute(clickPoint, mainRouteGeometry)
+    if (distToMain < clickTolerance * 0.5) {
+        return null
+    }
+
     var minDist = Double.MAX_VALUE
     var closestIndex: Int? = null
 
@@ -1196,19 +1219,38 @@ private fun findClickedAlternativeRoute(
 }
 
 /**
- * Berechnet minimale Distanz von Punkt zu Route-Geometrie
+ * Minimale Distanz von Punkt zu Polyline — gemessen zu Liniensegmenten,
+ * nicht nur zu Vertices (sonst werden Klicks zwischen weit auseinander
+ * liegenden Vertices auf langen Geraden fälschlich verworfen).
  */
 private fun minDistanceToRoute(point: LatLng, geometry: List<LatLng>): Double {
     if (geometry.isEmpty()) return Double.MAX_VALUE
+    if (geometry.size == 1) return point.distanceTo(geometry[0])
 
     var minDist = Double.MAX_VALUE
-    for (routePoint in geometry) {
-        val dist = point.distanceTo(routePoint)
+    for (i in 0 until geometry.size - 1) {
+        val dist = pointToSegmentDistance(point, geometry[i], geometry[i + 1])
         if (dist < minDist) {
             minDist = dist
         }
     }
     return minDist
+}
+
+/**
+ * Distanz von Punkt p zum Segment a-b.
+ * Projektion wird euklidisch in lat/lng-Space berechnet (für kurze Segmente
+ * < 1km ausreichend genau), die finale Distanz aber per Haversine.
+ */
+private fun pointToSegmentDistance(p: LatLng, a: LatLng, b: LatLng): Double {
+    val dx = b.lng - a.lng
+    val dy = b.lat - a.lat
+    val lenSq = dx * dx + dy * dy
+    if (lenSq < 1e-12) return p.distanceTo(a)
+
+    val t = (((p.lng - a.lng) * dx + (p.lat - a.lat) * dy) / lenSq).coerceIn(0.0, 1.0)
+    val projected = LatLng(a.lat + t * dy, a.lng + t * dx)
+    return p.distanceTo(projected)
 }
 
 /**
@@ -1444,15 +1486,32 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
 /**
  * Bringt den Location-Layer nach ganz oben (über alle anderen Layer).
  * Muss aufgerufen werden nachdem Route/Traffic gezeichnet wurden.
+ *
+ * Why: MapLibre detacht ein Layer-Objekt beim removeLayer; das gleiche
+ * Objekt erneut via addLayer() anzuhängen failt silent. Daher wird der
+ * Layer mit identischen Properties neu konstruiert.
  */
-private fun bringLocationLayerToTop(style: Style) {
+private fun bringLocationLayerToTop(style: Style, currentRotation: Float) {
     try {
-        val locationLayer = style.getLayer("location-layer") ?: return
+        // Source muss existieren — sonst gibt es nichts wieder anzuhängen.
+        if (style.getSource("location-source") == null) return
 
-        // Layer entfernen und wieder hinzufügen (fügt am Ende/oben hinzu)
-        style.removeLayer("location-layer")
-        style.addLayer(locationLayer)
+        if (style.getLayer("location-layer") != null) {
+            style.removeLayer("location-layer")
+        }
+
+        val newLayer = SymbolLayer("location-layer", "location-source").apply {
+            setProperties(
+                PropertyFactory.iconImage("position-arrow"),
+                PropertyFactory.iconSize(1.2f),
+                PropertyFactory.iconRotate(currentRotation),
+                PropertyFactory.iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
+                PropertyFactory.iconAllowOverlap(true),
+                PropertyFactory.iconIgnorePlacement(true)
+            )
+        }
+        style.addLayer(newLayer)
     } catch (e: Exception) {
-        // Location layer existiert evtl. noch nicht
+        CrashLogger.logError("MapView", "bringLocationLayerToTop failed", e)
     }
 }

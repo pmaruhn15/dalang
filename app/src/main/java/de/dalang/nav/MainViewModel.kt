@@ -896,46 +896,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Wählt eine alternative Route aus und macht sie zur Hauptroute.
-     * Die bisherige Hauptroute wird zur Alternative.
+     * Die bisherige Hauptroute wird zur Alternative — synchron, ohne API-Call.
      */
     fun selectAlternativeRoute(alternativeIndex: Int) {
-        val currentState = _navigationState.value
-        val currentRoute = currentState.route ?: return
+        val currentRoute = _navigationState.value.route ?: return
         val alternatives = currentRoute.alternatives
 
-        if (alternativeIndex < 0 || alternativeIndex >= alternatives.size) {
+        if (alternativeIndex !in alternatives.indices) {
             CrashLogger.log("MainViewModel: Invalid alternative index $alternativeIndex")
             return
         }
 
-        val selectedAlt = alternatives[alternativeIndex]
-        CrashLogger.log("MainViewModel: Selecting alternative route $alternativeIndex (${(selectedAlt.durationDifference / 60).toInt()} min diff)")
+        val diffMin = (alternatives[alternativeIndex].durationDifference / 60).toInt()
+        CrashLogger.log("MainViewModel: Selecting alternative route $alternativeIndex ($diffMin min diff)")
 
-        // Neue Hauptroute aus Alternative erstellen
-        // Wir müssen eine vollständige Route vom RouteRepository holen
-        viewModelScope.launch(exceptionHandler) {
-            try {
-                val currentLocation = _currentLocation.value ?: return@launch
-                val destination = currentState.destination ?: return@launch
-
-                // Route neu berechnen mit Präferenz für die gewählte Alternative
-                // Da HERE die Routen berechnet, holen wir einfach neu und zeigen alle Alternativen
-                val newRoute = routeRepository.getRoute(currentLocation, destination)
-                if (newRoute != null) {
-                    _navigationState.update {
-                        it.copy(
-                            route = newRoute,
-                            currentStepIndex = 0,
-                            totalDistanceRemaining = newRoute.distance,
-                            totalTimeRemaining = newRoute.duration
-                        )
-                    }
-                    CrashLogger.log("MainViewModel: Route updated with ${newRoute.alternatives.size} alternatives")
-                }
-            } catch (e: Exception) {
-                CrashLogger.logError("MainViewModel", "selectAlternativeRoute failed", e)
-            }
+        val newRoute = routeRepository.promoteAlternativeToMain(currentRoute, alternativeIndex)
+        if (newRoute == null) {
+            CrashLogger.log("MainViewModel: promote returned null")
+            return
         }
+
+        _navigationState.update {
+            it.copy(
+                route = newRoute,
+                currentStepIndex = 0,
+                totalDistanceRemaining = newRoute.distance,
+                totalTimeRemaining = newRoute.duration
+            )
+        }
+        CrashLogger.log("MainViewModel: Route promoted; ${newRoute.alternatives.size} alternatives remain")
     }
 
     // Proaktives Rerouting - prüft periodisch ob schnellere Route verfügbar

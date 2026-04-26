@@ -83,7 +83,13 @@ data class AlternativeRoute(
     val divergingGeometry: List<LatLng>, // Nur der abweichende Teil (für Anzeige)
     val duration: Double,               // Gesamtdauer der Alternative
     val durationDifference: Double,     // Differenz zur Hauptroute (+ = länger)
-    val distance: Double                // Gesamtdistanz der Alternative
+    val distance: Double,               // Gesamtdistanz der Alternative
+    // Vollständige Routen-Daten — werden benötigt um eine Alternative ohne
+    // erneuten API-Call zur Hauptroute zu promoten (Click-to-Select).
+    val steps: List<RouteStep> = emptyList(),
+    val hasTrafficData: Boolean = false,
+    val typicalDuration: Double? = null,
+    val trafficSegments: List<TrafficSegment> = emptyList()
 )
 
 data class Route(
@@ -359,12 +365,61 @@ class RouteRepository {
                 divergingGeometry = divergingGeometry,
                 duration = alt.duration,
                 durationDifference = durationDiff,
-                distance = alt.distance
+                distance = alt.distance,
+                steps = alt.steps,
+                hasTrafficData = alt.hasTrafficData,
+                typicalDuration = alt.typicalDuration,
+                trafficSegments = alt.trafficSegments
             ))
         }
 
         CrashLogger.log("RouteRepository: ${result.size} valid alternatives after filtering")
         return result
+    }
+
+    /**
+     * Promotet eine Alternative zur neuen Hauptroute, ohne neuen API-Call.
+     * Die alte Hauptroute und die übrigen Alternativen werden relativ zur
+     * neuen Hauptroute neu als Alternativen klassifiziert.
+     */
+    fun promoteAlternativeToMain(currentRoute: Route, alternativeIndex: Int): Route? {
+        val alternatives = currentRoute.alternatives
+        if (alternativeIndex !in alternatives.indices) {
+            CrashLogger.log("RouteRepository: promote — invalid index $alternativeIndex")
+            return null
+        }
+
+        val selected = alternatives[alternativeIndex]
+        val newMain = Route(
+            distance = selected.distance,
+            duration = selected.duration,
+            geometry = selected.geometry,
+            steps = selected.steps,
+            hasTrafficData = selected.hasTrafficData,
+            typicalDuration = selected.typicalDuration,
+            trafficSegments = selected.trafficSegments,
+            alternatives = emptyList()
+        )
+
+        val candidates = mutableListOf<Route>()
+        candidates += currentRoute.copy(alternatives = emptyList())
+        alternatives.forEachIndexed { i, alt ->
+            if (i != alternativeIndex) {
+                candidates += Route(
+                    distance = alt.distance,
+                    duration = alt.duration,
+                    geometry = alt.geometry,
+                    steps = alt.steps,
+                    hasTrafficData = alt.hasTrafficData,
+                    typicalDuration = alt.typicalDuration,
+                    trafficSegments = alt.trafficSegments
+                )
+            }
+        }
+
+        val newAlternatives = processAlternatives(newMain, candidates)
+        CrashLogger.log("RouteRepository: promoted alt $alternativeIndex; ${newAlternatives.size} alternatives remain")
+        return newMain.copy(alternatives = newAlternatives)
     }
 
     /**

@@ -5,8 +5,12 @@
     android:viewportWidth="48"
     android:viewportHeight="48">
 
-    <!-- White navigation arrow with slight shadow -->
+    <!-- White navigation arrow with slightly rounded corners -->
     <path
         android:fillColor="#FFFFFF"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
         android:pathData="M24,4L40,40L24,32L8,40Z" />
 </vector>
