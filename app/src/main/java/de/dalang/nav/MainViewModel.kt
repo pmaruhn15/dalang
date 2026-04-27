@@ -434,46 +434,111 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectDestination(result: SearchResult) {
         CrashLogger.log("MainViewModel: selectDestination: ${result.displayName}")
+        val to = LatLng(result.lat, result.lon)
+        val displayName = result.displayName.split(",").first()
+        // Vorhandenen Retry abbrechen — neue Destination ersetzt die alte.
+        pendingRetryJob?.cancel()
+        pendingRetryJob = null
+
         viewModelScope.launch(exceptionHandler) {
             try {
-                val from = _currentLocation.value
-                if (from == null) {
-                    CrashLogger.logError("MainViewModel", "No current location for route")
-                    _errorMessage.value = "Kein GPS-Signal"
-                    return@launch
-                }
-                val to = LatLng(result.lat, result.lon)
-
                 _navigationState.update { it.copy(isRecalculating = true) }
 
-                val route = routeRepository.getRoute(from, to)
+                val from = _currentLocation.value
+                val route = if (from != null) routeRepository.getRoute(from, to) else null
+
                 if (route != null) {
                     CrashLogger.log("MainViewModel: Route found with ${route.steps.size} steps")
                     _navigationState.update {
                         it.copy(
                             route = route,
                             destination = to,
-                            destinationName = result.displayName.split(",").first(),
+                            destinationName = displayName,
                             isRecalculating = false,
                             totalDistanceRemaining = route.distance,
                             totalTimeRemaining = route.duration
                         )
                     }
-                    // Info wenn ohne Verkehrsdaten (OSRM Fallback)
                     if (!route.hasTrafficData) {
                         _infoMessage.value = "Route ohne Verkehrsdaten (OSRM)"
                     }
                 } else {
-                    CrashLogger.logError("MainViewModel", "No route found")
-                    _errorMessage.value = "Route konnte nicht berechnet werden. Siehe Einstellungen > Debug Log"
-                    _navigationState.update { it.copy(isRecalculating = false) }
+                    // Destination trotzdem merken — entweder fehlt GPS (z.B. Tiefgarage)
+                    // oder Netz war kurzzeitig weg. Retry-Coroutine erledigt es sobald beides da ist.
+                    CrashLogger.logError("MainViewModel", "No route found — starting pending retry")
+                    _errorMessage.value = if (from == null) {
+                        "Warte auf GPS — Route wird automatisch geladen"
+                    } else {
+                        "Keine Verbindung — Route wird automatisch wiederholt"
+                    }
+                    _navigationState.update {
+                        it.copy(
+                            destination = to,
+                            destinationName = displayName,
+                            isRecalculating = false
+                        )
+                    }
+                    startPendingRouteRetry(to, displayName)
                 }
 
                 clearSearch()
             } catch (e: Exception) {
                 CrashLogger.logError("MainViewModel", "selectDestination failed", e)
                 _errorMessage.value = "Fehler: ${e.message}"
-                _navigationState.update { it.copy(isRecalculating = false) }
+                _navigationState.update {
+                    it.copy(
+                        destination = to,
+                        destinationName = displayName,
+                        isRecalculating = false
+                    )
+                }
+                startPendingRouteRetry(to, displayName)
+            }
+        }
+    }
+
+    private var pendingRetryJob: Job? = null
+
+    private fun startPendingRouteRetry(destination: LatLng, destinationName: String) {
+        pendingRetryJob?.cancel()
+        pendingRetryJob = viewModelScope.launch(exceptionHandler) {
+            var attempt = 0
+            while (coroutineContext.isActive && _navigationState.value.route == null) {
+                // Erster Retry nach 5s, danach alle 30s (gibt GPS-Fix + Netz-Reconnect Zeit).
+                delay(if (attempt == 0) 5_000L else 30_000L)
+                attempt++
+
+                if (_navigationState.value.destination != destination) {
+                    // User hat ein anderes Ziel gewählt — Retry wegwerfen.
+                    return@launch
+                }
+                val from = _currentLocation.value
+                if (from == null) {
+                    CrashLogger.log("MainViewModel: pending route retry #$attempt — still no GPS")
+                    continue
+                }
+                CrashLogger.log("MainViewModel: pending route retry #$attempt")
+                val route = try {
+                    routeRepository.getRoute(from, destination)
+                } catch (e: Exception) {
+                    CrashLogger.logError("MainViewModel", "pending retry #$attempt failed", e)
+                    null
+                }
+                if (route != null) {
+                    _navigationState.update {
+                        it.copy(
+                            route = route,
+                            destination = destination,
+                            destinationName = destinationName,
+                            isRecalculating = false,
+                            totalDistanceRemaining = route.distance,
+                            totalTimeRemaining = route.duration
+                        )
+                    }
+                    _infoMessage.value = "Route geladen (nach $attempt. Versuch)"
+                    CrashLogger.log("MainViewModel: pending route retry succeeded after $attempt attempts")
+                    return@launch
+                }
             }
         }
     }
@@ -535,6 +600,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun stopNavigation() {
         CrashLogger.log("MainViewModel: stopNavigation")
         try {
+            // Pending Route-Retry stoppen — User hat aufgegeben.
+            pendingRetryJob?.cancel()
+            pendingRetryJob = null
+
             // Proaktives Rerouting stoppen
             stopProactiveRerouting()
 
