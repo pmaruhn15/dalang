@@ -140,7 +140,8 @@ private fun ActiveNavigationContent(
                 if (displayStep.isRoundabout() && displayStep?.maneuver?.exit != null) {
                     RoundaboutVisualization(
                         exitNumber = displayStep.maneuver.exit,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        turnAngleDeg = state.computeRoundaboutTurnAngleDeg()
                     )
                 } else {
                     Image(
@@ -533,7 +534,8 @@ private fun RouteStep?.isRoundabout(): Boolean {
 private fun RoundaboutVisualization(
     exitNumber: Int,
     color: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    turnAngleDeg: Float? = null
 ) {
     Canvas(modifier = modifier.size(64.dp)) {
         val centerX = size.width / 2
@@ -567,21 +569,19 @@ private fun RoundaboutVisualization(
             cap = StrokeCap.Round
         )
 
-        // Ausfahrt basierend auf Exit-Nummer
-        // In Deutschland: Kreisverkehr im Uhrzeigersinn
-        // Exit 1 = erste Ausfahrt (ca. 90° = rechts)
-        // Exit 2 = zweite Ausfahrt (ca. 0° = oben)
-        // Exit 3 = dritte Ausfahrt (ca. 270° = links)
-        // Exit 4 = vierte Ausfahrt (ca. 180° = zurück/unten)
-
-        // Winkel für Ausfahrt berechnen (0° = oben, im Uhrzeigersinn)
-        // Einfahrt ist bei 180° (unten)
-        // Exit 1 = 90° (rechts), Exit 2 = 0° (oben), Exit 3 = 270° (links)
-        val exitAngle = when (exitNumber) {
-            1 -> 90f   // Rechts
-            2 -> 0f    // Oben (geradeaus durch)
-            3 -> 270f  // Links
-            4 -> 180f  // Zurück (U-Turn)
+        // Ausfahrtwinkel: bevorzugt der echte Drehwinkel aus der Step-Geometrie
+        // (turnAngleDeg). Fallback nur wenn keine Geometrie verfügbar ist:
+        // 90°-Quadranten basierend auf Exit-Nummer — bei != 4 Ausfahrten falsch,
+        // aber mit 4 Ausfahrten der häufigste Fall.
+        val exitAngle = if (turnAngleDeg != null) {
+            // turnAngleDeg ist relativ zur Anfahrtsrichtung. Visualization-Konvention:
+            // 0° = oben (geradeaus), +90° = rechts, ±180° = unten.
+            ((turnAngleDeg + 360f) % 360f)
+        } else when (exitNumber) {
+            1 -> 90f
+            2 -> 0f
+            3 -> 270f
+            4 -> 180f
             else -> ((exitNumber - 1) * 90f) % 360f
         }
 

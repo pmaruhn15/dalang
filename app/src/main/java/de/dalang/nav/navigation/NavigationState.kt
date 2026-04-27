@@ -81,6 +81,56 @@ data class NavigationState(
         }
         return totalDistance
     }
+
+    /**
+     * Liefert den realen Drehwinkel im Kreisverkehr in Grad relativ zur Anfahrtsrichtung.
+     *
+     * 0° = geradeaus durch, +90° = rechts ab, -90° = links ab, ±180° = wenden.
+     *
+     * Why: Der bisherige Code nahm starre 90°-Quadranten an (Exit 1=rechts, 2=oben, ...),
+     * was bei 3-/5-/6-Exit-Kreisverkehren oder schiefer Geometrie immer falsch war.
+     * Stattdessen leiten wir die Drehung aus den Bearings der angrenzenden Step-Geometrien ab.
+     *
+     * Returns null wenn nicht genug Geometrie da ist oder kein Roundabout-Step ansteht.
+     */
+    fun computeRoundaboutTurnAngleDeg(): Float? {
+        val steps = route?.steps ?: return null
+        val nextIdx = findNextRelevantStepIndex() ?: return null
+        val displayStep = steps.getOrNull(nextIdx) ?: return null
+        if (!displayStep.isRoundaboutType()) return null
+
+        val prevStep = steps.getOrNull(nextIdx - 1)
+        val afterStep = steps.getOrNull(nextIdx + 1)
+
+        // Anfahrt: bevorzugt das Ende des vorigen Steps, sonst der Anfang dieses Steps.
+        val entryGeom = prevStep?.geometry?.takeLast(2)?.takeIf { it.size >= 2 }
+            ?: displayStep.geometry.take(2).takeIf { it.size >= 2 }
+            ?: return null
+        // Wegfahrt: bevorzugt der Anfang des nächsten Steps, sonst das Ende dieses Steps.
+        val exitGeom = afterStep?.geometry?.take(2)?.takeIf { it.size >= 2 }
+            ?: displayStep.geometry.takeLast(2).takeIf { it.size >= 2 }
+            ?: return null
+
+        val bearingIn = bearingDeg(entryGeom[0], entryGeom[1])
+        val bearingOut = bearingDeg(exitGeom[0], exitGeom[1])
+        var diff = bearingOut - bearingIn
+        while (diff > 180) diff -= 360
+        while (diff < -180) diff += 360
+        return diff.toFloat()
+    }
+}
+
+private fun RouteStep.isRoundaboutType(): Boolean {
+    return maneuver.type in setOf("roundabout", "rotary", "exit roundabout", "exit rotary")
+}
+
+private fun bearingDeg(from: LatLng, to: LatLng): Double {
+    val lat1 = Math.toRadians(from.lat)
+    val lat2 = Math.toRadians(to.lat)
+    val dLng = Math.toRadians(to.lng - from.lng)
+    val y = Math.sin(dLng) * Math.cos(lat2)
+    val x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
+    return (Math.toDegrees(Math.atan2(y, x)) + 360.0) % 360.0
 }
 
 sealed class NavigationEvent {
