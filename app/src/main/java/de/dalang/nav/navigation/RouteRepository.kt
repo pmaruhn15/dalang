@@ -326,10 +326,11 @@ class RouteRepository {
             // Differenz zur Hauptroute berechnen
             val durationDiff = alt.duration - mainRoute.duration
 
-            // Filter: Nur Alternativen die nicht DOPPELT so lang sind wie Hauptroute
-            // Und nicht sinnlos kurz (Unterschied < 30 Sekunden bei gleichem Weg)
+            // Filter: nicht doppelt so lang wie Hauptroute UND mindestens 90s anders.
+            // Why: <90s ist im echten Verkehr Rauschen — der User soll nicht zwischen
+            // zwei "1-min-Alternativen" wählen müssen.
             val maxDurationDiff = mainRoute.duration  // Max 100% länger
-            if (durationDiff > maxDurationDiff || kotlin.math.abs(durationDiff) < 30) {
+            if (durationDiff > maxDurationDiff || kotlin.math.abs(durationDiff) < 90) {
                 continue
             }
 
@@ -373,8 +374,14 @@ class RouteRepository {
             ))
         }
 
-        CrashLogger.log("RouteRepository: ${result.size} valid alternatives after filtering")
-        return result
+        // Cap auf 2 Alternativen — mehr wird in der UI redundant.
+        // Bevorzuge Alternativen mit kleiner |Differenz| (= ähnlich schnell, aber distinct genug).
+        val capped = result
+            .sortedBy { kotlin.math.abs(it.durationDifference) }
+            .take(2)
+
+        CrashLogger.log("RouteRepository: ${capped.size} alternatives after filter+cap (raw=${result.size})")
+        return capped
     }
 
     /**
