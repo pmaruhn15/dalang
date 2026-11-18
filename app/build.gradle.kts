@@ -20,8 +20,8 @@ android {
         applicationId = "de.dalang.nav"
         minSdk = 29
         targetSdk = 34
-        versionCode = 114
-        versionName = "1.3.13"
+        versionCode = 115
+        versionName = "1.3.14"
         ndk { abiFilters += "arm64-v8a" }  // nur Fairphone/aktuelle Geräte → APK deutlich kleiner
     }
 

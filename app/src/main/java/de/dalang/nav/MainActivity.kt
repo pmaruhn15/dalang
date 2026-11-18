@@ -448,7 +448,7 @@ fun DaLangAppContent(viewModel: MainViewModel) {
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(top = 8.dp, end = 8.dp)
+                .padding(top = 120.dp, end = 8.dp)  // unter dem Debug-Button
         ) {
             WaypointIndicator(
                 waypointType = navigationState.waypointType,
@@ -583,7 +583,7 @@ fun DaLangAppContent(viewModel: MainViewModel) {
         val micPermission = rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) { granted -> if (granted) startDebugReport() }
-        SmallFloatingActionButton(
+        LargeFloatingActionButton(
             onClick = {
                 when {
                     DebugReporter.isRecording -> DebugReporter.stop()
@@ -594,12 +594,14 @@ fun DaLangAppContent(viewModel: MainViewModel) {
             },
             containerColor = if (DebugReporter.isRecording) Color.Red else MaterialTheme.colorScheme.surface,
             modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 8.dp)
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(top = 12.dp, end = 12.dp)
         ) {
             Icon(
                 if (DebugReporter.isRecording) Icons.Filled.Stop else Icons.Filled.BugReport,
-                contentDescription = "Debug-Report"
+                contentDescription = "Debug-Report",
+                modifier = Modifier.size(48.dp)
             )
         }
 
