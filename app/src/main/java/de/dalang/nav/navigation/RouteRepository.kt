@@ -665,6 +665,10 @@ class RouteRepository {
             "roundaboutEnter" -> "roundabout" to null
             "roundaboutExit" -> "exit roundabout" to null
             "ramp" -> "on ramp" to direction
+            // HERE "keep" = Spur halten an Kreuz/Gabelung, "exit" = Ausfahrt. Bisher unbekannt ->
+            // modifier null -> als irrelevant übersprungen: keine Ansage an Autobahnkreuzen/Ausfahrten.
+            "keep" -> "fork" to when (direction) { "left" -> "left"; "right" -> "right"; else -> null }
+            "exit" -> "off ramp" to when (direction) { "left" -> "slight left"; else -> "slight right" }
             "merge" -> "merge" to direction
             "highway" -> "new name" to null
             else -> action to null

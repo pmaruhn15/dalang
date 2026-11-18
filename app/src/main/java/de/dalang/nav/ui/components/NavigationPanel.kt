@@ -515,6 +515,10 @@ private fun getTurnIconRes(step: RouteStep?): Int {
             "right" -> R.drawable.ic_turn_slight_right
             else -> R.drawable.ic_turn_straight
         }
+        "off ramp", "on ramp", "merge" -> when (step.maneuver.modifier) {
+            "left", "slight left", "sharp left" -> R.drawable.ic_turn_slight_left
+            else -> R.drawable.ic_turn_slight_right
+        }
         // Kreisverkehr: Fallback auf Icon wenn keine Exit-Nummer
         "roundabout", "rotary", "exit roundabout", "exit rotary" -> R.drawable.ic_roundabout
         else -> R.drawable.ic_turn_straight
