@@ -47,7 +47,6 @@ fun NavigationPanel(
     onMcDonaldsClick: () -> Unit = {},
     onGasStationClick: () -> Unit = {},
     isMcDonaldsLoading: Boolean = false,
-    speedMs: Float = 0f,
     modifier: Modifier = Modifier
 ) {
     // Get navigation bar height for bottom padding
@@ -74,8 +73,7 @@ fun NavigationPanel(
                     onStop = onStopNavigation,
                     onMcDonaldsClick = onMcDonaldsClick,
                     onGasStationClick = onGasStationClick,
-                    isMcDonaldsLoading = isMcDonaldsLoading,
-                    speedMs = speedMs
+                    isMcDonaldsLoading = isMcDonaldsLoading
                 )
             } else {
                 // Routenvorschau (swipe zum Abbrechen)
@@ -95,8 +93,7 @@ private fun ActiveNavigationContent(
     onStop: () -> Unit,
     onMcDonaldsClick: () -> Unit,
     onGasStationClick: () -> Unit,
-    isMcDonaldsLoading: Boolean = false,
-    speedMs: Float = 0f
+    isMcDonaldsLoading: Boolean = false
 ) {
     // Zeige das nächste RELEVANTE Manöver (überspringt "Geradeaus" auf Landstraßen etc.)
     val displayStep = state.nextRelevantStep ?: state.currentStep
@@ -124,9 +121,9 @@ private fun ActiveNavigationContent(
                 isExpanded = !isExpanded
             }
     ) {
-        // Spuren zusammen mit der ersten Voransage (tempoabhängig), nicht 45 km vorher.
+        // Spuren zusammen mit der ersten Voransage (nach Straßentyp), nicht 45 km vorher.
         val hasLanes = displayStep?.laneInfo != null && displayStep.laneInfo.lanes.isNotEmpty() &&
-            distanceToDisplay <= announceDistancesM(speedMs).first()
+            distanceToDisplay <= announceDistancesM(state.currentStep).first()
 
         // Bei Lane-Info: eigene Zeile mit voller Breite, damit auch 4–6 Spuren reinpassen.
         if (hasLanes) {

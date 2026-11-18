@@ -821,7 +821,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val newDistanceToNext = stepAfterNext?.let { location.distanceTo(it.maneuver.location) } ?: 0.0
                 distanceSmoother.setInitialDistance(newDistanceToNext)
                 stepAfterNext?.let { s ->
-                    announceDistancesM(_speed.value).filter { it >= newDistanceToNext }
+                    announceDistancesM(nextStep).filter { it >= newDistanceToNext }
                         .forEach { announced.add(s.maneuver.location to it) }
                 }
 
@@ -854,9 +854,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(distanceToNextStep = distanceToNext)
                 }
 
-                // Tempoabhängige Voransagen. Kein Distanz-Fenster (bei 120 km/h springt GPS
+                // Voransagen nach Straßentyp. Kein Distanz-Fenster (bei 120 km/h springt GPS
                 // 33 m/s weit drüber), sondern "unterschritten und noch nicht angesagt".
-                val due = announceDistancesM(_speed.value)
+                val due = announceDistancesM(state.currentStep)
                     .filter { rawDistanceToNext <= it && (nextStep.maneuver.location to it) !in announced }
                 if (due.isNotEmpty()) {
                     due.forEach { announced.add(nextStep.maneuver.location to it) }
