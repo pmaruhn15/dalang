@@ -820,6 +820,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val nextIndex = state.currentStepIndex + 1
                 val newDistanceToNext = stepAfterNext?.let { location.distanceTo(it.maneuver.location) } ?: 0.0
                 distanceSmoother.setInitialDistance(newDistanceToNext)
+                stepAfterNext?.let { s ->
+                    announceDistancesM(_speed.value).filter { it >= newDistanceToNext }
+                        .forEach { announced.add(s.maneuver.location to it) }
+                }
 
                 CrashLogger.log("MainViewModel: Advancing past step $nextIndex (${nextStep.maneuver.type}) — newDistToNext=${newDistanceToNext.toInt()}m, passedNext=$passedNext")
 
@@ -850,11 +854,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(distanceToNextStep = distanceToNext)
                 }
 
-                // Voransage bei 200m, 100m, 50m zum *nächsten* Manöver.
-                when {
-                    rawDistanceToNext in 190.0..210.0 -> speakDistance(200, nextStep)
-                    rawDistanceToNext in 90.0..110.0 -> speakDistance(100, nextStep)
-                    rawDistanceToNext in 45.0..55.0 -> speakDistance(50, nextStep)
+                // Tempoabhängige Voransagen. Kein Distanz-Fenster (bei 120 km/h springt GPS
+                // 33 m/s weit drüber), sondern "unterschritten und noch nicht angesagt".
+                val due = announceDistancesM(_speed.value)
+                    .filter { rawDistanceToNext <= it && (nextStep.maneuver.location to it) !in announced }
+                if (due.isNotEmpty()) {
+                    due.forEach { announced.add(nextStep.maneuver.location to it) }
+                    speakDistance(rawDistanceToNext, nextStep)
                 }
             }
 
@@ -1145,21 +1151,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun speakDistance(meters: Int, step: RouteStep) {
+    /** Bereits gesprochene Voransagen: (Manöver-Ort, Schwelle). */
+    private val announced = mutableSetOf<Pair<LatLng, Int>>()
+
+    private fun speakDistance(distanceM: Double, step: RouteStep) {
         try {
-            val direction = when (step.maneuver.type) {
-                "turn" -> when (step.maneuver.modifier) {
-                    "left", "slight left", "sharp left" -> "links abbiegen"
-                    "right", "slight right", "sharp right" -> "rechts abbiegen"
-                    "uturn" -> "wenden"
-                    else -> ""
-                }
-                "roundabout", "rotary" -> "in den Kreisverkehr"
-                else -> ""
+            if (!step.isRelevantManeuver()) return
+            val dist = if (distanceM >= 950) {
+                val km = Math.round(distanceM / 500.0) * 0.5  // auf 0,5 km
+                if (km % 1.0 == 0.0) "${km.toInt()} Kilometern" else "${km.toString().replace('.', ',')} Kilometern"
+            } else {
+                "${(Math.round(distanceM / 50.0) * 50).coerceAtLeast(50)} Metern"
             }
-            if (direction.isNotBlank()) {
-                navigationService?.speak("In $meters Metern $direction")
-            }
+            navigationService?.speak("In $dist: ${step.toGermanInstruction()}")
         } catch (e: Exception) {
             CrashLogger.logError("MainViewModel", "speakDistance failed", e)
         }

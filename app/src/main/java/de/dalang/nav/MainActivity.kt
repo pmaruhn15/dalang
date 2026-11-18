@@ -556,6 +556,7 @@ fun DaLangAppContent(viewModel: MainViewModel) {
             onMcDonaldsClick = { searchMcDonalds() },
             onGasStationClick = { searchPoi(PoiType.GAS_STATION) },
             isMcDonaldsLoading = isSearchingPoi && selectedPoiType == PoiType.MCDONALDS,
+            speedMs = speed,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
         )
