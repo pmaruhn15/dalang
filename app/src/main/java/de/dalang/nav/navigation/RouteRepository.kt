@@ -224,14 +224,17 @@ class RouteRepository {
                             })
                         }
                     }
-                    val laneInfo = extractOsrmLaneInfo(step) ?: continue
-
-                    // Location aus maneuver extrahieren
-                    val maneuver = step.getJSONObject("maneuver")
-                    val location = maneuver.getJSONArray("location")
-                    val latLng = LatLng(location.getDouble(1), location.getDouble(0))
-
-                    result.add(latLng to laneInfo)
+                    // Spuren ALLER Intersections mit ihrem Ort sammeln (OSRM: lanes gelten für genau
+                    // diese Kreuzung). Vorher: nur letzte Intersection, abgelegt unter dem Step-START
+                    // -> Spuren landeten beim falschen Manöver (Fahrer-Report Georg-Brauchle-Ring:
+                    // Gabelung zeigte 4x geradeaus statt 2 linke markiert).
+                    val ints = step.optJSONArray("intersections") ?: continue
+                    for (k in 0 until ints.length()) {
+                        val inter = ints.getJSONObject(k)
+                        val info = parseIntersectionLanes(inter) ?: continue
+                        val loc = inter.getJSONArray("location").let { LatLng(it.getDouble(1), it.getDouble(0)) }
+                        result.add(loc to info)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -808,6 +811,7 @@ class RouteRepository {
                 val leg = legs.getJSONObject(legIdx)
                 val legSteps = leg.getJSONArray("steps")
 
+                var lanesForNextManeuver: LaneInfo? = null  // Lanes von Step i gelten für Manöver i+1
                 for (stepIdx in 0 until legSteps.length()) {
                     val step = legSteps.getJSONObject(stepIdx)
                     val maneuverObj = step.getJSONObject("maneuver")
@@ -822,7 +826,9 @@ class RouteRepository {
                     }
 
                     // Lane-Info aus intersections extrahieren (OSRM liefert lanes aus OSM turn:lanes Tag)
-                    val laneInfo = extractOsrmLaneInfo(step)
+                    val laneInfo = step.optJSONArray("intersections")?.optJSONObject(0)
+                        ?.let { parseIntersectionLanes(it) } ?: lanesForNextManeuver
+                    lanesForNextManeuver = extractOsrmLaneInfo(step)?.second
 
                     // Kreisverkehr-Ausfahrt extrahieren (OSRM liefert "exit" bei roundabout/rotary)
                     val maneuverType = maneuverObj.getString("type")
@@ -869,61 +875,41 @@ class RouteRepository {
      * WICHTIG: Wir nehmen die LETZTE intersection mit lanes, da diese
      * die Spuren direkt vor dem Manöver beschreibt (nicht die erste!)
      */
-    private fun extractOsrmLaneInfo(step: JSONObject): LaneInfo? {
+    /** Spuren an EINER OSRM-Intersection (gelten laut OSRM-Doku für genau diese Kreuzung). */
+    private fun parseIntersectionLanes(intersection: JSONObject): LaneInfo? {
+        val lanesArray = intersection.optJSONArray("lanes") ?: return null
+        if (lanesArray.length() == 0) return null
+        val lanes = mutableListOf<Lane>()
+        var recommendedIndex = -1
+        for (j in 0 until lanesArray.length()) {
+            val laneObj = lanesArray.getJSONObject(j)
+            val isValid = laneObj.optBoolean("valid", false)
+            // indications: ALLE Richtungen pro Spur, z.B. ["straight", "right"]
+            val indications = laneObj.optJSONArray("indications")
+            val directions = if (indications != null && indications.length() > 0) {
+                (0 until indications.length()).map { idx -> mapOsrmLaneDirection(indications.getString(idx)) }
+            } else {
+                listOf("straight")
+            }
+            if (isValid && recommendedIndex == -1) recommendedIndex = j
+            lanes.add(Lane(directions = directions, isRecommended = isValid))
+        }
+        return LaneInfo(lanes = lanes, recommendedLaneIndex = recommendedIndex)
+    }
+
+    /** Letzte Intersection eines Steps mit Spuren (+ ihr Ort). Nur noch Fallback für OSRM-Routen. */
+    private fun extractOsrmLaneInfo(step: JSONObject): Pair<LatLng, LaneInfo>? {
         try {
             val intersections = step.optJSONArray("intersections") ?: return null
-
-            // LETZTE Intersection mit lanes nehmen (direkt vor dem Manöver!)
-            // Rückwärts durch die Intersections gehen
-            var bestLaneInfo: LaneInfo? = null
-            var bestIntersectionIdx = -1
-
             for (i in intersections.length() - 1 downTo 0) {
                 val intersection = intersections.getJSONObject(i)
-                val lanesArray = intersection.optJSONArray("lanes") ?: continue
-
-                if (lanesArray.length() == 0) continue
-
-                val lanes = mutableListOf<Lane>()
-                var recommendedIndex = -1
-
-                for (j in 0 until lanesArray.length()) {
-                    val laneObj = lanesArray.getJSONObject(j)
-                    val isValid = laneObj.optBoolean("valid", false)
-
-                    // indications ist ein Array von ALLEN Richtungen pro Spur
-                    // z.B. ["straight", "right"] für eine Spur die geradeaus ODER rechts führt
-                    val indications = laneObj.optJSONArray("indications")
-                    val directions = if (indications != null && indications.length() > 0) {
-                        (0 until indications.length()).map { idx ->
-                            mapOsrmLaneDirection(indications.getString(idx))
-                        }
-                    } else {
-                        listOf("straight")
-                    }
-
-                    if (isValid && recommendedIndex == -1) {
-                        recommendedIndex = j
-                    }
-
-                    lanes.add(Lane(directions = directions, isRecommended = isValid))
-                }
-
-                if (lanes.isNotEmpty()) {
-                    bestLaneInfo = LaneInfo(lanes = lanes, recommendedLaneIndex = recommendedIndex)
-                    bestIntersectionIdx = i
-                    break  // Letzte gefundene nehmen (von hinten gezählt)
-                }
+                val info = parseIntersectionLanes(intersection) ?: continue
+                val loc = intersection.getJSONArray("location").let { LatLng(it.getDouble(1), it.getDouble(0)) }
+                CrashLogger.log("RouteRepository: OSRM Lanes at '${step.optString("name", "unnamed")}' (intersection $i/${intersections.length() - 1}): " +
+                    "${info.lanes.size} lanes: ${info.lanes.map { "${it.directions.joinToString("+")}${if (it.isRecommended) "*" else ""}" }}")
+                return loc to info
             }
-
-            if (bestLaneInfo != null) {
-                // Debug: Lane-Infos loggen mit Intersection-Index
-                val stepName = step.optString("name", "unnamed")
-                CrashLogger.log("RouteRepository: OSRM Lanes at '$stepName' (intersection $bestIntersectionIdx/${intersections.length()-1}): " +
-                    "${bestLaneInfo.lanes.size} lanes: ${bestLaneInfo.lanes.map { "${it.directions.joinToString("+")}${if(it.isRecommended) "*" else ""}" }}")
-            }
-
-            return bestLaneInfo
+            return null
         } catch (e: Exception) {
             CrashLogger.logError("RouteRepository", "Failed to parse OSRM lanes", e)
             return null
