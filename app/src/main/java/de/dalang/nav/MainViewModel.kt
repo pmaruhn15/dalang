@@ -128,6 +128,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val OFF_ROUTE_THRESHOLD = 60.0
     private val ARRIVAL_RADIUS_DEST_M = 50.0
     private val ARRIVAL_RADIUS_ROUTE_END_M = 30.0
+    private val ARRIVAL_MAX_REMAINING_M = 100.0
     // Cooldown um nicht zu oft neu zu berechnen
     private var lastRecalculationTime = 0L
     private val RECALCULATION_COOLDOWN_MS = 5000L
@@ -1143,8 +1144,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (state.waypoint != null) return false  // erst Zwischenziel
         val toDest = location.distanceTo(destination)
         val toRouteEnd = route.geometry.lastOrNull()?.let { location.distanceTo(it) } ?: Double.MAX_VALUE
-        if (toDest >= ARRIVAL_RADIUS_DEST_M && toRouteEnd >= ARRIVAL_RADIUS_ROUTE_END_M) return false
-        CrashLogger.log("MainViewModel: Arrived (toDest=${toDest.toInt()}m, toRouteEnd=${toRouteEnd.toInt()}m)")
+        // Hauspunkt nur zusammen mit kurzer Restroute: Luftlinie nah != auf der Straße nah
+        // (Fahrer-Report: Wende + Kreisverkehr noch vor sich, trotzdem "Ziel erreicht").
+        val nearDestByRoad = toDest < ARRIVAL_RADIUS_DEST_M && state.totalDistanceRemaining < ARRIVAL_MAX_REMAINING_M
+        if (!nearDestByRoad && toRouteEnd >= ARRIVAL_RADIUS_ROUTE_END_M) return false
+        CrashLogger.log("MainViewModel: Arrived (toDest=${toDest.toInt()}m, toRouteEnd=${toRouteEnd.toInt()}m, remaining=${state.totalDistanceRemaining.toInt()}m)")
         _navigationState.update { it.copy(hasArrived = true, isNavigating = false) }
         navigationService?.speakNow("Ziel erreicht")
         stopNavigation()
