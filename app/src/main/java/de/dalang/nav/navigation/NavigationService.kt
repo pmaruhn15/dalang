@@ -25,6 +25,9 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
     private var piperTts: PiperTts? = null
     private var isPiperReady = false
     private var piperInitStarted = false
+    @Volatile private var piperInitDone = false
+    // Ansagen während der ~2 s Piper-Init: warten statt Roboterstimme (Fahrer-Report)
+    private val pendingSpeech = mutableListOf<String>()
 
     // Android TTS (wird sofort verwendet, bis Piper bereit)
     private var androidTts: TextToSpeech? = null
@@ -65,6 +68,7 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
         val settings = SettingsRepository(this)
         if (!settings.piperTtsEnabled) {
             CrashLogger.log("NavigationService: Piper TTS disabled in settings, using Android TTS only")
+            piperInitDone = true  // sonst puffert speak() für immer
             return
         }
 
@@ -83,8 +87,33 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
                 }
             } catch (e: Exception) {
                 CrashLogger.logError("NavigationService", "Piper TTS lazy init failed", e)
+            } finally {
+                flushPendingSpeech()
             }
         }
+        // Hängt die Init, nach 6 s auf Android TTS ausweichen
+        serviceScope.launch {
+            kotlinx.coroutines.delay(6_000)
+            if (!piperInitDone) {
+                CrashLogger.log("NavigationService: Piper init >6s, flushing pending speech to Android TTS")
+                flushPendingSpeech()
+            }
+        }
+    }
+
+    private fun flushPendingSpeech() {
+        val texts = synchronized(pendingSpeech) {
+            piperInitDone = true
+            pendingSpeech.toList().also { pendingSpeech.clear() }
+        }
+        texts.forEach { speak(it) }
+    }
+
+    /** true = Text gepuffert, weil Piper gerade initialisiert. */
+    private fun bufferWhilePiperInits(text: String): Boolean = synchronized(pendingSpeech) {
+        if (piperInitStarted && !piperInitDone && !isPiperReady) {
+            pendingSpeech.add(text); true
+        } else false
     }
 
     override fun onBind(intent: Intent?): IBinder {
@@ -138,6 +167,8 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
             startPiperInitialization()
         }
 
+        if (bufferWhilePiperInits(text)) return
+
         try {
             if (isPiperReady && piperTts != null) {
                 // Piper TTS verwenden (hochwertige Stimme)
@@ -159,6 +190,8 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
             startPiperInitialization()
         }
 
+        if (bufferWhilePiperInits(text)) return
+
         try {
             if (isPiperReady && piperTts != null) {
                 piperTts?.speakNow(text)
@@ -175,6 +208,9 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
         try {
             val notification = createNotification("Navigation aktiv", "")
             startForeground(NOTIFICATION_ID, notification)
+            // Piper schon bei Navigationsstart laden (Speicherprofil wie bei Lazy Init während
+            // der Navigation), damit die erste Ansage nicht mit der Android-Stimme kommt.
+            startPiperInitialization()
         } catch (e: Exception) {
             CrashLogger.logError("NavigationService", "startForeground failed", e)
         }
