@@ -27,12 +27,21 @@ object DebugReporter {
             val dir = File(context.getExternalFilesDir(null), "debug_reports").apply { mkdirs() }
             val base = "report_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.GERMANY).format(Date())
 
-            File(dir, "$base.txt").writeText(
-                snapshot + "\n\n" + GpsTrackLogger.getDebugSummary() +
-                    "\n\n=== Log (Ende) ===\n" + (CrashLogger.getLastCrashLog()?.takeLast(20_000) ?: "-")
-            )
-            GpsTrackLogger.exportToGpx(context)?.let { it.copyTo(File(dir, "$base.gpx"), overwrite = true) }
+            // Snapshot/GPX/Log im Hintergrund schreiben: vorher blockierte das den UI-Thread
+            // ~1-2 s, der Fahrer tippte nochmal und stoppte die Aufnahme sofort (Mini-Dateien).
+            Thread {
+                try {
+                    File(dir, "$base.txt").writeText(
+                        snapshot + "\n\n" + GpsTrackLogger.getDebugSummary() +
+                            "\n\n=== Log (Ende) ===\n" + (CrashLogger.getLastCrashLog()?.takeLast(20_000) ?: "-")
+                    )
+                    GpsTrackLogger.exportToGpx(context)?.let { it.copyTo(File(dir, "$base.gpx"), overwrite = true) }
+                } catch (e: Exception) {
+                    CrashLogger.logError("DebugReporter", "snapshot failed", e)
+                }
+            }.start()
 
+            startedAt = System.currentTimeMillis()
             @Suppress("DEPRECATION")
             recorder = MediaRecorder().apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
@@ -42,7 +51,7 @@ object DebugReporter {
                 setAudioEncodingBitRate(32000)
                 setMaxDuration(120_000)  // vergessener Stop → nach 2 min Schluss
                 setOnInfoListener { _, what, _ ->
-                    if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) stop()
+                    if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) stop(force = true)
                 }
                 setOutputFile(File(dir, "$base.m4a").absolutePath)
                 prepare()
@@ -59,7 +68,11 @@ object DebugReporter {
         }
     }
 
-    fun stop() {
+    private var startedAt = 0L
+
+    /** force=true nur für Auto-Stop; Tipp innerhalb 1,5 s nach Start = Doppeltipp, ignorieren. */
+    fun stop(force: Boolean = false) {
+        if (!force && System.currentTimeMillis() - startedAt < 1500) return
         val r = recorder ?: return
         recorder = null
         isRecording = false
