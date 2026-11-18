@@ -5,8 +5,14 @@
     android:viewportWidth="48"
     android:viewportHeight="48">
 
-    <!-- Slight right arrow -->
+    <!-- Slight right / Ausfahrt: Strich + Spitze (vorher eine verwinkelte Fläche, wirkte wie ein Blitz) -->
+    <path
+        android:pathData="M20,44L20,26L31,15"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="8"
+        android:strokeLineJoin="round" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M40,8L24,4L28,16L20,12L20,24C20,32 24,36 24,44L32,44C32,36 28,32 28,24L28,20L36,24Z" />
+        android:pathData="M38,8L25.9,10.1L35.9,20.1Z" />
 </vector>
