@@ -1440,9 +1440,11 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
             // Zeit-Badge als Bitmap (SymbolLayer Text funktioniert nicht ohne Fonts im Style)
             val diffMinutes = (alt.durationDifference / 60).toInt()
 
-            // Badge-Position: Bei Navigation am Abzweigpunkt, sonst in der Mitte der Route
+            // Badge-Position: Bei Navigation auf dem grauen Abschnitt kurz nach dem Abzweig —
+            // NICHT am Abzweigpunkt selbst, der liegt auf der eigenen Route und das +X min
+            // las sich wie eine Verzögerung der aktuellen Route (Fahrer-Report).
             val badgePoint = if (isNavigating) {
-                alt.divergePoint
+                alt.divergingGeometry.getOrNull(alt.divergingGeometry.size / 4) ?: alt.divergePoint
             } else {
                 // Mitte der alternativen Route
                 val midIndex = geometryToShow.size / 2
