@@ -58,6 +58,11 @@ import de.dalang.nav.ui.components.SearchBar
 import de.dalang.nav.ui.components.UpdateDialog
 import de.dalang.nav.ui.theme.DaLangTheme
 import de.dalang.nav.util.CrashLogger
+import de.dalang.nav.util.DebugReporter
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Stop
 
 class MainActivity : ComponentActivity() {
 
@@ -546,6 +551,49 @@ fun DaLangAppContent(viewModel: MainViewModel) {
             modifier = Modifier
                 .align(Alignment.BottomCenter)
         )
+
+        // Debug-Button: Sprach-Bugreport während der Fahrt (siehe DebugReporter)
+        fun startDebugReport() {
+            val st = navigationState
+            val snapshot = buildString {
+                appendLine("=== DaLang Debug-Report ${java.util.Date()} ===")
+                appendLine("Version: ${context.packageManager.getPackageInfo(context.packageName, 0).versionName}")
+                appendLine("Position (roh): $currentLocation")
+                appendLine("Position (angezeigt): $displayLocation")
+                appendLine("Speed: ${(speed * 3.6).toInt()} km/h, Bearing: $bearing, Heading: $heading")
+                appendLine("Navigiert: ${st.isNavigating}, Ziel: ${st.destinationName} ${st.destination}")
+                appendLine("Step ${st.currentStepIndex}/${st.route?.steps?.size}: ${st.currentStep?.instruction} ${st.currentStep?.maneuver}")
+                appendLine("Nächstes relevantes: ${st.nextRelevantStep?.instruction} ${st.nextRelevantStep?.maneuver} in ${st.distanceToNextRelevantStep().toInt()} m")
+                appendLine("Lanes: ${st.nextRelevantStep?.laneInfo}")
+                appendLine("Rest: ${st.totalDistanceRemaining.toInt()} m / ${(st.totalTimeRemaining / 60).toInt()} min, Recalc: $isRecalculatingRoute")
+                appendLine("Waypoint: ${st.waypointName} ${st.waypoint}")
+            }
+            if (!DebugReporter.start(context, snapshot)) {
+                Toast.makeText(context, "Debug-Aufnahme fehlgeschlagen", Toast.LENGTH_SHORT).show()
+            }
+        }
+        val micPermission = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted -> if (granted) startDebugReport() }
+        SmallFloatingActionButton(
+            onClick = {
+                when {
+                    DebugReporter.isRecording -> DebugReporter.stop()
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                        PackageManager.PERMISSION_GRANTED -> startDebugReport()
+                    else -> micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            },
+            containerColor = if (DebugReporter.isRecording) Color.Red else MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 8.dp)
+        ) {
+            Icon(
+                if (DebugReporter.isRecording) Icons.Filled.Stop else Icons.Filled.BugReport,
+                contentDescription = "Debug-Report"
+            )
+        }
 
         // Map-Klick Dialog
         val clickedAddress by viewModel.clickedLocationAddress.collectAsState()
