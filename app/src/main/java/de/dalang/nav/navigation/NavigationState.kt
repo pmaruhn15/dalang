@@ -163,7 +163,7 @@ fun RouteStep.isRelevantManeuver(): Boolean {
  * Die erste (größte) Distanz ist auch der Punkt, ab dem die Spuranzeige erscheint.
  */
 fun announceDistancesM(speedMs: Float): List<Int> = when {
-    speedMs >= 90 / 3.6f -> listOf(2000, 1000, 400)   // Autobahn
+    speedMs >= 90 / 3.6f -> listOf(5000, 2000, 1000, 400)   // Autobahn: Fernankündigung 5 km
     speedMs >= 60 / 3.6f -> listOf(1000, 400, 150)    // Landstraße
     else -> listOf(200, 100, 50)                      // Stadt
 }
