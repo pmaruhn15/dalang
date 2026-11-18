@@ -43,6 +43,7 @@ import de.dalang.nav.navigation.Poi
 import de.dalang.nav.navigation.PoiRepository
 import de.dalang.nav.navigation.PoiType
 import de.dalang.nav.navigation.WaypointType
+import de.dalang.nav.navigation.announceDistancesM
 import de.dalang.nav.search.SearchResult
 import de.dalang.nav.settings.FuelType
 import de.dalang.nav.settings.SettingsRepository
@@ -573,6 +574,7 @@ fun DaLangAppContent(viewModel: MainViewModel) {
                 appendLine("Step ${st.currentStepIndex}/${st.route?.steps?.size}: ${st.currentStep?.instruction} ${st.currentStep?.maneuver}")
                 appendLine("Nächstes relevantes: ${st.nextRelevantStep?.instruction} ${st.nextRelevantStep?.maneuver} in ${st.distanceToNextRelevantStep().toInt()} m")
                 appendLine("Lanes: ${st.nextRelevantStep?.laneInfo}")
+                appendLine("Straßentyp aktueller Step: motorway=${st.currentStep?.isMotorway}, Voransagen=${announceDistancesM(st.currentStep)}")
                 appendLine("Rest: ${st.totalDistanceRemaining.toInt()} m / ${(st.totalTimeRemaining / 60).toInt()} min, Recalc: $isRecalculatingRoute")
                 appendLine("Waypoint: ${st.waypointName} ${st.waypoint}")
             }

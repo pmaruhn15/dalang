@@ -158,20 +158,17 @@ fun RouteStep.isRelevantManeuver(): Boolean {
     }
 }
 
-private val MOTORWAY_REF = Regex("""\bA ?\d{1,3}\b""")
-
 /**
  * Voransage-Distanzen (m) nach Straßentyp des Abschnitts, auf dem man auf das Manöver
  * zufährt (= aktueller Step) — NICHT nach eigenem Tempo, sonst gilt im Autobahnstau
- * plötzlich das Stadt-Schema. Autobahn: A-Nummer im Namen (HERE "…on A8…", OSRM-Name)
- * oder geplanter Schnitt ≥ 85 km/h; sonst geplanter Schnitt aus dem Routing.
+ * das Stadt-Schema. Autobahn: OSM highway=motorway (über OSRM-classes) oder, für
+ * Schnellstraßen/unbekannt, geplanter Schnitt >= 85 km/h aus dem Routing.
  * Die erste (größte) Distanz ist auch der Punkt, ab dem die Spuranzeige erscheint.
  */
 fun announceDistancesM(roadStep: RouteStep?): List<Int> {
     val plannedKmh = roadStep?.takeIf { it.duration > 0 }?.let { it.distance / it.duration * 3.6 } ?: 0.0
     return when {
-        roadStep != null && (MOTORWAY_REF.containsMatchIn(roadStep.instruction) || plannedKmh >= 85) ->
-            listOf(5000, 2000, 1000, 400)              // Autobahn: Fernankündigung 5 km
+        roadStep?.isMotorway == true || plannedKmh >= 85 -> listOf(5000, 2000, 1000, 400)  // Fernankündigung 5 km
         plannedKmh >= 55 -> listOf(1000, 400, 150)     // Landstraße
         else -> listOf(200, 100, 50)                   // Stadt
     }

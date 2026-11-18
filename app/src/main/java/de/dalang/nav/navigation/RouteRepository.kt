@@ -25,7 +25,8 @@ data class RouteStep(
     val duration: Double,
     val maneuver: Maneuver,
     val geometry: List<LatLng>,
-    val laneInfo: LaneInfo? = null
+    val laneInfo: LaneInfo? = null,
+    val isMotorway: Boolean? = null  // aus OSM via OSRM-"classes"; null = unbekannt
 )
 
 data class Maneuver(
@@ -147,22 +148,21 @@ class RouteRepository {
     private suspend fun enrichRouteWithOsrmLanes(hereRoute: Route, from: LatLng, to: LatLng): Route {
         try {
             // OSRM nur für Lane-Daten abfragen
-            val osrmLanes = getOsrmLaneData(from, to)
-            if (osrmLanes.isEmpty()) {
-                CrashLogger.log("RouteRepository: No OSRM lane data available")
+            val (osrmLanes, motorwaySegments) = getOsrmLaneData(from, to)
+            if (osrmLanes.isEmpty() && motorwaySegments.isEmpty()) {
+                CrashLogger.log("RouteRepository: No OSRM lane/road-class data available")
                 return hereRoute
             }
 
-            CrashLogger.log("RouteRepository: Enriching HERE route with ${osrmLanes.size} OSRM lane infos")
+            CrashLogger.log("RouteRepository: Enriching HERE route with ${osrmLanes.size} OSRM lane infos, ${motorwaySegments.size} motorway steps")
 
-            // Lane-Daten den HERE-Steps zuordnen basierend auf Location-Nähe
+            // Lane-Daten per Manöver-Nähe, Straßentyp per Geometrie-Nähe (Mitte des HERE-Steps
+            // liegt auf einem OSRM-Motorway-Step) zuordnen.
             val enrichedSteps = hereRoute.steps.map { step ->
                 val nearestLaneInfo = findNearestLaneInfo(step.maneuver.location, osrmLanes)
-                if (nearestLaneInfo != null) {
-                    step.copy(laneInfo = nearestLaneInfo)
-                } else {
-                    step
-                }
+                val mid = step.geometry.getOrNull(step.geometry.size / 2)
+                val onMotorway = mid?.let { m -> motorwaySegments.any { seg -> distanceToPolyline(m, seg) < 40.0 } }
+                step.copy(laneInfo = nearestLaneInfo ?: step.laneInfo, isMotorway = onMotorway)
             }
 
             return hereRoute.copy(steps = enrichedSteps)
@@ -175,7 +175,7 @@ class RouteRepository {
     /**
      * Holt nur Lane-Daten von OSRM (ohne die Route selbst zu verwenden)
      */
-    private fun getOsrmLaneData(from: LatLng, to: LatLng): List<Pair<LatLng, LaneInfo>> {
+    private fun getOsrmLaneData(from: LatLng, to: LatLng): Pair<List<Pair<LatLng, LaneInfo>>, List<List<LatLng>>> {
         try {
             val url = "$OSRM_BASE_URL/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}" +
                     "?overview=false&geometries=geojson&steps=true"
@@ -186,26 +186,27 @@ class RouteRepository {
                 .build()
 
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return emptyList()
+            val body = response.body?.string() ?: return emptyList<Pair<LatLng, LaneInfo>>() to emptyList()
 
             return parseOsrmLaneData(body)
         } catch (e: Exception) {
             CrashLogger.logError("RouteRepository", "OSRM lane fetch failed", e)
-            return emptyList()
+            return emptyList<Pair<LatLng, LaneInfo>>() to emptyList()
         }
     }
 
     /**
      * Parst nur die Lane-Daten aus OSRM Response (Location + LaneInfo Paare)
      */
-    private fun parseOsrmLaneData(json: String): List<Pair<LatLng, LaneInfo>> {
+    private fun parseOsrmLaneData(json: String): Pair<List<Pair<LatLng, LaneInfo>>, List<List<LatLng>>> {
         val result = mutableListOf<Pair<LatLng, LaneInfo>>()
+        val motorway = mutableListOf<List<LatLng>>()
         try {
             val obj = JSONObject(json)
-            if (obj.getString("code") != "Ok") return emptyList()
+            if (obj.getString("code") != "Ok") return result to motorway
 
             val routes = obj.getJSONArray("routes")
-            if (routes.length() == 0) return emptyList()
+            if (routes.length() == 0) return result to motorway
 
             val route = routes.getJSONObject(0)
             val legs = route.getJSONArray("legs")
@@ -216,6 +217,13 @@ class RouteRepository {
 
                 for (stepIdx in 0 until steps.length()) {
                     val step = steps.getJSONObject(stepIdx)
+                    if (isOsrmMotorwayStep(step)) {
+                        step.optJSONObject("geometry")?.optJSONArray("coordinates")?.let { c ->
+                            motorway.add((0 until c.length()).map { i ->
+                                c.getJSONArray(i).let { LatLng(it.getDouble(1), it.getDouble(0)) }
+                            })
+                        }
+                    }
                     val laneInfo = extractOsrmLaneInfo(step) ?: continue
 
                     // Location aus maneuver extrahieren
@@ -229,7 +237,23 @@ class RouteRepository {
         } catch (e: Exception) {
             CrashLogger.logError("RouteRepository", "Parse OSRM lane data failed", e)
         }
-        return result
+        return result to motorway
+    }
+
+    /** OSRM-Car-Profil markiert motorway/motorway_link (OSM highway=*) in intersections[0].classes. */
+    private fun isOsrmMotorwayStep(step: JSONObject): Boolean {
+        val classes = step.optJSONArray("intersections")?.optJSONObject(0)?.optJSONArray("classes") ?: return false
+        return (0 until classes.length()).any { classes.optString(it) == "motorway" }
+    }
+
+    private fun distanceToPolyline(p: LatLng, line: List<LatLng>): Double {
+        if (line.size == 1) return p.distanceTo(line[0])
+        return line.zipWithNext().minOfOrNull { (a, b) ->
+            val dx = b.lng - a.lng; val dy = b.lat - a.lat
+            val lenSq = dx * dx + dy * dy
+            val t = if (lenSq < 1e-12) 0.0 else (((p.lng - a.lng) * dx + (p.lat - a.lat) * dy) / lenSq).coerceIn(0.0, 1.0)
+            p.distanceTo(LatLng(a.lat + t * dy, a.lng + t * dx))
+        } ?: Double.MAX_VALUE
     }
 
     /**
@@ -814,7 +838,8 @@ class RouteRepository {
                                 exit = exitNumber
                             ),
                             geometry = stepGeometry,
-                            laneInfo = laneInfo
+                            laneInfo = laneInfo,
+                            isMotorway = isOsrmMotorwayStep(step)
                         )
                     )
                 }
