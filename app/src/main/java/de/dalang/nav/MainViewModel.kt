@@ -126,6 +126,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Off-route Schwellenwert in Metern
     private val OFF_ROUTE_THRESHOLD = 60.0
+    private val ARRIVAL_RADIUS_DEST_M = 50.0
+    private val ARRIVAL_RADIUS_ROUTE_END_M = 30.0
     // Cooldown um nicht zu oft neu zu berechnen
     private var lastRecalculationTime = 0L
     private val RECALCULATION_COOLDOWN_MS = 5000L
@@ -800,9 +802,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val nextStep = route.steps.getOrNull(state.currentStepIndex + 1)
             val stepAfterNext = route.steps.getOrNull(state.currentStepIndex + 2)
 
+            // Ankunft VOR dem frühen return prüfen — vorher stand sie dahinter und wurde auf dem
+            // letzten Step nie erreicht (Fahrer-Report: am Haus vorbei, Navi lief weiter).
+            if (checkArrival(location, state, route)) return
+
             if (nextStep == null) {
-                // Letzter Step (arrive) — Step-Fortschritt ist abgeschlossen, Arrival
-                // wird über destination-distance geprüft.
+                // Letzter Step (arrive) — Step-Fortschritt ist abgeschlossen.
                 updateRemainingDistance(location, route, state.currentStepIndex, state.waypoint)
                 return
             }
@@ -883,14 +888,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Prüfen ob am Ziel
-            val destination = state.destination
-            if (destination != null && location.distanceTo(destination) < 20) {
-                CrashLogger.log("MainViewModel: Arrived at destination")
-                _navigationState.update { it.copy(hasArrived = true, isNavigating = false) }
-                navigationService?.speakNow("Ziel erreicht")
-                stopNavigation()
-            }
 
             // Gesamtdistanz und Zeit aktualisieren (inkl. Waypoint)
             updateRemainingDistance(location, route, state.currentStepIndex, waypoint)
@@ -1138,6 +1135,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private var etaLogTick = 0
+
+    /**
+     * Ziel erreicht, wenn nah am Zielpunkt ODER am Routenende auf der Straße. Der Zielpunkt
+     * (Hauskoordinate) liegt oft 20-50 m neben der Straße, 20 m Radius war nie erreichbar.
+     */
+    private fun checkArrival(location: LatLng, state: NavigationState, route: Route): Boolean {
+        val destination = state.destination ?: return false
+        if (state.waypoint != null) return false  // erst Zwischenziel
+        val toDest = location.distanceTo(destination)
+        val toRouteEnd = route.geometry.lastOrNull()?.let { location.distanceTo(it) } ?: Double.MAX_VALUE
+        if (toDest >= ARRIVAL_RADIUS_DEST_M && toRouteEnd >= ARRIVAL_RADIUS_ROUTE_END_M) return false
+        CrashLogger.log("MainViewModel: Arrived (toDest=${toDest.toInt()}m, toRouteEnd=${toRouteEnd.toInt()}m)")
+        _navigationState.update { it.copy(hasArrived = true, isNavigating = false) }
+        navigationService?.speakNow("Ziel erreicht")
+        stopNavigation()
+        return true
+    }
 
     private fun speakInstruction(step: RouteStep) {
         try {
