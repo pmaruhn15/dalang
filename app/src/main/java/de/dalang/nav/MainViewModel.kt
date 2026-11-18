@@ -543,6 +543,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Dev-Einstieg per adb: Ziel setzen und Navigation starten, sobald die Route da ist. */
+    fun startNavigationTo(lat: Double, lng: Double, name: String) {
+        CrashLogger.log("MainViewModel: startNavigationTo $name ($lat,$lng)")
+        selectDestination(SearchResult(displayName = name, lat = lat, lon = lng, type = "adb"))
+        viewModelScope.launch(exceptionHandler) {
+            _navigationState.first { it.route != null && it.destination == LatLng(lat, lng) }
+            startNavigation()
+        }
+    }
+
     fun startNavigation() {
         CrashLogger.log("MainViewModel: startNavigation")
         try {

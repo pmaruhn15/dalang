@@ -107,6 +107,14 @@ class MainActivity : ComponentActivity() {
             CrashLogger.logError("MainActivity", "checkLocationPermission failed", e)
         }
 
+        // Dev: adb shell am start -S -n de.dalang.nav/.MainActivity --ed lat 48.1 --ed lng 11.6 --es name "Ziel"
+        intent?.takeIf { savedInstanceState == null && it.hasExtra("lat") && it.hasExtra("lng") }?.let {
+            viewModel.startNavigationTo(
+                it.getDoubleExtra("lat", 0.0), it.getDoubleExtra("lng", 0.0),
+                it.getStringExtra("name") ?: "Ziel"
+            )
+        }
+
         setContent {
             val isDarkOverride by viewModel.isDarkOverride.collectAsState()
             DaLangTheme(darkThemeOverride = isDarkOverride) {
