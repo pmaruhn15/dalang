@@ -87,6 +87,8 @@ fun NavigationPanel(
     }
 }
 
+private const val LANE_DISPLAY_DISTANCE_M = 2000.0
+
 @Composable
 private fun ActiveNavigationContent(
     state: NavigationState,
@@ -121,7 +123,9 @@ private fun ActiveNavigationContent(
                 isExpanded = !isExpanded
             }
     ) {
-        val hasLanes = displayStep?.laneInfo != null && displayStep.laneInfo.lanes.isNotEmpty()
+        // Spuren erst kurz vor dem Manöver — 45 km vorher ist die Info wertlos (Fahrer-Feedback).
+        val hasLanes = displayStep?.laneInfo != null && displayStep.laneInfo.lanes.isNotEmpty() &&
+            distanceToDisplay <= LANE_DISPLAY_DISTANCE_M
 
         // Bei Lane-Info: eigene Zeile mit voller Breite, damit auch 4–6 Spuren reinpassen.
         if (hasLanes) {
@@ -183,8 +187,9 @@ private fun ActiveNavigationContent(
 
                 Text(
                     text = "${state.totalDistanceRemaining.formatDistance()} • ${state.totalTimeRemaining.formatDuration()}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
