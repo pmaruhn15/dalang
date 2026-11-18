@@ -724,10 +724,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
 
-                    // Erste Ansage für neue Route
-                    combinedSteps.firstOrNull()?.let { step ->
-                        speakInstruction(step)
-                    }
+                    // Keine Sofort-Ansage nach Neuberechnung (vorher "Los geht's" bei jedem
+                    // Verfahren, Fahrer-Report). Die Distanz-Voransagen greifen beim nächsten
+                    // GPS-Update, falls das erste Manöver schon in Reichweite liegt.
                 } else {
                     CrashLogger.logError("MainViewModel", "Failed to calculate route with waypoint")
                     _navigationState.update { it.copy(isRecalculating = false) }
@@ -960,10 +959,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
 
-                    // Erste Ansage für neue Route
-                    route.steps.firstOrNull()?.let { step ->
-                        speakInstruction(step)
-                    }
+                    // Keine Sofort-Ansage nach Neuberechnung (vorher "Los geht's" bei jedem
+                    // Verfahren, Fahrer-Report). Die Distanz-Voransagen greifen beim nächsten
+                    // GPS-Update, falls das erste Manöver schon in Reichweite liegt.
                 } else {
                     CrashLogger.logError("MainViewModel", "Route recalculation failed")
                 }
