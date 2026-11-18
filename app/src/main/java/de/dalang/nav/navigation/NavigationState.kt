@@ -168,9 +168,9 @@ fun RouteStep.isRelevantManeuver(): Boolean {
 fun announceDistancesM(roadStep: RouteStep?): List<Int> {
     val plannedKmh = roadStep?.takeIf { it.duration > 0 }?.let { it.distance / it.duration * 3.6 } ?: 0.0
     return when {
-        roadStep?.isMotorway == true || plannedKmh >= 85 -> listOf(5000, 2000, 1000, 400)  // Fernankündigung 5 km
-        plannedKmh >= 55 -> listOf(1000, 400, 150)     // Landstraße
-        else -> listOf(200, 100, 50)                   // Stadt
+        roadStep?.isMotorway == true || plannedKmh >= 85 -> listOf(5000, 1000, 300)  // Fernankündigung, Vorbereitung, kurz davor
+        plannedKmh >= 55 -> listOf(500, 100)          // Landstraße
+        else -> listOf(200, 50)                        // Stadt: vorbereiten + jetzt
     }
 }
 

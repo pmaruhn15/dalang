@@ -844,9 +844,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
-                // Sprache: das neu anstehende Manöver ansagen (= stepAfterNext nach Advance).
+                // Sprache: das neu anstehende Manöver nur sofort ansagen, wenn es schon innerhalb
+                // der ersten Voransage-Distanz liegt — sonst übernehmen die Distanz-Ansagen
+                // (Fahrer-Report: zu viele Ansagen pro Manöver).
                 stepAfterNext?.let {
-                    speakInstruction(it)
+                    if (newDistanceToNext <= announceDistancesM(nextStep).first()) speakInstruction(it)
                     updateServiceNotification(it, newDistanceToNext)
                 }
             } else {
