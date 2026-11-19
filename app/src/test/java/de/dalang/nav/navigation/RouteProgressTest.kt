@@ -276,6 +276,76 @@ class RouteProgressTest {
         assertFalse(p.atRouteEnd)
     }
 
+    @Test
+    fun tunnelJamEstimateOvershootRecovers() {
+        // Review: 20 m/s in den Tunnel, 70 s kein GPS, Auto steht im Stau bei 600 m
+        val p = RouteProgress(tunnelRoute)
+        driveNorth(p, 20.0, 16)                       // letzter Fix bei s=300
+        val tLast = t
+        for (k in 4..70) p.deadReckon(tLast + k * 1000L)
+        assertTrue(p.s > 1510)
+        assertEquals("Schätzung hat Manöver bei 1500 m passiert", 1, p.stepIndex)
+
+        t = tLast + 71_000
+        p.update(xy(0.0, 600.0), 0f, 0f, 5f, t)
+        assertTrue("erster guter Fix matcht: ${p.debugLine()}", p.matched)
+        assertEquals(600.0, p.s, 2.0)
+        assertEquals("Manöver wieder offen", 0, p.stepIndex)
+        assertEquals(900.0, p.distanceToStep(1), 2.0)
+        repeat(10) { p.feed(Fix(xy(0.0, 600.0), 0f, 0f)); assertFalse(p.offRoute) }
+        assertFalse(p.deadReckon(t + 5000))           // steht: keine neue Schätzung
+    }
+
+    @Test
+    fun urbanCanyonRedLightDoesNotWander() {
+        // Review: rote Ampel, 60 s nur Fixes mit acc 60 m und Tempo 0 -> Position darf nicht wandern
+        val p = RouteProgress(tunnelRoute)
+        driveNorth(p, 10.5, 19)                       // letzter Fix bei s=189
+        repeat(60) {
+            p.feed(Fix(xy(0.0, 189.0), 0f, 0f), accuracy = 60f)
+            assertFalse(p.deadReckon(t + 500))
+        }
+        assertFalse(p.estimating)
+        assertEquals(189.0, p.s, 5.0)
+        assertEquals(0, p.stepIndex)
+    }
+
+    @Test
+    fun tunnelJamWithInaccurateStandstillFixesPauses() {
+        val p = RouteProgress(tunnelRoute)
+        driveNorth(p, 20.0, 16)
+        val tLast = t
+        for (k in 4..10) assertTrue(p.deadReckon(tLast + k * 1000L))
+        val sPaused = p.s
+        // Chip meldet ungenau, aber Stillstand: Schätzung hält an
+        for (k in 11..40) {
+            t = tLast + k * 1000L
+            p.update(xy(50.0, 400.0), 0f, 0f, 120f, t)
+            assertFalse(p.deadReckon(t + 500))
+        }
+        assertEquals(sPaused, p.s, 0.1)
+    }
+
+    @Test
+    fun startBesideRoadAndDegenerateRoute() {
+        // Start auf Parkplatz 80 m neben der Straße: keine Off-Route-Schleife
+        val geom = (0..10).map { xy(it * 100.0, 0.0) }
+        val p = RouteProgress(route(geom, step("depart", geom[0]), step("arrive", geom.last())))
+        repeat(10) { p.feed(Fix(xy(20.0, 80.0), 1f, 0f)); assertFalse(p.offRoute) }
+        p.feed(Fix(xy(30.0, 5.0), 5f, 90f))
+        assertTrue(p.matched)
+        // ... fährt man aber weg, ohne je zu matchen, wird neu berechnet
+        val q = RouteProgress(route(geom, step("depart", geom[0]), step("arrive", geom.last())))
+        listOf(200.0, 250.0, 300.0).forEach { q.feed(Fix(xy(-100.0, it), 10f, 0f)) }
+        assertTrue(q.offRoute)
+
+        // Ziel ≈ Standort: Route aus Doppelpunkten -> sofort angekommen statt nie
+        val here = xy(0.0, 0.0)
+        val d = RouteProgress(route(listOf(here, here), step("depart", here), step("arrive", here)))
+        d.feed(Fix(here, 0f, 0f))
+        assertTrue(d.atRouteEnd)
+    }
+
     // --- 6: Off-Route seitlich und Falschfahrt ---
 
     @Test
