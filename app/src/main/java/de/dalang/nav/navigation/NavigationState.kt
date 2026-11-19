@@ -42,7 +42,9 @@ data class NavigationState(
     fun findNextRelevantStepIndex(): Int? {
         val steps = route?.steps ?: return null
         for (i in (currentStepIndex + 1) until steps.size) {
-            if (steps[i].isRelevantManeuver()) {
+            // Innere arrive/depart einer Route mit Zwischenziel nicht als Manöver anzeigen
+            val inner = i < steps.lastIndex && steps[i].maneuver.type in setOf("arrive", "depart")
+            if (steps[i].isRelevantManeuver() && !inner) {
                 return i
             }
         }
