@@ -3,6 +3,7 @@ package de.dalang.nav.navigation
 import de.dalang.nav.config.HereConfig
 import de.dalang.nav.util.CrashLogger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -119,15 +120,16 @@ class RouteRepository {
         if (isConfigured && canMakeRequest) {
             val hereResult = getRouteFromHereWithAlternatives(from, to)
             if (hereResult != null && hereResult.first.geometry.isNotEmpty()) {
-                val mainRoute = hereResult.first
-                val alternatives = hereResult.second
+                val hereMain = hereResult.first
 
-                // HERE Route erfolgreich - jetzt OSRM Lane-Daten dazu holen
-                val enrichedRoute = enrichRouteWithOsrmLanes(mainRoute, from, to)
+                // HERE wählt die Strecke (Verkehr), OSM liefert Linie/Manöver/Spuren passend zur Karte.
+                // Scheitert das, wie bisher: HERE-Route + OSRM-Spuren per Nähe.
+                val (osmMain, plainOsrmBody) = matchHereToOsm(hereMain)
+                val mainRoute = osmMain ?: enrichRouteWithOsrmLanes(hereMain, from, to, plainOsrmBody)
 
-                // Alternativen analysieren und an Abzweigpunkten einfügen
-                val processedAlternatives = processAlternatives(enrichedRoute, alternatives)
-                enrichedRoute.copy(alternatives = processedAlternatives)
+                // Alternativen behalten HERE-Geometrie (nur graue Anzeige; OSM-Anpassung kostete je
+                // 1-3 weitere OSRM-Anfragen à >= 1 s wegen Rate-Limit)
+                mainRoute.copy(alternatives = processAlternatives(mainRoute, hereResult.second))
             } else {
                 CrashLogger.log("RouteRepository: HERE failed, fallback to OSRM")
                 getRouteFromOsrm(from, to)
@@ -142,13 +144,63 @@ class RouteRepository {
     }
 
     /**
+     * Legt die HERE-Strecke aufs OSM-Netz (Verfahren: [OsmRouteMatcher]). Liefert die OSM-Route mit
+     * HERE-Dauer/Verkehr oder null (zu große Abweichung, OSRM-Fehler) — plus die Antwort der ersten,
+     * via-freien OSRM-Anfrage, die der Fallback für die Spur-Anreicherung wiederverwendet (keine
+     * Zusatzanfrage gegenüber früher).
+     */
+    internal suspend fun matchHereToOsm(here: Route, fetch: (String) -> String? = ::httpGet): Pair<Route?, String?> {
+        if (here.geometry.size < 2) return null to null
+        val hereCum = OsmRouteMatcher.cumulative(here.geometry)
+        val actionsAlong = here.steps.map { hereCum[OsmRouteMatcher.nearestIndex(here.geometry, it.maneuver.location)] }
+        var vias = emptyList<OsmRouteMatcher.Via>()
+        var plainBody: String? = null
+        for (attempt in 0 until OsmRouteMatcher.MAX_REQUESTS) {
+            if (attempt > 0) delay(1100)  // Demo-Server-Policy: max. 1 Anfrage/s
+            val body = fetch(OsmRouteMatcher.osrmUrl(OSRM_BASE_URL, here.geometry, vias))
+            if (attempt == 0) plainBody = body
+            val osm = body?.let { parseOsrmRoute(it) }
+            if (osm == null || osm.geometry.size < 2) {
+                CrashLogger.log("RouteRepository: OSM-Anpassung gescheitert (Anfrage ${attempt + 1}, ${vias.size} Vias): ${body?.take(150)} → HERE-Geometrie")
+                return null to plainBody
+            }
+            val dev = OsmRouteMatcher.deviations(here.geometry, osm.geometry)
+            val newVias = OsmRouteMatcher.viasForDeviations(here.geometry, dev, actionsAlong)
+            if (newVias.isEmpty()) {
+                val reason = OsmRouteMatcher.rejectReason(here, osm)
+                if (reason != null) {
+                    CrashLogger.log("RouteRepository: OSM-Anpassung verworfen ($reason, ${vias.size} Vias) → HERE-Geometrie")
+                    return null to plainBody
+                }
+                CrashLogger.log("RouteRepository: OSM-Anpassung ok nach ${attempt + 1} Anfrage(n), ${vias.size} Vias: " +
+                    "${osm.geometry.size} Punkte, ${osm.steps.size} Steps, ${osm.distance.toInt()} m (HERE ${here.distance.toInt()} m)")
+                return OsmRouteMatcher.merge(here, osm) to plainBody
+            }
+            vias = (vias + newVias).sortedBy { it.along }
+            CrashLogger.log("RouteRepository: OSM weicht bis ${dev.max().toInt()} m von HERE ab → ${vias.size} Vias")
+            if (vias.size > OsmRouteMatcher.MAX_VIAS) break
+        }
+        CrashLogger.log("RouteRepository: OSM-Anpassung nicht konvergiert (${vias.size} Vias) → HERE-Geometrie")
+        return null to plainBody
+    }
+
+    /** GET, Body auch bei HTTP-Fehler (OSRM schickt dann JSON mit code/message). */
+    private fun httpGet(url: String): String? = try {
+        val request = Request.Builder().url(url).header("User-Agent", "DaLang Navigation App").build()
+        client.newCall(request).execute().use { it.body?.string() }
+    } catch (e: Exception) {
+        CrashLogger.logError("RouteRepository", "OSRM request failed", e)
+        null
+    }
+
+    /**
      * Reichert eine HERE-Route mit Lane-Daten von OSRM an.
      * HERE REST API liefert keine Lane-Daten, aber OSRM hat sie aus OSM turn:lanes Tags.
      */
-    private suspend fun enrichRouteWithOsrmLanes(hereRoute: Route, from: LatLng, to: LatLng): Route {
+    private suspend fun enrichRouteWithOsrmLanes(hereRoute: Route, from: LatLng, to: LatLng, osrmBody: String? = null): Route {
         try {
-            // OSRM nur für Lane-Daten abfragen
-            val (osrmLanes, motorwaySegments) = getOsrmLaneData(from, to)
+            // OSRM nur für Lane-Daten (Antwort aus matchHereToOsm wiederverwenden, sonst neu holen)
+            val (osrmLanes, motorwaySegments) = osrmBody?.let { parseOsrmLaneData(it) } ?: getOsrmLaneData(from, to)
             if (osrmLanes.isEmpty() && motorwaySegments.isEmpty()) {
                 CrashLogger.log("RouteRepository: No OSRM lane/road-class data available")
                 return hereRoute
@@ -198,7 +250,7 @@ class RouteRepository {
     /**
      * Parst nur die Lane-Daten aus OSRM Response (Location + LaneInfo Paare)
      */
-    private fun parseOsrmLaneData(json: String): Pair<List<Pair<LatLng, LaneInfo>>, List<List<LatLng>>> {
+    internal fun parseOsrmLaneData(json: String): Pair<List<Pair<LatLng, LaneInfo>>, List<List<LatLng>>> {
         val result = mutableListOf<Pair<LatLng, LaneInfo>>()
         val motorway = mutableListOf<List<LatLng>>()
         try {
@@ -244,8 +296,12 @@ class RouteRepository {
     }
 
     /** OSRM-Car-Profil markiert motorway/motorway_link (OSM highway=*) in intersections[0].classes. */
-    private fun isOsrmMotorwayStep(step: JSONObject): Boolean {
-        val classes = step.optJSONArray("intersections")?.optJSONObject(0)?.optJSONArray("classes") ?: return false
+    private fun isOsrmMotorwayStep(step: JSONObject): Boolean =
+        step.optJSONArray("intersections")?.optJSONObject(0)?.let { isOsrmMotorwayIntersection(it) } ?: false
+
+    /** classes = Klassen der Straße, die die Kreuzung verlässt (OSRM-Doku Intersection). */
+    private fun isOsrmMotorwayIntersection(intersection: JSONObject): Boolean {
+        val classes = intersection.optJSONArray("classes") ?: return false
         return (0 until classes.length()).any { classes.optString(it) == "motorway" }
     }
 
@@ -314,7 +370,7 @@ class RouteRepository {
     /**
      * Parst HERE Response mit mehreren Routen.
      */
-    private fun parseHereRoutesWithAlternatives(json: String, origin: LatLng): Pair<Route, List<Route>>? {
+    internal fun parseHereRoutesWithAlternatives(json: String, origin: LatLng): Pair<Route, List<Route>>? {
         try {
             val obj = JSONObject(json)
             if (!obj.has("routes")) return null
@@ -346,7 +402,7 @@ class RouteRepository {
      * Analysiert Alternativen und findet Abzweigpunkte.
      * Filtert sinnlose Alternativen (z.B. Ausfahrt und wieder Auffahrt auf gleiche Autobahn).
      */
-    private fun processAlternatives(mainRoute: Route, alternatives: List<Route>): List<AlternativeRoute> {
+    internal fun processAlternatives(mainRoute: Route, alternatives: List<Route>): List<AlternativeRoute> {
         val result = mutableListOf<AlternativeRoute>()
 
         for (alt in alternatives) {
@@ -463,37 +519,14 @@ class RouteRepository {
     private fun findDivergencePoint(mainGeom: List<LatLng>, altGeom: List<LatLng>): IntArray? {
         val threshold = 50.0 // Meter - Punkte näher als das gelten als "gleich"
 
-        // Divergenzpunkt finden (wo Routen auseinander gehen)
-        var divergeMainIdx = 0
-        var divergeAltIdx = 0
-
-        for (i in mainGeom.indices) {
-            if (i >= altGeom.size) break
-            val dist = mainGeom[i].distanceTo(altGeom[i])
-            if (dist > threshold) {
-                divergeMainIdx = i
-                divergeAltIdx = i
-                break
-            }
-        }
-
-        // Konvergenzpunkt finden (wo Routen wieder zusammenkommen)
-        // Suche vom Ende rückwärts
-        var convergeMainIdx = mainGeom.size - 1
-        var convergeAltIdx = altGeom.size - 1
-
-        for (i in 0 until minOf(mainGeom.size, altGeom.size)) {
-            val mainIdx = mainGeom.size - 1 - i
-            val altIdx = altGeom.size - 1 - i
-            if (mainIdx < 0 || altIdx < 0) break
-
-            val dist = mainGeom[mainIdx].distanceTo(altGeom[altIdx])
-            if (dist > threshold) {
-                convergeMainIdx = mainIdx + 1
-                convergeAltIdx = altIdx + 1
-                break
-            }
-        }
+        // Geometrisch statt Index-für-Index: Hauptroute (OSM, dicht) und Alternative (HERE) haben
+        // verschiedene Stützpunkte, Index i der einen entspricht nicht Index i der anderen.
+        val dev = OsmRouteMatcher.deviations(altGeom, mainGeom)
+        val divergeAltIdx = dev.indexOfFirst { it > threshold }
+        if (divergeAltIdx < 0) return null
+        val convergeAltIdx = dev.indexOfLast { it > threshold } + 1
+        val divergeMainIdx = OsmRouteMatcher.nearestIndex(mainGeom, altGeom[maxOf(0, divergeAltIdx - 1)])
+        val convergeMainIdx = OsmRouteMatcher.nearestIndex(mainGeom, altGeom[minOf(convergeAltIdx, altGeom.size - 1)])
 
         // Sanity check
         if (divergeMainIdx >= convergeMainIdx || divergeAltIdx >= convergeAltIdx) {
@@ -782,7 +815,7 @@ class RouteRepository {
         }
     }
 
-    private fun parseOsrmRoute(json: String): Route? {
+    internal fun parseOsrmRoute(json: String): Route? {
         try {
             val obj = JSONObject(json)
             if (obj.getString("code") != "Ok") return null
@@ -803,55 +836,21 @@ class RouteRepository {
                 geometry.add(LatLng(coord.getDouble(1), coord.getDouble(0)))
             }
 
-            // Schritte parsen
+            // Schritte parsen. router.project-osrm.org liefert (Stand 2026-11) überhaupt keine
+            // intersection-classes → Straßentyp dann unbekannt (null) statt "keine Autobahn".
             val legs = route.getJSONArray("legs")
             val steps = mutableListOf<RouteStep>()
+            val hasClasses = json.contains("\"classes\"")
 
             for (legIdx in 0 until legs.length()) {
                 val leg = legs.getJSONObject(legIdx)
                 val legSteps = leg.getJSONArray("steps")
 
-                var lanesForNextManeuver: LaneInfo? = null  // Lanes von Step i gelten für Manöver i+1
+                var lanesForNextManeuver: LaneInfo? = null  // Lanes kurz vor dem Step-Ende gelten fürs nächste Manöver
                 for (stepIdx in 0 until legSteps.length()) {
-                    val step = legSteps.getJSONObject(stepIdx)
-                    val maneuverObj = step.getJSONObject("maneuver")
-                    val location = maneuverObj.getJSONArray("location")
-
-                    val stepGeometryObj = step.getJSONObject("geometry")
-                    val stepCoordinates = stepGeometryObj.getJSONArray("coordinates")
-                    val stepGeometry = mutableListOf<LatLng>()
-                    for (i in 0 until stepCoordinates.length()) {
-                        val coord = stepCoordinates.getJSONArray(i)
-                        stepGeometry.add(LatLng(coord.getDouble(1), coord.getDouble(0)))
-                    }
-
-                    // Lane-Info aus intersections extrahieren (OSRM liefert lanes aus OSM turn:lanes Tag)
-                    val laneInfo = step.optJSONArray("intersections")?.optJSONObject(0)
-                        ?.let { parseIntersectionLanes(it) } ?: lanesForNextManeuver
-                    lanesForNextManeuver = extractOsrmLaneInfo(step)?.second
-
-                    // Kreisverkehr-Ausfahrt extrahieren (OSRM liefert "exit" bei roundabout/rotary)
-                    val maneuverType = maneuverObj.getString("type")
-                    val exitNumber = if (maneuverType in listOf("roundabout", "rotary", "exit roundabout", "exit rotary")) {
-                        maneuverObj.optInt("exit", 0).takeIf { it > 0 }
-                    } else null
-
-                    steps.add(
-                        RouteStep(
-                            instruction = step.optString("name", ""),
-                            distance = step.getDouble("distance"),
-                            duration = step.getDouble("duration"),
-                            maneuver = Maneuver(
-                                type = maneuverType,
-                                modifier = maneuverObj.optString("modifier", null),
-                                location = LatLng(location.getDouble(1), location.getDouble(0)),
-                                exit = exitNumber
-                            ),
-                            geometry = stepGeometry,
-                            laneInfo = laneInfo,
-                            isMotorway = isOsrmMotorwayStep(step)
-                        )
-                    )
+                    val (parts, carry) = parseOsrmStep(legSteps.getJSONObject(stepIdx), lanesForNextManeuver, hasClasses)
+                    steps += parts
+                    lanesForNextManeuver = carry
                 }
             }
 
@@ -868,13 +867,6 @@ class RouteRepository {
         }
     }
 
-    /**
-     * Extrahiert Lane-Info aus OSRM step.intersections[].lanes
-     * OSRM liefert Spurinformationen aus OSM turn:lanes Tags
-     *
-     * WICHTIG: Wir nehmen die LETZTE intersection mit lanes, da diese
-     * die Spuren direkt vor dem Manöver beschreibt (nicht die erste!)
-     */
     /** Spuren an EINER OSRM-Intersection (gelten laut OSRM-Doku für genau diese Kreuzung). */
     private fun parseIntersectionLanes(intersection: JSONObject): LaneInfo? {
         val lanesArray = intersection.optJSONArray("lanes") ?: return null
@@ -897,30 +889,142 @@ class RouteRepository {
         return LaneInfo(lanes = lanes, recommendedLaneIndex = recommendedIndex)
     }
 
-    /** Letzte Intersection eines Steps mit Spuren (+ ihr Ort). Nur noch Fallback für OSRM-Routen. */
-    private fun extractOsrmLaneInfo(step: JSONObject): Pair<LatLng, LaneInfo>? {
-        try {
-            val intersections = step.optJSONArray("intersections") ?: return null
-            for (i in intersections.length() - 1 downTo 0) {
-                val intersection = intersections.getJSONObject(i)
-                val info = parseIntersectionLanes(intersection) ?: continue
-                val loc = intersection.getJSONArray("location").let { LatLng(it.getDouble(1), it.getDouble(0)) }
-                CrashLogger.log("RouteRepository: OSRM Lanes at '${step.optString("name", "unnamed")}' (intersection $i/${intersections.length() - 1}): " +
-                    "${info.lanes.size} lanes: ${info.lanes.map { "${it.directions.joinToString("+")}${if (it.isRecommended) "*" else ""}" }}")
-                return loc to info
+    /**
+     * Ein OSRM-Step → ein oder mehrere RouteSteps. OSRM unterdrückt "geradeaus weiter" an
+     * Spuraufteilungen (Autobahnkreuz, Gabelung Mittlerer Ring) — dort fehlte dem Fahrer die
+     * Spuranzeige. Solche Intersections werden zu eigenen "fork"-Steps mit ihren Spuren.
+     * Rückgabe: (Steps, Spuren der letzten Spur-Kreuzung <= 200 m vor Step-Ende fürs nächste Manöver).
+     */
+    private fun parseOsrmStep(step: JSONObject, lanesBefore: LaneInfo?, hasClasses: Boolean): Pair<List<RouteStep>, LaneInfo?> {
+        val maneuverObj = step.getJSONObject("maneuver")
+        val rawType = maneuverObj.getString("type")
+        val (type, modifier) = normalizeOsrmManeuver(rawType, maneuverObj.optString("modifier", null))
+        // Kreisverkehr-Ausfahrt extrahieren (OSRM liefert "exit" bei roundabout/rotary)
+        val exitNumber = if (rawType in listOf("roundabout", "rotary", "exit roundabout", "exit rotary")) {
+            maneuverObj.optInt("exit", 0).takeIf { it > 0 }
+        } else null
+        val geometry = step.getJSONObject("geometry").getJSONArray("coordinates").let { c ->
+            (0 until c.length()).map { c.getJSONArray(it).toLatLng() }
+        }
+        val ints = step.optJSONArray("intersections")
+        val inter = (0 until (ints?.length() ?: 0)).map { ints!!.getJSONObject(it) }
+        val name = step.optString("name", "")
+        fun motorway(i: JSONObject?) = if (hasClasses) i?.let { isOsrmMotorwayIntersection(it) } ?: false else null
+
+        // Spuraufteilungen innerhalb des Steps (k >= 1; k = 0 ist das Manöver selbst)
+        data class Split(val k: Int, val loc: LatLng, val lanes: LaneInfo, val side: String, val geomIdx: Int)
+        val splits = mutableListOf<Split>()
+        var searchFrom = 0
+        for (k in 1 until inter.size) {
+            val lanes = parseIntersectionLanes(inter[k]) ?: continue
+            val side = laneForkSide(lanes) ?: continue
+            val loc = inter[k].getJSONArray("location").toLatLng()
+            // gleiche Aufteilung an direkt aufeinanderfolgenden Knoten nur einmal
+            val prev = splits.lastOrNull()
+            if (prev != null && prev.lanes.lanes.size == lanes.lanes.size && prev.loc.distanceTo(loc) < 150.0) continue
+            val gi = (searchFrom until geometry.size).minByOrNull { geometry[it].distanceTo(loc) } ?: continue
+            if (gi == 0 || gi >= geometry.size - 1) continue
+            searchFrom = gi
+            splits += Split(k, loc, lanes, side, gi)
+        }
+
+        val cuts = listOf(0) + splits.map { it.geomIdx } + listOf(geometry.size - 1)
+        val cum = OsmRouteMatcher.cumulative(geometry)
+        val total = cum.lastOrNull() ?: 0.0
+        val stepDistance = step.getDouble("distance")
+        val stepDuration = step.getDouble("duration")
+        val parts = (0 until cuts.size - 1).map { p ->
+            val share = if (total > 0) (cum[cuts[p + 1]] - cum[cuts[p]]) / total else if (p == 0) 1.0 else 0.0
+            val partGeom = geometry.subList(cuts[p], cuts[p + 1] + 1)
+            if (p == 0) {
+                RouteStep(
+                    instruction = name,
+                    distance = stepDistance * share,
+                    duration = stepDuration * share,
+                    maneuver = Maneuver(type, modifier, maneuverObj.getJSONArray("location").toLatLng(), exitNumber),
+                    geometry = partGeom,
+                    // Lane-Info aus intersections[0] = Kreuzung des Manövers (OSM turn:lanes)
+                    laneInfo = inter.firstOrNull()?.let { parseIntersectionLanes(it) } ?: lanesBefore,
+                    isMotorway = motorway(inter.firstOrNull())
+                )
+            } else {
+                val s = splits[p - 1]
+                CrashLogger.log("RouteRepository: Spuraufteilung als fork ${s.side} auf '$name' @ ${s.loc.lat},${s.loc.lng}: " +
+                    s.lanes.lanes.joinToString("|") { it.directions.joinToString("+") + if (it.isRecommended) "*" else "" })
+                RouteStep(
+                    instruction = name,
+                    distance = stepDistance * share,
+                    duration = stepDuration * share,
+                    maneuver = Maneuver("fork", s.side, s.loc),
+                    geometry = partGeom,
+                    laneInfo = s.lanes,
+                    isMotorway = motorway(inter[s.k])
+                )
             }
-            return null
-        } catch (e: Exception) {
-            CrashLogger.logError("RouteRepository", "Failed to parse OSRM lanes", e)
-            return null
+        }
+
+        // Nur Zwischenkreuzungen (nicht das eigene Manöver: sonst erschienen z. B. Ausfahrt-Spuren
+        // nochmal am Rampenende) und nur aussagekräftige Spuren (nicht alle empfohlen: sonst
+        // "4x geradeaus" vor einem Rechtsabbiegen, Testfahrt Dachauer Str.)
+        val end = geometry.lastOrNull()
+        val carry = (inter.size - 1 downTo 1)
+            .firstNotNullOfOrNull { k -> parseIntersectionLanes(inter[k])?.let { inter[k] to it } }
+            ?.takeIf { (i, lanes) ->
+                lanes.lanes.any { !it.isRecommended } &&
+                    end != null && i.getJSONArray("location").toLatLng().distanceTo(end) <= 200.0
+            }
+            ?.second
+        return parts to carry
+    }
+
+    /**
+     * Spuren, an denen sich die Fahrbahn aufteilt (>= 2 nicht empfohlene Spuren, die nur geradeaus/
+     * leicht abzweigen — keine Abbiegespuren einer Stadtkreuzung) und die empfohlenen Spuren
+     * zusammenhängend links oder rechts liegen → "left"/"right" (wie HERE "keep"), sonst null.
+     */
+    private fun laneForkSide(info: LaneInfo): String? {
+        val rec = info.lanes.map { it.isRecommended }
+        val notRec = info.lanes.filter { !it.isRecommended }
+        if (notRec.size < 2 || notRec.size == info.lanes.size) return null
+        if (notRec.any { lane -> lane.directions.any { it !in setOf("straight", "slightLeft", "slightRight") } }) return null
+        val first = rec.indexOf(true)
+        val last = rec.lastIndexOf(true)
+        if ((first..last).any { !rec[it] }) return null
+        return when {
+            first == 0 -> "left"
+            last == rec.lastIndex -> "right"
+            else -> null
         }
     }
+
+    /**
+     * OSRM-Manöver auf die Typen abbilden, die NavigationState/NavigationPanel kennen
+     * (dort aus der HERE-Zeit: fork nur left/right, "end of road"/"continue left" unbekannt).
+     */
+    private fun normalizeOsrmManeuver(type: String, modifier: String?): Pair<String, String?> = when {
+        type == "fork" -> "fork" to when {
+            modifier?.contains("left") == true -> "left"
+            modifier?.contains("right") == true -> "right"
+            else -> modifier
+        }
+        // "roundabout turn" = Mini-Kreisel, laut OSRM-Doku wie normales Abbiegen zu behandeln
+        type == "end of road" || type == "roundabout turn" -> "turn" to modifier
+        // "turn straight" = geradeaus über Kreuzung mit Namenswechsel — kein "Abbiegen" ansagen
+        type == "turn" && modifier == "straight" -> "continue" to modifier
+        // "continue" mit echter Richtung = abbiegen, um auf derselben Straße zu bleiben
+        type == "continue" && modifier != null && modifier != "straight" && !modifier.startsWith("slight") -> "turn" to modifier
+        else -> type to modifier
+    }
+
+    private fun org.json.JSONArray.toLatLng() = LatLng(getDouble(1), getDouble(0))
 
     /**
      * Konvertiert OSRM Lane-Richtungen zu unseren internen Namen
      */
     private fun mapOsrmLaneDirection(osrmDirection: String): String {
-        return when (osrmDirection) {
+        // OSRM liefert laut Doku und real "slight right", "sharp left" (Leerzeichen) — die alten
+        // Schlüssel mit "_" griffen nie, NavigationPanel zeigte dafür das Geradeaus-Icon.
+        return when (osrmDirection.replace(' ', '_')) {
             "left" -> "left"
             "slight_left" -> "slightLeft"
             "sharp_left" -> "sharpLeft"
