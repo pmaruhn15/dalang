@@ -959,7 +959,7 @@ fun DrawerContent(
 
         // Debug-Upload
         NavigationDrawerItem(
-            label = { Text("Debug-Upload (${DebugUpload.pending} warten)") },
+            label = { Text("Debug-Upload (${DebugUpload.pending + DebugUpload.pendingTrips} warten)") },
             selected = false,
             onClick = { showDebugUpload = true },
             modifier = Modifier.padding(vertical = 4.dp)
@@ -1019,6 +1019,7 @@ fun DrawerContent(
     if (showDebugUpload) {
         var url by remember { mutableStateOf(settingsRepository.debugUploadUrl) }
         var tester by remember { mutableStateOf(settingsRepository.testerName) }
+        var tripUpload by remember { mutableStateOf(settingsRepository.tripUploadEnabled) }
         AlertDialog(
             onDismissRequest = { showDebugUpload = false },
             title = { Text("Debug-Upload") },
@@ -1029,7 +1030,13 @@ fun DrawerContent(
                     OutlinedTextField(url, { url = it }, singleLine = true,
                         label = { Text("Link-Override (leer = Standard)") })
                     Spacer(Modifier.height(8.dp))
-                    Text("${DebugUpload.pending} Reports warten auf Upload",
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(tripUpload, { tripUpload = it })
+                        Spacer(Modifier.width(8.dp))
+                        Text("Fahrten automatisch hochladen (nur WLAN)", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("${DebugUpload.pending} Reports, ${DebugUpload.pendingTrips} Fahrten warten",
                         style = MaterialTheme.typography.bodySmall)
                 }
             },
@@ -1037,6 +1044,7 @@ fun DrawerContent(
                 TextButton(onClick = {
                     settingsRepository.debugUploadUrl = url
                     settingsRepository.testerName = tester
+                    settingsRepository.tripUploadEnabled = tripUpload
                     DebugUpload.flush(silent = false)
                     showDebugUpload = false
                 }) { Text("Speichern") }

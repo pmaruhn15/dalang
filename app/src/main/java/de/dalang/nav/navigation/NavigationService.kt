@@ -14,6 +14,7 @@ import de.dalang.nav.R
 import de.dalang.nav.settings.SettingsRepository
 import de.dalang.nav.tts.PiperTts
 import de.dalang.nav.util.CrashLogger
+import de.dalang.nav.util.TripRecorder
 import kotlinx.coroutines.*
 import java.util.Locale
 
@@ -106,7 +107,7 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
             piperInitDone = true
             pendingSpeech.toList().also { pendingSpeech.clear() }
         }
-        texts.forEach { speak(it) }
+        texts.forEach { speak(it, replay = true) }
     }
 
     /** true = Text gepuffert, weil Piper gerade initialisiert. */
@@ -159,7 +160,8 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    fun speak(text: String) {
+    fun speak(text: String, replay: Boolean = false) {
+        TripRecorder.event("speak", text, mapOf("mode" to "speak", "voice" to voiceEnabled, "replay" to replay))
         if (!voiceEnabled) return
 
         // Piper TTS lazy init beim ersten Sprachgebrauch starten
@@ -183,6 +185,7 @@ class NavigationService : Service(), TextToSpeech.OnInitListener {
     }
 
     fun speakNow(text: String) {
+        TripRecorder.event("speak", text, mapOf("mode" to "speakNow", "voice" to voiceEnabled, "replay" to false))
         if (!voiceEnabled) return
 
         // Piper TTS lazy init beim ersten Sprachgebrauch starten

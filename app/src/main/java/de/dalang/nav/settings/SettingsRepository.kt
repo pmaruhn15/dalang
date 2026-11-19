@@ -81,6 +81,11 @@ class SettingsRepository(context: Context) {
         get() = prefs.getString("tester_name", null)?.takeIf { it.isNotBlank() } ?: android.os.Build.MODEL
         set(value) = prefs.edit { putString("tester_name", value.trim()) }
 
+    /** Fahrtenschreiber: Fahrten aufzeichnen und (im WLAN) hochladen. Aus = keine Aufzeichnung. */
+    var tripUploadEnabled: Boolean
+        get() = prefs.getBoolean("trip_upload_enabled", true)
+        set(value) = prefs.edit { putBoolean("trip_upload_enabled", value) }
+
     var piperTtsEnabled: Boolean
         get() = prefs.getBoolean(KEY_PIPER_TTS_ENABLED, true)
         set(value) = prefs.edit { putBoolean(KEY_PIPER_TTS_ENABLED, value) }
