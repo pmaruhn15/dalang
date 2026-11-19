@@ -53,6 +53,7 @@ class RouteProgress(val route: Route, private val log: (String) -> Unit = {}) {
         const val DR_MAX_MS = 300_000L          // max 5 min ...
         const val DR_MAX_M = 8_000.0            // ... bzw. 8 km (längste dt. Straßentunnel)
         const val GRACE_AFTER_DR_MS = 8000L     // erste Fixes nach Tunnel sind oft ungenau: kein Off-Route
+        const val PRE_MATCH_START_RADIUS_M = 150.0  // vor dem ersten Match: Off-Route erst weiter weg vom Routenstart
         private const val M_PER_DEG = 6371000.0 * Math.PI / 180
     }
 
@@ -102,6 +103,12 @@ class RouteProgress(val route: Route, private val log: (String) -> Unit = {}) {
     private var drStartMs = 0L
     private var drStartS = 0.0
     private var drExhausted = false
+    private var drStartStep = 0
+    /** Nach Schätzung: Position kann weit danebenliegen — ab drStartS neu suchen, bis wieder ein Match da ist. */
+    private var recovering = false
+    // Letzter Fix jeder Qualität: meldet er Stillstand, pausiert die Schätzung (Stau im Tunnel, Ampel in Häuserschlucht)
+    private var lastAnyFixMs = 0L
+    private var lastAnySpeed: Double? = null
 
     val remainingM: Double get() = (lengthM - s).coerceAtLeast(0.0)
 
@@ -111,8 +118,9 @@ class RouteProgress(val route: Route, private val log: (String) -> Unit = {}) {
 
     val offRoute: Boolean get() = misses >= OFF_ROUTE_MISSES && !estimating && lastMoveMs >= graceUntilMs
 
-    /** Routenende entlang der Straße erreicht (nicht aus Schätzung). */
-    val atRouteEnd: Boolean get() = matched && !estimating && remainingM <= ARRIVAL_REMAINING_M
+    /** Routenende entlang der Straße erreicht (nicht aus Schätzung). Entartete Route (Ziel ≈ Start) = sofort. */
+    val atRouteEnd: Boolean get() = !estimating &&
+        (lengthM < ARRIVAL_REMAINING_M || matched && remainingM <= ARRIVAL_REMAINING_M)
 
     /** Restzeit: aktueller Step anteilig nach Strecke, Rest voll (Routing-Zeiten). */
     fun remainingTimeS(): Double {
@@ -134,13 +142,17 @@ class RouteProgress(val route: Route, private val log: (String) -> Unit = {}) {
     fun update(pos: LatLng, gpsBearingDeg: Float?, speedMs: Float?, accuracyM: Float?, nowMs: Long) {
         if (nSeg == 0) return
         val good = accuracyM == null || accuracyM <= GOOD_FIX_ACCURACY_M
+        val vOrNull = speedMs?.toDouble()?.takeIf { it.isFinite() && it >= 0 }
+        lastAnyFixMs = nowMs
+        lastAnySpeed = vOrNull
         if (estimating) {
             if (!good) return
             estimating = false
+            recovering = true
             graceUntilMs = nowMs + GRACE_AFTER_DR_MS
             log("GPS zurück nach ${(nowMs - drStartMs) / 1000}s, ${(s - drStartS).toInt()}m geschätzt (s=${s.toInt()})")
         }
-        val v = speedMs?.toDouble()?.takeIf { it.isFinite() && it >= 0 } ?: 0.0
+        val v = vOrNull ?: 0.0
         if (good) {
             lastGoodFixMs = nowMs
             drExhausted = false
@@ -151,8 +163,10 @@ class RouteProgress(val route: Route, private val log: (String) -> Unit = {}) {
         lastMoveMs = nowMs
         val heading = gpsBearingDeg?.takeIf { v >= MIN_HEADING_SPEED_MS }?.toDouble()
         val sPred = s + v * dt
-        val from = if (initialized) s - BACK_TOLERANCE_M else 0.0
+        // Nach Schätzung kann die Wahrheit irgendwo zwischen Tunneleinfahrt und Schätzung (oder davor) liegen
+        val from = if (!initialized) 0.0 else if (recovering) drStartS - BACK_TOLERANCE_M else s - BACK_TOLERANCE_M
         val to = if (initialized) sPred + AHEAD_BASE_M + v * dt else lengthM
+        val penalty = if (initialized && !recovering) ALONG_PENALTY else 0.0
 
         var best: Hit? = null
         var bestCost = Double.MAX_VALUE
@@ -167,14 +181,16 @@ class RouteProgress(val route: Route, private val log: (String) -> Unit = {}) {
                 wrongWay = true
                 continue
             }
-            val cost = h.d + if (initialized) ALONG_PENALTY * abs(h.s - sPred) else 0.0
+            val cost = h.d + penalty * abs(h.s - sPred)
             if (cost < bestCost) { bestCost = cost; best = h }
         }
 
         if (best == null) {
             matched = false
             lateralM = nearest
-            misses++
+            // Vor dem ersten Match (Start auf Parkplatz/in Tiefgarage > 60 m neben der Straße) nur zählen,
+            // wenn man sich vom Routenstart entfernt — sonst Recalc-Schleife mit immer derselben Route.
+            if (initialized || pos.distanceTo(g[0]) > PRE_MATCH_START_RADIUS_M) misses++
             if (misses == 1 || misses == OFF_ROUTE_MISSES) {
                 log("kein Match (${misses}x): nächstes Segment ${nearest.toInt()}m" +
                     (if (wrongWay) ", nahe Segmente gegen Fahrtrichtung (GPS ${heading?.toInt()}°)" else "") +
@@ -190,6 +206,12 @@ class RouteProgress(val route: Route, private val log: (String) -> Unit = {}) {
         lateralM = best.d
         position = pointOf(best.seg, best.t)
         bearingDeg = segBearing(best.seg).toFloat()
+        if (recovering) {
+            recovering = false
+            // Manöver, die nur die Schätzung passiert hat, wieder freigeben
+            if (stepIndex > drStartStep) log("Schätzung lag daneben: Step $stepIndex -> neu ab $drStartStep bei s=${s.toInt()}")
+            stepIndex = drStartStep
+        }
         advanceSteps()
     }
 
@@ -199,8 +221,14 @@ class RouteProgress(val route: Route, private val log: (String) -> Unit = {}) {
      * Bewusst kein Accelerometer/keine Tempo-Kalibrierung: Einbaulage unbekannt, Doppelintegration driftet.
      */
     fun deadReckon(nowMs: Long): Boolean {
+        // Ein aktueller (auch ungenauer) Fix meldet Stillstand: nicht schätzen bzw. Schätzung anhalten
+        val standing = nowMs - lastAnyFixMs <= GPS_LOSS_MS && (lastAnySpeed ?: Double.MAX_VALUE) < DR_MIN_SPEED_MS
+        if (standing) {
+            if (estimating) lastMoveMs = nowMs
+            return false
+        }
         if (!estimating) {
-            if (!matched || drExhausted || lastGoodFixMs == 0L || nowMs - lastGoodFixMs <= GPS_LOSS_MS) return false
+            if (!matched || recovering || drExhausted || lastGoodFixMs == 0L || nowMs - lastGoodFixMs <= GPS_LOSS_MS) return false
             val v = speeds.sorted().let { if (it.isEmpty()) 0.0 else it[it.size / 2] }.coerceAtMost(70.0)
             // Auch das letzte Tempo prüfen: beim Abbremsen hinkt der Median hinterher.
             if (v < DR_MIN_SPEED_MS || (speeds.lastOrNull() ?: 0.0) < DR_MIN_SPEED_MS) return false
@@ -208,11 +236,13 @@ class RouteProgress(val route: Route, private val log: (String) -> Unit = {}) {
             drSpeedMs = v
             drStartMs = lastMoveMs
             drStartS = s
+            drStartStep = stepIndex
             log("kein guter GPS-Fix seit ${nowMs - lastGoodFixMs}ms — Schätzung startet bei s=${s.toInt()}, v=${(v * 3.6).toInt()} km/h")
         }
         if (nowMs - drStartMs > DR_MAX_MS || s - drStartS > DR_MAX_M) {
             estimating = false
             drExhausted = true
+            recovering = true
             log("Schätzung abgebrochen (Limit) nach ${(nowMs - drStartMs) / 1000}s, ${(s - drStartS).toInt()}m")
             return false
         }

@@ -62,6 +62,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Fortschritt entlang der aktuellen Route; neu angelegt, sobald sich die Route ändert.
     private var progress: RouteProgress? = null
     private var deadReckoningJob: Job? = null
+    private var recalcJob: Job? = null
     private var progressLogTick = 0
 
     private val _currentLocation = MutableStateFlow<LatLng?>(null)
@@ -321,7 +322,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             val good = accuracy == null || accuracy <= RouteProgress.GOOD_FIX_ACCURACY_M
                             val p = currentProgress()
                             // Während Tunnel-Schätzung: schlechte Fixes (wegdriftende Chip-Positionen) ignorieren
-                            if (p?.estimating == true && !good) return@collect
+                            if (p?.estimating == true && !good) {
+                                p.update(LatLng(location.latitude, location.longitude), null,
+                                    if (location.hasSpeed()) location.speed else null, accuracy, now)
+                                return@collect
+                            }
                             if (p != null && good && p.lastGoodFixMs > 0 && now - p.lastGoodFixMs > RouteProgress.GPS_LOSS_MS) {
                                 // GPS zurück nach Ausfall: Kalman-Zustand stammt von der Tunneleinfahrt —
                                 // neu starten, sonst landet die erste Position zwischen Ein- und Ausfahrt.
@@ -706,7 +711,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // Route vom aktuellen Standort zum Waypoint
                 val routeToWaypoint = routeRepository.getRoute(current, waypointLocation)
 
-                // Route vom Waypoint zum ursprünglichen Ziel
+                // Route vom Waypoint zum ursprünglichen Ziel — Abstand wegen OSRM-Rate-Limit (1 req/s)
+                delay(1100)
                 val routeToDestination = routeRepository.getRoute(waypointLocation, destination)
 
                 if (routeToWaypoint != null && routeToDestination != null) {
@@ -871,9 +877,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 route.steps.getOrNull(stepIndex + 1)?.let { updateServiceNotification(it, p.distanceToStep(stepIndex + 1)) }
             }
 
-            // Waypoint (Zwischenziel) — Luftlinie wie bisher
+            // Zwischenziel: inneres "arrive" der kombinierten Route entlang der Straße; ohne ein solches Luftlinie
             var waypoint = state.waypoint
-            if (!estimated && waypoint != null && location.distanceTo(waypoint) < 50) {
+            val waypointStep = route.steps.indices.firstOrNull { isInnerStop(route.steps, it) && route.steps[it].maneuver.type == "arrive" }
+            val waypointReached = waypointStep?.let { p.matched && p.distanceToStep(it) <= RouteProgress.ARRIVAL_REMAINING_M }
+                ?: (waypoint != null && location.distanceTo(waypoint) < 50)
+            if (!estimated && waypoint != null && waypointReached) {
                 CrashLogger.log("MainViewModel: Arrived at waypoint ${state.waypointName}")
                 navigationService?.speakNow("Zwischenziel erreicht: ${state.waypointName}")
                 waypoint = null
@@ -909,7 +918,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun announceNextManeuver(state: NavigationState, p: RouteProgress) {
         val steps = state.route?.steps ?: return
-        val r = state.findNextRelevantStepIndex() ?: return
+        val r = (state.currentStepIndex + 1 until steps.size)
+            .firstOrNull { steps[it].isRelevantManeuver() && !isInnerStop(steps, it) } ?: return
         val step = steps[r]
         val d = p.distanceToStep(r)
         val thresholds = announceDistancesM(steps.getOrNull(r - 1))
@@ -921,6 +931,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         speakDistance(d, step)
     }
 
+    /** arrive/depart mitten in der Route = Zwischenziel-Naht der kombinierten Waypoint-Route. */
+    private fun isInnerStop(steps: List<RouteStep>, i: Int): Boolean {
+        val type = steps[i].maneuver.type
+        return (type == "arrive" && i < steps.size - 1) || (type == "depart" && i > 0)
+    }
+
     /**
      * Ziel erreicht: Routenende entlang der Straße (< 30 m Restroute), oder Hauspunkt (liegt oft
      * 20-50 m neben der Straße) nah UND Restroute entlang der Straße kurz.
@@ -928,9 +944,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun checkArrival(location: LatLng, state: NavigationState, p: RouteProgress): Boolean {
         val destination = state.destination ?: return false
         if (state.waypoint != null) return false  // erst Zwischenziel
-        if (!p.matched) return false
         val toDest = location.distanceTo(destination)
-        val nearDestByRoad = toDest < ARRIVAL_RADIUS_DEST_M && p.remainingM < ARRIVAL_MAX_REMAINING_M
+        val nearDestByRoad = p.matched && toDest < ARRIVAL_RADIUS_DEST_M && p.remainingM < ARRIVAL_MAX_REMAINING_M
         if (!nearDestByRoad && !p.atRouteEnd) return false
         CrashLogger.log("MainViewModel: Arrived (toDest=${toDest.toInt()}m) — ${p.debugLine()}")
         _navigationState.update { it.copy(hasArrived = true, isNavigating = false) }
@@ -944,14 +959,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun recalculateRoute(currentLocation: LatLng) {
         val destination = _navigationState.value.destination ?: return
+        // getRoute dauert mit HERE + OSM-Matching oft > Cooldown: parallele Recalcs = OSRM 429,
+        // HERE-Kontingent, und die zuletzt fertige (evtl. ältere Position) gewinnt.
+        if (recalcJob?.isActive == true) {
+            CrashLogger.log("MainViewModel: Recalc läuft schon — übersprungen")
+            return
+        }
 
-        viewModelScope.launch(exceptionHandler) {
+        recalcJob = viewModelScope.launch(exceptionHandler) {
             try {
                 _isRecalculatingRoute.value = true
                 CrashLogger.log("MainViewModel: Recalculating route to destination...")
 
                 val route = routeRepository.getRoute(currentLocation, destination)
-                if (route != null) {
+                if (route != null && _navigationState.value.isNavigating) {
                     CrashLogger.log("MainViewModel: New route calculated with ${route.steps.size} steps")
                     _navigationState.update {
                         it.copy(
@@ -1035,6 +1056,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!state.isNavigating || state.route == null) return
         // Im Tunnel ist _currentLocation die Einfahrt — eine Route von dort begänne hinter uns.
         if (progress?.estimating == true) return
+        if (recalcJob?.isActive == true) return
 
         val currentLocation = _currentLocation.value ?: return
         val destination = state.destination ?: return
