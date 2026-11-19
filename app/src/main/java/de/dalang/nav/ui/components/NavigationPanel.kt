@@ -531,11 +531,12 @@ private fun RouteStep?.isRoundabout(): Boolean {
 }
 
 /**
- * Dynamische Kreisverkehr-Visualisierung
- * Zeigt den Kreisverkehr mit der korrekten Ausfahrt an
+ * Kreisverkehr-Piktogramm (Rechtsverkehr, Fahrt gegen den Uhrzeigersinn):
+ * gedimmter Ring, Einfahrt unten, der tatsächlich gefahrene Ringabschnitt und die
+ * Ausfahrt (mit Pfeilspitze) in voller Farbe.
  *
- * @param exitNumber Die Ausfahrt (1 = erste Ausfahrt rechts, 2 = zweite, etc.)
- * @param color Die Farbe für die Darstellung
+ * @param exitNumber Ausfahrt-Nr. (nur Fallback wenn kein Winkel vorliegt)
+ * @param turnAngleDeg 0° = geradeaus, +90° = rechts, ±180° = wenden
  */
 @Composable
 private fun RoundaboutVisualization(
@@ -545,118 +546,60 @@ private fun RoundaboutVisualization(
     turnAngleDeg: Float? = null
 ) {
     Canvas(modifier = modifier.size(64.dp)) {
-        val centerX = size.width / 2
-        val centerY = size.height / 2
-        val outerRadius = size.minDimension / 2 - 4.dp.toPx()
-        val innerRadius = outerRadius * 0.5f
-        val roadWidth = 8.dp.toPx()
-        val arrowSize = 10.dp.toPx()
+        val cx = size.width / 2
+        val cy = size.height * 0.44f
+        val ring = 13.dp.toPx()
+        val sw = 5.dp.toPx()
+        val center = Offset(cx, cy)
 
-        // Kreisverkehr-Ring (Donut)
-        drawCircle(
-            color = color,
-            radius = outerRadius,
-            center = Offset(centerX, centerY),
-            style = Stroke(width = roadWidth)
-        )
-
-        // Innerer Kreis (Insel)
-        drawCircle(
-            color = color.copy(alpha = 0.3f),
-            radius = innerRadius,
-            center = Offset(centerX, centerY)
-        )
-
-        // Einfahrt von unten (immer)
-        drawLine(
-            color = color,
-            start = Offset(centerX, size.height),
-            end = Offset(centerX, centerY + outerRadius - roadWidth / 2),
-            strokeWidth = roadWidth,
-            cap = StrokeCap.Round
-        )
-
-        // Ausfahrtwinkel: bevorzugt der echte Drehwinkel aus der Step-Geometrie
-        // (turnAngleDeg). Fallback nur wenn keine Geometrie verfügbar ist:
-        // 90°-Quadranten basierend auf Exit-Nummer — bei != 4 Ausfahrten falsch,
-        // aber mit 4 Ausfahrten der häufigste Fall.
+        // Ausfahrtwinkel: 0° = oben, +90° = rechts (Uhrzeigersinn), 180° = Einfahrt/unten.
+        // Fallback ohne Geometrie: grobe Näherung für 4-armigen Kreisverkehr.
         val exitAngle = if (turnAngleDeg != null) {
-            // turnAngleDeg ist relativ zur Anfahrtsrichtung. Visualization-Konvention:
-            // 0° = oben (geradeaus), +90° = rechts, ±180° = unten.
-            ((turnAngleDeg + 360f) % 360f)
-        } else when (exitNumber) {
-            1 -> 90f
-            2 -> 0f
-            3 -> 270f
-            4 -> 180f
-            else -> ((exitNumber - 1) * 90f) % 360f
+            (turnAngleDeg + 360f) % 360f
+        } else {
+            when (exitNumber) { 1 -> 90f; 2 -> 0f; 3 -> 270f; else -> 180f }
         }
 
-        val exitAngleRad = Math.toRadians(exitAngle.toDouble())
-        val exitX = centerX + (outerRadius * sin(exitAngleRad)).toFloat()
-        val exitY = centerY - (outerRadius * cos(exitAngleRad)).toFloat()
+        // Ring gedimmt
+        drawCircle(color.copy(alpha = 0.35f), ring, center, style = Stroke(sw))
 
-        // Ausfahrtlinie
-        val exitEndX = centerX + ((outerRadius + 20.dp.toPx()) * sin(exitAngleRad)).toFloat()
-        val exitEndY = centerY - ((outerRadius + 20.dp.toPx()) * cos(exitAngleRad)).toFloat()
-
-        drawLine(
+        // Gefahrener Abschnitt: von unten (180°) gegen den Uhrzeigersinn bis zur Ausfahrt.
+        // Compose-Winkel: 0 = 3 Uhr, im Uhrzeigersinn -> unsere Winkel - 90.
+        var sweep = (180f - exitAngle + 360f) % 360f
+        if (sweep < 10f) sweep = 360f  // Wenden: ganzer Ring
+        drawArc(
             color = color,
-            start = Offset(exitX, exitY),
-            end = Offset(exitEndX, exitEndY),
-            strokeWidth = roadWidth,
-            cap = StrokeCap.Round
+            startAngle = 90f,
+            sweepAngle = -sweep,
+            useCenter = false,
+            topLeft = Offset(cx - ring, cy - ring),
+            size = androidx.compose.ui.geometry.Size(ring * 2, ring * 2),
+            style = Stroke(sw)
         )
 
-        // Pfeilspitze an der Ausfahrt
-        val arrowAngleRad = exitAngleRad
-        val arrowTipX = exitEndX
-        val arrowTipY = exitEndY
+        // Einfahrt
+        drawLine(color, Offset(cx, size.height), Offset(cx, cy + ring), strokeWidth = sw)
 
-        // Pfeilflügel
-        val wingAngle1 = arrowAngleRad + Math.toRadians(150.0)
-        val wingAngle2 = arrowAngleRad - Math.toRadians(150.0)
-
-        val wing1X = arrowTipX + (arrowSize * sin(wingAngle1)).toFloat()
-        val wing1Y = arrowTipY - (arrowSize * cos(wingAngle1)).toFloat()
-        val wing2X = arrowTipX + (arrowSize * sin(wingAngle2)).toFloat()
-        val wing2Y = arrowTipY - (arrowSize * cos(wingAngle2)).toFloat()
-
-        val arrowPath = Path().apply {
-            moveTo(arrowTipX, arrowTipY)
-            lineTo(wing1X, wing1Y)
-            lineTo(wing2X, wing2Y)
-            close()
-        }
-        drawPath(arrowPath, color = color)
-
-        // Richtungspfeil auf dem Ring (im Uhrzeigersinn)
-        // Kleiner Pfeil bei 45° um Fahrtrichtung anzuzeigen
-        val indicatorAngle = Math.toRadians(135.0) // Zwischen Einfahrt und erster Ausfahrt
-        val indicatorX = centerX + ((outerRadius) * sin(indicatorAngle)).toFloat()
-        val indicatorY = centerY - ((outerRadius) * cos(indicatorAngle)).toFloat()
-
-        // Kleiner Richtungspfeil im Uhrzeigersinn
-        val smallArrowAngle = indicatorAngle + Math.toRadians(90.0) // Tangential
-        val smallArrowSize = 6.dp.toPx()
-        val smallWing1 = smallArrowAngle + Math.toRadians(140.0)
-        val smallWing2 = smallArrowAngle - Math.toRadians(140.0)
-
-        val smallPath = Path().apply {
-            moveTo(
-                indicatorX + (smallArrowSize * sin(smallArrowAngle)).toFloat(),
-                indicatorY - (smallArrowSize * cos(smallArrowAngle)).toFloat()
-            )
-            lineTo(
-                indicatorX + (smallArrowSize * sin(smallWing1)).toFloat(),
-                indicatorY - (smallArrowSize * cos(smallWing1)).toFloat()
-            )
-            lineTo(
-                indicatorX + (smallArrowSize * sin(smallWing2)).toFloat(),
-                indicatorY - (smallArrowSize * cos(smallWing2)).toFloat()
-            )
-            close()
-        }
-        drawPath(smallPath, color = color)
+        // Ausfahrt mit Pfeilspitze
+        val rad = Math.toRadians(exitAngle.toDouble())
+        val dx = sin(rad).toFloat()
+        val dy = -cos(rad).toFloat()
+        val headLen = 11.dp.toPx()
+        val headHalf = 8.dp.toPx()
+        val tipR = (minOf(cx, cy) - 1.dp.toPx()).coerceAtLeast(ring + headLen + 4.dp.toPx())
+        val base = Offset(cx + dx * (tipR - headLen), cy + dy * (tipR - headLen))
+        drawLine(color, Offset(cx + dx * ring, cy + dy * ring), base, strokeWidth = sw)
+        val tip = Offset(cx + dx * tipR, cy + dy * tipR)
+        val px = -dy
+        val py = dx
+        drawPath(
+            Path().apply {
+                moveTo(tip.x, tip.y)
+                lineTo(base.x + px * headHalf, base.y + py * headHalf)
+                lineTo(base.x - px * headHalf, base.y - py * headHalf)
+                close()
+            },
+            color
+        )
     }
 }

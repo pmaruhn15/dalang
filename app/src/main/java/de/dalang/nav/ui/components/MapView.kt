@@ -720,6 +720,8 @@ fun MapViewComposable(
                             )
                         }
                         style.addLayer(destLayer)
+                        // Bei Ankunft liegt der Ziel-Marker auf der eigenen Position -> Ego-Marker wieder nach oben
+                        bringLocationLayerToTop(style, animatedRotation)
                     }
                 } catch (e: Exception) {
                     CrashLogger.logError("MapView", "Destination marker failed", e)
@@ -881,6 +883,7 @@ fun MapViewComposable(
                             style.addLayer(cheapestLayer)
                         }
 
+                        bringLocationLayerToTop(style, animatedRotation)
                         CrashLogger.log("MapView: Drew ${filteredPois.size} POI markers, cheapest: ${cheapestPoi?.name}")
 
                         // Kamera auf Route + POIs zoomen (wenn nicht navigierend)
@@ -1443,12 +1446,14 @@ private fun drawAlternativeRoutes(style: Style, route: Route, isDarkTheme: Boole
             // Badge-Position: Bei Navigation auf dem grauen Abschnitt kurz nach dem Abzweig —
             // NICHT am Abzweigpunkt selbst, der liegt auf der eigenen Route und das +X min
             // las sich wie eine Verzögerung der aktuellen Route (Fahrer-Report).
+            // Mehrere Alternativen: Position entlang der EIGENEN Linie staffeln, damit Badges
+            // sich nicht überlagern (Alternativen teilen oft den Anfang) und auf ihrer Linie sitzen.
+            val n = route.alternatives.size
+            val frac = if (isNavigating) minOf(0.2f + 0.2f * index, 0.8f) else (index + 1f) / (n + 1f)
             val badgePoint = if (isNavigating) {
-                alt.divergingGeometry.getOrNull(alt.divergingGeometry.size / 4) ?: alt.divergePoint
+                alt.divergingGeometry.getOrNull((alt.divergingGeometry.size * frac).toInt()) ?: alt.divergePoint
             } else {
-                // Mitte der alternativen Route
-                val midIndex = geometryToShow.size / 2
-                geometryToShow[midIndex]
+                geometryToShow[(geometryToShow.size * frac).toInt().coerceIn(0, geometryToShow.size - 1)]
             }
 
             // Bitmap erstellen und als Icon registrieren

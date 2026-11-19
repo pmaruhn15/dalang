@@ -5,8 +5,14 @@
     android:viewportWidth="48"
     android:viewportHeight="48">
 
-    <!-- U-turn arrow -->
+    <!-- U-Turn: Strich (8 breit, runde Ecken) + Pfeilspitze, gleicher Stil wie ic_turn_slight_* -->
+    <path
+        android:pathData="M34,44L34,20A10,10 0 0 0 14,20L14,30"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="8"
+        android:strokeLineJoin="round" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M8,32L8,20C8,11.16 15.16,4 24,4C32.84,4 40,11.16 40,20L40,44L32,44L32,20C32,15.58 28.42,12 24,12C19.58,12 16,15.58 16,20L16,32L24,32L12,44L0,32Z" />
+        android:pathData="M3,28L25,28L14,40Z" />
 </vector>

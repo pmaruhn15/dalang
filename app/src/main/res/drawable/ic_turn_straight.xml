@@ -5,8 +5,14 @@
     android:viewportWidth="48"
     android:viewportHeight="48">
 
-    <!-- Straight arrow pointing up -->
+    <!-- Geradeaus: Strich (8 breit, runde Ecken) + Pfeilspitze, gleicher Stil wie ic_turn_slight_* -->
+    <path
+        android:pathData="M24,44L24,16"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="8"
+        android:strokeLineJoin="round" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M24,4L36,20L28,20L28,44L20,44L20,20L12,20Z" />
+        android:pathData="M12,17L36,17L24,3Z" />
 </vector>
