@@ -55,6 +55,11 @@ android {
         buildConfig = true
     }
 
+    // JVM-Unit-Tests: android.util.Log & Co. liefern Defaults statt zu werfen
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.8"
     }
@@ -96,4 +101,5 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20231013")  // echtes org.json statt Android-Stub
 }
