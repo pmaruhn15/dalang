@@ -101,6 +101,7 @@ class RouteProgress(val route: Route, private val log: (String) -> Unit = {}) {
     private val speeds = ArrayDeque<Double>()
     var drSpeedMs = 0.0; private set
     private var drStartMs = 0L
+    private var goodS = 0.0  // s des letzten GUTEN Fixes: Startpunkt der Schätzung
     private var drStartS = 0.0
     private var drExhausted = false
     private var drStartStep = 0
@@ -203,6 +204,7 @@ class RouteProgress(val route: Route, private val log: (String) -> Unit = {}) {
         matched = true
         misses = 0
         s = best.s
+        if (good) goodS = s
         lateralM = best.d
         position = pointOf(best.seg, best.t)
         bearingDeg = segBearing(best.seg).toFloat()
@@ -234,7 +236,11 @@ class RouteProgress(val route: Route, private val log: (String) -> Unit = {}) {
             if (v < DR_MIN_SPEED_MS || (speeds.lastOrNull() ?: 0.0) < DR_MIN_SPEED_MS) return false
             estimating = true
             drSpeedMs = v
-            drStartMs = lastMoveMs
+            // Ab dem letzten GUTEN Fix schätzen: ungenaue Fixes in den ersten Sekunden des Ausfalls
+            // hielten s fest und die Strecke dazwischen ging verloren (Offline-Auswertung: -60 m bei 72 km/h).
+            s = goodS
+            lastMoveMs = lastGoodFixMs
+            drStartMs = lastGoodFixMs
             drStartS = s
             drStartStep = stepIndex
             log("kein guter GPS-Fix seit ${nowMs - lastGoodFixMs}ms — Schätzung startet bei s=${s.toInt()}, v=${(v * 3.6).toInt()} km/h")
