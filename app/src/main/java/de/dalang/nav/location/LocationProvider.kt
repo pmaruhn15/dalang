@@ -118,10 +118,12 @@ class LocationProvider(private val context: Context) {
             if (gpsEnabled) {
                 try {
                     CrashLogger.log("LocationProvider: Requesting GPS updates")
+                    // minDistance 0: auch im Stand jede Sekunde ein Fix. Sonst sieht eine rote Ampel
+                    // für die Tunnel-Erkennung (RouteProgress.deadReckon) wie GPS-Ausfall aus.
                     manager.requestLocationUpdates(
                         LocationManager.GPS_PROVIDER,
                         intervalMs,
-                        1f,
+                        0f,
                         listener,
                         Looper.getMainLooper()
                     )

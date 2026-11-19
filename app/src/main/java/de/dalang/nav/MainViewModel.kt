@@ -9,11 +9,9 @@ import android.os.IBinder
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.dalang.nav.location.BrightnessProvider
-import de.dalang.nav.location.DistanceSmoother
 import de.dalang.nav.location.HeadingProvider
 import de.dalang.nav.location.LocationProvider
 import de.dalang.nav.location.LocationSmoother
-import de.dalang.nav.location.MapMatcher
 import de.dalang.nav.navigation.*
 import de.dalang.nav.search.SearchRepository
 import de.dalang.nav.search.SearchResult
@@ -61,8 +59,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val searchRepository: SearchRepository = SearchRepository()
     private val routeRepository: RouteRepository = RouteRepository()
     private val locationSmoother = LocationSmoother()
-    private val mapMatcher = MapMatcher()
-    private val distanceSmoother = DistanceSmoother()
+    // Fortschritt entlang der aktuellen Route; neu angelegt, sobald sich die Route ändert.
+    private var progress: RouteProgress? = null
+    private var deadReckoningJob: Job? = null
+    private var progressLogTick = 0
 
     private val _currentLocation = MutableStateFlow<LatLng?>(null)
     val currentLocation: StateFlow<LatLng?> = _currentLocation.asStateFlow()
@@ -124,10 +124,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var brightnessJob: Job? = null
 
-    // Off-route Schwellenwert in Metern
-    private val OFF_ROUTE_THRESHOLD = 60.0
+    // Ankunft am Hauspunkt (liegt oft 20-50 m neben der Straße) nur mit kurzer Restroute entlang der Straße
     private val ARRIVAL_RADIUS_DEST_M = 50.0
-    private val ARRIVAL_RADIUS_ROUTE_END_M = 30.0
     private val ARRIVAL_MAX_REMAINING_M = 100.0
     // Cooldown um nicht zu oft neu zu berechnen
     private var lastRecalculationTime = 0L
@@ -318,6 +316,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     .collect { location ->
                         try {
+                            val now = System.currentTimeMillis()
+                            val accuracy = if (location.hasAccuracy()) location.accuracy else null
+                            val good = accuracy == null || accuracy <= RouteProgress.GOOD_FIX_ACCURACY_M
+                            val p = currentProgress()
+                            // Während Tunnel-Schätzung: schlechte Fixes (wegdriftende Chip-Positionen) ignorieren
+                            if (p?.estimating == true && !good) return@collect
+                            if (p != null && good && p.lastGoodFixMs > 0 && now - p.lastGoodFixMs > RouteProgress.GPS_LOSS_MS) {
+                                // GPS zurück nach Ausfall: Kalman-Zustand stammt von der Tunneleinfahrt —
+                                // neu starten, sonst landet die erste Position zwischen Ein- und Ausfahrt.
+                                locationSmoother.reset()
+                            }
+
                             // Speed und Bearing extrahieren (vor dem Smoothing)
                             if (location.hasSpeed()) {
                                 _speed.value = location.speed
@@ -343,13 +353,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 accuracy = location.accuracy
                             )
 
-                            // Für Anzeige: Map-Matching wenn in Navigation
-                            val route = _navigationState.value.route
-                            if (_navigationState.value.isNavigating && route != null) {
-                                val matchResult = mapMatcher.matchToRoute(smoothedLocation, route)
-                                _displayLocation.value = matchResult.location
-                                _distanceToRoute.value = matchResult.distanceToRoute
-                                updateNavigation(smoothedLocation, matchResult.distanceToRoute)
+                            if (p != null) {
+                                p.update(
+                                    smoothedLocation,
+                                    if (location.hasBearing()) location.bearing else null,
+                                    if (location.hasSpeed()) location.speed else null,
+                                    accuracy, now
+                                )
+                                // Anzeige auf die Route snappen, solange sie nah genug ist
+                                _displayLocation.value = p.position?.takeIf { p.matched && p.lateralM <= 30 } ?: smoothedLocation
+                                _distanceToRoute.value = p.lateralM
+                                updateNavigation(smoothedLocation, p, estimated = false)
                             } else {
                                 _displayLocation.value = smoothedLocation
                                 _distanceToRoute.value = 0.0
@@ -605,6 +619,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             // Proaktives Rerouting starten (prüft alle 3 Min ob schnellere Route verfügbar)
             startProactiveRerouting()
+            startDeadReckoning()
         } catch (e: Exception) {
             CrashLogger.logError("MainViewModel", "startNavigation failed", e)
         }
@@ -627,10 +642,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 NavigationState()
             }
 
-            // Smoother und Matcher zurücksetzen
+            deadReckoningJob?.cancel()
+            deadReckoningJob = null
+            progress = null
+            announced.clear()
+
             locationSmoother.reset()
-            mapMatcher.reset()
-            distanceSmoother.reset()
             _distanceToRoute.value = 0.0
 
             val intent = Intent(getApplication(), NavigationService::class.java).apply {
@@ -779,158 +796,147 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun updateNavigation(location: LatLng, distanceToRoute: Double) {
+    /** Progress zur aktuellen Route; bei Routenwechsel (Neuberechnung, schnellere Route, Alternative, Waypoint) neu. */
+    private fun currentProgress(): RouteProgress? {
+        val state = _navigationState.value
+        val route = state.route ?: return null
+        if (!state.isNavigating) return null
+        progress?.takeIf { it.route === route }?.let { return it }
+        // Voransagen der neuen Route, deren Manöver identisch sind, nicht wiederholen
+        val maneuvers = route.steps.map { it.maneuver.location }.toSet()
+        announced.retainAll { it.first in maneuvers }
+        CrashLogger.log("MainViewModel: neue Route im RouteProgress (${route.steps.size} Steps, ${route.geometry.size} Punkte)")
+        return RouteProgress(route) { CrashLogger.log("RouteProgress: $it") }.also { progress = it }
+    }
+
+    /**
+     * 1-Hz-Takt während Navigation: bei GPS-Ausfall (Tunnel) schiebt RouteProgress die Position
+     * entlang der Route weiter; Anzeige, Step-Advance und Voransagen laufen darüber weiter.
+     */
+    private fun startDeadReckoning() {
+        deadReckoningJob?.cancel()
+        deadReckoningJob = viewModelScope.launch(exceptionHandler) {
+            while (isActive) {
+                delay(1000)
+                try {
+                    if (locationJob?.isActive != true) continue
+                    val p = currentProgress() ?: continue
+                    if (!p.deadReckon(System.currentTimeMillis())) continue
+                    val pos = p.position ?: continue
+                    _displayLocation.value = pos
+                    _distanceToRoute.value = 0.0
+                    _bearing.value = p.bearingDeg
+                    _speed.value = p.drSpeedMs.toFloat()
+                    updateNavigation(pos, p, estimated = true)
+                } catch (e: Exception) {
+                    CrashLogger.logError("MainViewModel", "deadReckoning tick failed", e)
+                }
+            }
+        }
+    }
+
+    /** Für den Debug-Report: was RouteProgress gerade denkt. */
+    fun progressDebug(): String = progress?.debugLine() ?: "RouteProgress: -"
+
+    /**
+     * @param estimated Position stammt aus der Tunnel-Schätzung: kein Rerouting, keine Ankunft.
+     */
+    private fun updateNavigation(location: LatLng, p: RouteProgress, estimated: Boolean) {
         try {
             val state = _navigationState.value
             val route = state.route ?: return
-            val currentStep = state.currentStep ?: return
+            if (p.route !== route) return
 
-            // Prüfen ob wir von der Route abgewichen sind
-            // Durch das Smoothing haben wir weniger false positives
-            if (distanceToRoute > OFF_ROUTE_THRESHOLD) {
+            if (!estimated && p.offRoute) {
                 val now = System.currentTimeMillis()
                 if (now - lastRecalculationTime > RECALCULATION_COOLDOWN_MS) {
-                    CrashLogger.log("MainViewModel: Off-route detected (${distanceToRoute.toInt()}m), recalculating...")
+                    CrashLogger.log("MainViewModel: Off-route (${p.debugLine()}), recalculating...")
                     lastRecalculationTime = now
                     recalculateRoute(location)
-                    return
                 }
-            }
-
-            // Das anstehende Manöver liegt am Anfang von Step (currentStepIndex + 1).
-            // currentStep.maneuver liegt bereits hinter uns (= Anfang des aktuellen Steps).
-            val nextStep = route.steps.getOrNull(state.currentStepIndex + 1)
-            val stepAfterNext = route.steps.getOrNull(state.currentStepIndex + 2)
-
-            // Ankunft VOR dem frühen return prüfen — vorher stand sie dahinter und wurde auf dem
-            // letzten Step nie erreicht (Fahrer-Report: am Haus vorbei, Navi lief weiter).
-            if (checkArrival(location, state, route)) return
-
-            if (nextStep == null) {
-                // Letzter Step (arrive) — Step-Fortschritt ist abgeschlossen.
-                updateRemainingDistance(location, route, state.currentStepIndex, state.waypoint)
                 return
             }
 
-            val rawDistanceToNext = location.distanceTo(nextStep.maneuver.location)
-            val distanceToNext = distanceSmoother.process(rawDistanceToNext)
+            // Ankunft nur entlang der Route — Luftlinie zum Routenende/Hauspunkt matchte auch
+            // die Gegenfahrbahn bzw. lag vor Wende + Kreisverkehr (Fahrer-Reports 18.11.).
+            if (!estimated && checkArrival(location, state, p)) return
 
-            // Step-Advance triggern wenn wir nahe am nächsten Manöver sind ODER
-            // bereits dahinter (= näher am übernächsten als am nächsten).
-            val passedNext = stepAfterNext != null &&
-                location.distanceTo(stepAfterNext.maneuver.location) < rawDistanceToNext
-            val shouldAdvanceStep = rawDistanceToNext < 25 || passedNext
-
-            if (shouldAdvanceStep) {
-                val nextIndex = state.currentStepIndex + 1
-                val newDistanceToNext = stepAfterNext?.let { location.distanceTo(it.maneuver.location) } ?: 0.0
-                distanceSmoother.setInitialDistance(newDistanceToNext)
-                stepAfterNext?.let { s ->
-                    announceDistancesM(nextStep).filter { it >= newDistanceToNext }
-                        .forEach { announced.add(s.maneuver.location to it) }
-                }
-
-                CrashLogger.log("MainViewModel: Advancing past step $nextIndex (${nextStep.maneuver.type}) — newDistToNext=${newDistanceToNext.toInt()}m, passedNext=$passedNext")
-
-                nextStep.laneInfo?.let { laneInfo ->
-                    if (laneInfo.lanes.isNotEmpty()) {
-                        GpsTrackLogger.logLaneInfo(
-                            location = location,
-                            laneInfo = laneInfo,
-                            stepName = nextStep.instruction.ifBlank { "Step $nextIndex" }
-                        )
+            val stepIndex = p.stepIndex
+            if (stepIndex != state.currentStepIndex) {
+                route.steps.getOrNull(stepIndex)?.let { passed ->
+                    passed.laneInfo?.takeIf { it.lanes.isNotEmpty() }?.let {
+                        GpsTrackLogger.logLaneInfo(location, it, passed.instruction.ifBlank { "Step $stepIndex" })
                     }
                 }
-
-                _navigationState.update {
-                    it.copy(
-                        currentStepIndex = nextIndex,
-                        distanceToNextStep = newDistanceToNext
-                    )
-                }
-
-                // Sprache: das neu anstehende Manöver nur sofort ansagen, wenn es schon innerhalb
-                // der ersten Voransage-Distanz liegt — sonst übernehmen die Distanz-Ansagen
-                // (Fahrer-Report: zu viele Ansagen pro Manöver).
-                stepAfterNext?.let {
-                    if (newDistanceToNext <= announceDistancesM(nextStep).first()) speakInstruction(it)
-                    updateServiceNotification(it, newDistanceToNext)
-                }
-            } else {
-                _navigationState.update {
-                    it.copy(distanceToNextStep = distanceToNext)
-                }
-
-                // Voransagen nach Straßentyp. Kein Distanz-Fenster (bei 120 km/h springt GPS
-                // 33 m/s weit drüber), sondern "unterschritten und noch nicht angesagt".
-                val due = announceDistancesM(state.currentStep)
-                    .filter { rawDistanceToNext <= it && (nextStep.maneuver.location to it) !in announced }
-                if (due.isNotEmpty()) {
-                    due.forEach { announced.add(nextStep.maneuver.location to it) }
-                    speakDistance(rawDistanceToNext, nextStep)
-                }
+                route.steps.getOrNull(stepIndex + 1)?.let { updateServiceNotification(it, p.distanceToStep(stepIndex + 1)) }
             }
 
-            // Prüfen ob am Waypoint (Zwischenziel) angekommen
-            val waypoint = state.waypoint
-            if (waypoint != null && location.distanceTo(waypoint) < 50) {
+            // Waypoint (Zwischenziel) — Luftlinie wie bisher
+            var waypoint = state.waypoint
+            if (!estimated && waypoint != null && location.distanceTo(waypoint) < 50) {
                 CrashLogger.log("MainViewModel: Arrived at waypoint ${state.waypointName}")
                 navigationService?.speakNow("Zwischenziel erreicht: ${state.waypointName}")
-                // Waypoint entfernen, weiter zum Hauptziel
-                _navigationState.update {
-                    it.copy(
-                        waypoint = null,
-                        waypointName = null,
-                        waypointType = null,
-                        distanceToWaypoint = 0.0,
-                        timeToWaypoint = 0.0
-                    )
-                }
+                waypoint = null
             }
+            val waypointDistance = waypoint?.let { location.distanceTo(it) } ?: 0.0
+            val waypointSpeed = _speed.value.coerceAtLeast(10f)  // grobe Schätzung, mind. 36 km/h
 
+            val newState = state.copy(
+                currentStepIndex = stepIndex,
+                distanceToNextStep = p.distanceToStep(stepIndex + 1),
+                totalDistanceRemaining = p.remainingM,
+                totalTimeRemaining = p.remainingTimeS(),
+                waypoint = waypoint,
+                waypointName = if (waypoint == null) null else state.waypointName,
+                waypointType = if (waypoint == null) null else state.waypointType,
+                distanceToWaypoint = waypointDistance,
+                timeToWaypoint = waypointDistance / waypointSpeed
+            )
+            _navigationState.update { newState }
 
-            // Gesamtdistanz und Zeit aktualisieren (inkl. Waypoint)
-            updateRemainingDistance(location, route, state.currentStepIndex, waypoint)
+            announceNextManeuver(newState, p)
+
+            if (++progressLogTick % 5 == 0) CrashLogger.log(p.debugLine())
         } catch (e: Exception) {
             CrashLogger.logError("MainViewModel", "updateNavigation failed", e)
         }
     }
 
     /**
-     * Berechnet die kürzeste Distanz vom aktuellen Standort zur Route
+     * Distanz-Voransagen für das nächste relevante Manöver, gemessen entlang der Route.
+     * Kein Distanz-Fenster (bei 120 km/h springt GPS 33 m/s weit drüber), sondern
+     * "unterschritten und noch nicht angesagt". Straßentyp = Step, auf dem man zufährt.
      */
-    private fun calculateDistanceToRoute(location: LatLng, route: Route): Double {
-        var minDistance = Double.MAX_VALUE
-        val geometry = route.geometry
-
-        // Nur die nächsten ~50 Punkte der Route prüfen für Performance
-        val startIndex = 0.coerceAtLeast(findNearestPointIndex(location, geometry) - 10)
-        val endIndex = (startIndex + 50).coerceAtMost(geometry.size)
-
-        for (i in startIndex until endIndex) {
-            val distance = location.distanceTo(geometry[i])
-            if (distance < minDistance) {
-                minDistance = distance
-            }
-        }
-        return minDistance
+    private fun announceNextManeuver(state: NavigationState, p: RouteProgress) {
+        val steps = state.route?.steps ?: return
+        val r = state.findNextRelevantStepIndex() ?: return
+        val step = steps[r]
+        val d = p.distanceToStep(r)
+        val thresholds = announceDistancesM(steps.getOrNull(r - 1))
+        val key = step.maneuver.location
+        val consume = consumeAnnouncements(d, thresholds, thresholds.filter { (key to it) in announced }.toSet())
+        if (consume.isEmpty()) return
+        consume.forEach { announced.add(key to it) }
+        CrashLogger.log("MainViewModel: Voransage Step $r (${step.maneuver.type}) bei ${d.toInt()}m entlang Route")
+        speakDistance(d, step)
     }
 
     /**
-     * Findet den Index des nächsten Punktes auf der Route
+     * Ziel erreicht: Routenende entlang der Straße (< 30 m Restroute), oder Hauspunkt (liegt oft
+     * 20-50 m neben der Straße) nah UND Restroute entlang der Straße kurz.
      */
-    private fun findNearestPointIndex(location: LatLng, geometry: List<LatLng>): Int {
-        var minDistance = Double.MAX_VALUE
-        var nearestIndex = 0
-
-        for (i in geometry.indices) {
-            val distance = location.distanceTo(geometry[i])
-            if (distance < minDistance) {
-                minDistance = distance
-                nearestIndex = i
-            }
-        }
-        return nearestIndex
+    private fun checkArrival(location: LatLng, state: NavigationState, p: RouteProgress): Boolean {
+        val destination = state.destination ?: return false
+        if (state.waypoint != null) return false  // erst Zwischenziel
+        if (!p.matched) return false
+        val toDest = location.distanceTo(destination)
+        val nearDestByRoad = toDest < ARRIVAL_RADIUS_DEST_M && p.remainingM < ARRIVAL_MAX_REMAINING_M
+        if (!nearDestByRoad && !p.atRouteEnd) return false
+        CrashLogger.log("MainViewModel: Arrived (toDest=${toDest.toInt()}m) — ${p.debugLine()}")
+        _navigationState.update { it.copy(hasArrived = true, isNavigating = false) }
+        navigationService?.speakNow("Ziel erreicht")
+        stopNavigation()
+        return true
     }
 
     /**
@@ -943,10 +949,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 _isRecalculatingRoute.value = true
                 CrashLogger.log("MainViewModel: Recalculating route to destination...")
-
-                // Matcher und Distance Smoother zurücksetzen für neue Route
-                mapMatcher.reset()
-                distanceSmoother.reset()
 
                 val route = routeRepository.getRoute(currentLocation, destination)
                 if (route != null) {
@@ -1031,6 +1033,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun checkForFasterRoute() {
         val state = _navigationState.value
         if (!state.isNavigating || state.route == null) return
+        // Im Tunnel ist _currentLocation die Einfahrt — eine Route von dort begänne hinter uns.
+        if (progress?.estimating == true) return
 
         val currentLocation = _currentLocation.value ?: return
         val destination = state.destination ?: return
@@ -1067,92 +1071,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             CrashLogger.logError("MainViewModel", "checkForFasterRoute failed", e)
         }
-    }
-
-    private fun updateRemainingDistance(location: LatLng, route: Route, fromStep: Int, waypoint: LatLng?) {
-        try {
-            var remaining = 0.0
-            var remainingTime = 0.0
-
-            // Aktuellen Step anteilig berechnen
-            // WICHTIG: maneuver.location ist am ANFANG des Steps (wo das Manöver stattfindet).
-            // Das ENDE des Steps ist der Anfang des nächsten Steps.
-            val currentStep = route.steps.getOrNull(fromStep)
-            val nextStepManeuver = route.steps.getOrNull(fromStep + 1)?.maneuver?.location
-
-            if (currentStep != null && currentStep.distance > 0) {
-                if (nextStepManeuver != null) {
-                    // Distanz zum ENDE des aktuellen Steps (= Anfang des nächsten Steps)
-                    val distToStepEnd = location.distanceTo(nextStepManeuver)
-                    val fractionRemaining = (distToStepEnd / currentStep.distance).coerceIn(0.0, 1.0)
-                    remaining += currentStep.distance * fractionRemaining
-                    remainingTime += currentStep.duration * fractionRemaining
-                } else {
-                    // Letzter Step (arrive) - Distanz zum Ziel
-                    val distToEnd = location.distanceTo(currentStep.maneuver.location)
-                    remaining += distToEnd.coerceAtMost(currentStep.distance)
-                    val fractionRemaining = (distToEnd / currentStep.distance.coerceAtLeast(1.0)).coerceIn(0.0, 1.0)
-                    remainingTime += currentStep.duration * fractionRemaining
-                }
-            }
-
-            // Restliche Steps voll addieren (ab fromStep + 1)
-            for (i in (fromStep + 1) until route.steps.size) {
-                remaining += route.steps[i].distance
-                remainingTime += route.steps[i].duration
-            }
-
-            // Waypoint Distanz/Zeit berechnen falls vorhanden
-            val waypointDistance = if (waypoint != null) {
-                location.distanceTo(waypoint)
-            } else 0.0
-
-            // Grobe Zeit-Schätzung zum Waypoint (basierend auf durchschnittlicher Geschwindigkeit)
-            val speed = _speed.value.coerceAtLeast(10f)  // mindestens 10 m/s = 36 km/h
-            val waypointTime = if (waypoint != null) {
-                waypointDistance / speed
-            } else 0.0
-
-            _navigationState.update {
-                it.copy(
-                    totalDistanceRemaining = remaining,
-                    totalTimeRemaining = remainingTime,
-                    distanceToWaypoint = waypointDistance,
-                    timeToWaypoint = waypointTime
-                )
-            }
-
-            // Diagnostik: ETA-Berechnung sichtbar machen — gedrosselt auf alle ~5 Updates,
-            // um den Log nicht zu fluten.
-            etaLogTick++
-            if (etaLogTick % 5 == 0) {
-                CrashLogger.log("MainViewModel: ETA tick — fromStep=$fromStep remaining=${remaining.toInt()}m time=${remainingTime.toInt()}s")
-            }
-        } catch (e: Exception) {
-            CrashLogger.logError("MainViewModel", "updateRemainingDistance failed", e)
-        }
-    }
-
-    private var etaLogTick = 0
-
-    /**
-     * Ziel erreicht, wenn nah am Zielpunkt ODER am Routenende auf der Straße. Der Zielpunkt
-     * (Hauskoordinate) liegt oft 20-50 m neben der Straße, 20 m Radius war nie erreichbar.
-     */
-    private fun checkArrival(location: LatLng, state: NavigationState, route: Route): Boolean {
-        val destination = state.destination ?: return false
-        if (state.waypoint != null) return false  // erst Zwischenziel
-        val toDest = location.distanceTo(destination)
-        val toRouteEnd = route.geometry.lastOrNull()?.let { location.distanceTo(it) } ?: Double.MAX_VALUE
-        // Hauspunkt nur zusammen mit kurzer Restroute: Luftlinie nah != auf der Straße nah
-        // (Fahrer-Report: Wende + Kreisverkehr noch vor sich, trotzdem "Ziel erreicht").
-        val nearDestByRoad = toDest < ARRIVAL_RADIUS_DEST_M && state.totalDistanceRemaining < ARRIVAL_MAX_REMAINING_M
-        if (!nearDestByRoad && toRouteEnd >= ARRIVAL_RADIUS_ROUTE_END_M) return false
-        CrashLogger.log("MainViewModel: Arrived (toDest=${toDest.toInt()}m, toRouteEnd=${toRouteEnd.toInt()}m, remaining=${state.totalDistanceRemaining.toInt()}m)")
-        _navigationState.update { it.copy(hasArrived = true, isNavigating = false) }
-        navigationService?.speakNow("Ziel erreicht")
-        stopNavigation()
-        return true
     }
 
     private fun speakInstruction(step: RouteStep) {
