@@ -33,6 +33,10 @@ class DaLangApp : Application() {
             CrashLogger.logError("DaLangApp", "HereConfig init failed", e)
         }
 
+        try { de.dalang.nav.util.DebugUpload.init(this) } catch (e: Exception) {
+            CrashLogger.logError("DaLangApp", "DebugUpload init failed", e)
+        }
+
         // MapLibre MUSS vor jeder View initialisiert werden
         try {
             CrashLogger.log("DaLangApp: Initializing MapLibre")

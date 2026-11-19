@@ -11,8 +11,9 @@ import java.util.*
 
 /**
  * Sprach-Bugreport während der Fahrt: nimmt eine Sprachnotiz auf und legt daneben
- * einen Snapshot des App-Zustands + GPX + Log ab. Abholen per
- * `adb pull /sdcard/Android/data/de.dalang.nav/files/debug_reports`.
+ * einen Snapshot des App-Zustands + GPX + Log ab. Nach dem Stopp wird alles als
+ * ein Zip in die Upload-Warteschlange gelegt (siehe DebugUpload); Fallback:
+ * `adb pull /sdcard/Android/data/de.dalang.nav/files/debug_reports/outbox`.
  * Transkription passiert am Rechner (kein Speech-Recognizer auf LineageOS).
  */
 object DebugReporter {
@@ -23,24 +24,26 @@ object DebugReporter {
 
     fun start(context: Context, snapshot: String): Boolean {
         if (recorder != null) return true
+        appCtx = context.applicationContext
         return try {
             val dir = File(context.getExternalFilesDir(null), "debug_reports").apply { mkdirs() }
             val base = "report_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.GERMANY).format(Date())
 
             // Snapshot/GPX/Log im Hintergrund schreiben: vorher blockierte das den UI-Thread
             // ~1-2 s, der Fahrer tippte nochmal und stoppte die Aufnahme sofort (Mini-Dateien).
-            Thread {
+            snapshotThread = Thread {
                 try {
                     File(dir, "$base.txt").writeText(
                         snapshot + "\n\n" + GpsTrackLogger.getDebugSummary() +
-                            "\n\n=== Log (Ende) ===\n" + (CrashLogger.getLastCrashLog()?.takeLast(20_000) ?: "-")
+                            "\n\n=== Log (Ende) ===\n" + DebugUpload.tail(CrashLogger.getLastCrashLog())
                     )
                     GpsTrackLogger.exportToGpx(context)?.let { it.copyTo(File(dir, "$base.gpx"), overwrite = true) }
                 } catch (e: Exception) {
                     CrashLogger.logError("DebugReporter", "snapshot failed", e)
                 }
-            }.start()
+            }.also { it.start() }
 
+            current = File(dir, "$base.txt") to File(dir, "$base.m4a")
             startedAt = System.currentTimeMillis()
             @Suppress("DEPRECATION")
             recorder = MediaRecorder().apply {
@@ -69,6 +72,9 @@ object DebugReporter {
     }
 
     private var startedAt = 0L
+    private var snapshotThread: Thread? = null
+    private var current: Pair<File, File>? = null
+    private lateinit var appCtx: Context
 
     /** force=true nur für Auto-Stop; Tipp innerhalb 1,5 s nach Start = Doppeltipp, ignorieren. */
     fun stop(force: Boolean = false) {
@@ -79,5 +85,11 @@ object DebugReporter {
         try { r.stop() } catch (e: Exception) { CrashLogger.logError("DebugReporter", "stop failed", e) }
         r.release()
         CrashLogger.log("DebugReporter: recording stopped")
+        val (txt, m4a) = current ?: return
+        val st = snapshotThread
+        Thread {  // auf Snapshot-Thread warten, dann zippen + hochladen (nie auf dem UI-Thread)
+            st?.join()
+            DebugUpload.enqueue(appCtx, txt, m4a, File(txt.path.removeSuffix(".txt") + ".gpx"))
+        }.start()
     }
 }

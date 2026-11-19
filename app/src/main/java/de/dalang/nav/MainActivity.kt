@@ -60,6 +60,7 @@ import de.dalang.nav.ui.components.UpdateDialog
 import de.dalang.nav.ui.theme.DaLangTheme
 import de.dalang.nav.util.CrashLogger
 import de.dalang.nav.util.DebugReporter
+import de.dalang.nav.util.DebugUpload
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
@@ -449,7 +450,7 @@ fun DaLangAppContent(viewModel: MainViewModel) {
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(top = 120.dp, end = 8.dp)  // unter dem Debug-Button
+                .padding(top = 12.dp, end = 8.dp)
         ) {
             WaypointIndicator(
                 waypointType = navigationState.waypointType,
@@ -596,9 +597,8 @@ fun DaLangAppContent(viewModel: MainViewModel) {
             },
             containerColor = if (DebugReporter.isRecording) Color.Red else MaterialTheme.colorScheme.surface,
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(top = 12.dp, end = 12.dp)
+                .align(Alignment.CenterEnd)
+                .padding(end = 12.dp)
         ) {
             Icon(
                 if (DebugReporter.isRecording) Icons.Filled.Stop else Icons.Filled.BugReport,
@@ -734,6 +734,7 @@ fun DrawerContent(
     var showHereSettings by remember { mutableStateOf(false) }
     var showOfflineMaps by remember { mutableStateOf(false) }
     var showDebugLog by remember { mutableStateOf(false) }
+    var showDebugUpload by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var showUpdate by remember { mutableStateOf(false) }
     var showPoiExpanded by remember { mutableStateOf(false) }
@@ -949,6 +950,14 @@ fun DrawerContent(
             modifier = Modifier.padding(vertical = 4.dp)
         )
 
+        // Debug-Upload
+        NavigationDrawerItem(
+            label = { Text("Debug-Upload (${DebugUpload.pending} warten)") },
+            selected = false,
+            onClick = { showDebugUpload = true },
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+
         // App aktualisieren
         NavigationDrawerItem(
             label = { Text("App aktualisieren") },
@@ -997,6 +1006,34 @@ fun DrawerContent(
     if (showOfflineMaps) {
         OfflineMapsDialog(
             onDismiss = { showOfflineMaps = false }
+        )
+    }
+
+    if (showDebugUpload) {
+        var url by remember { mutableStateOf(settingsRepository.debugUploadUrl) }
+        var tester by remember { mutableStateOf(settingsRepository.testerName) }
+        AlertDialog(
+            onDismissRequest = { showDebugUpload = false },
+            title = { Text("Debug-Upload") },
+            text = {
+                Column {
+                    OutlinedTextField(tester, { tester = it }, label = { Text("Tester-Name") }, singleLine = true)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(url, { url = it }, singleLine = true,
+                        label = { Text("Link-Override (leer = Standard)") })
+                    Spacer(Modifier.height(8.dp))
+                    Text("${DebugUpload.pending} Reports warten auf Upload",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    settingsRepository.debugUploadUrl = url
+                    settingsRepository.testerName = tester
+                    DebugUpload.flush(silent = false)
+                    showDebugUpload = false
+                }) { Text("Speichern") }
+            }
         )
     }
 
