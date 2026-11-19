@@ -576,6 +576,7 @@ fun DaLangAppContent(viewModel: MainViewModel) {
                 appendLine("Nächstes relevantes: ${st.nextRelevantStep?.instruction} ${st.nextRelevantStep?.maneuver} in ${st.distanceToNextRelevantStep().toInt()} m")
                 appendLine("Lanes: ${st.nextRelevantStep?.laneInfo}")
                 appendLine("Straßentyp aktueller Step: motorway=${st.currentStep?.isMotorway}, Voransagen=${announceDistancesM(st.currentStep)}")
+                appendLine(viewModel.progressDebug())
                 appendLine("Rest: ${st.totalDistanceRemaining.toInt()} m / ${(st.totalTimeRemaining / 60).toInt()} min, Recalc: $isRecalculatingRoute")
                 appendLine("Waypoint: ${st.waypointName} ${st.waypoint}")
             }
