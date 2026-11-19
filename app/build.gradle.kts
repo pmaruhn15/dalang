@@ -20,8 +20,8 @@ android {
         applicationId = "de.dalang.nav"
         minSdk = 29
         targetSdk = 34
-        versionCode = 133
-        versionName = "1.4.2"
+        versionCode = 134
+        versionName = "1.5.0"
         // Upload-Link aus Env/CI-Secret, steht nicht im Repo; leer = Upload aus
         buildConfigField("String", "DALANG_DEBUG_UPLOAD_URL", "\"${System.getenv("DALANG_DEBUG_UPLOAD_URL") ?: ""}\"")
         ndk { abiFilters += "arm64-v8a" }  // nur Fairphone/aktuelle Geräte → APK deutlich kleiner
