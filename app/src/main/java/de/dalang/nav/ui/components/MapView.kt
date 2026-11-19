@@ -84,6 +84,10 @@ fun MapViewComposable(
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var isMapReady by remember { mutableStateOf(false) }
     var hasCenteredOnLocation by remember { mutableStateOf(false) }
+    // Kamera-Mitführen nach Navigationsende (kein Compose-State: wird im update-Lambda geschrieben)
+    val followAfterNav = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
+    val wasNavigating = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
+    val gestureListenerAdded = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     var styleVersion by remember { mutableIntStateOf(0) }
 
     // Stabilisierter Zoom-Level: nur ändern wenn signifikante Differenz (> 0.3)
@@ -234,6 +238,15 @@ fun MapViewComposable(
             try {
                 val map = mapLibreMap
                 if (map != null && isMapReady) {
+                    if (gestureListenerAdded.compareAndSet(false, true)) {
+                        map.addOnCameraMoveStartedListener { reason ->
+                            if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) {
+                                followAfterNav.set(false)
+                            }
+                        }
+                    }
+                    if (wasNavigating.getAndSet(isNavigating) && !isNavigating) followAfterNav.set(true)
+                    if (isNavigating || route != null) followAfterNav.set(false)
                     // Kamera auf aktuelle Position zentrieren (nur beim ersten Mal oder bei Navigation)
                     if (currentLocation != null) {
                         if (isNavigating) {
@@ -262,6 +275,16 @@ fun MapViewComposable(
                                 ),
                                 1000,  // Gleiche Dauer wie Marker-Animation
                                 false  // Nicht abbrechbar durch Gesten
+                            )
+                        } else if (followAfterNav.get() && route == null) {
+                            // Nach "Ziel erreicht" weiter mitfahren (Parkplatzsuche), bis der
+                            // Nutzer die Karte selbst bewegt — sonst fuhr der Marker aus dem Bild.
+                            map.easeCamera(
+                                CameraUpdateFactory.newLatLng(
+                                    org.maplibre.android.geometry.LatLng(currentLocation.lat, currentLocation.lng)
+                                ),
+                                1000,
+                                false
                             )
                         } else if (!hasCenteredOnLocation) {
                             // Einmalig auf Standort zentrieren beim App-Start

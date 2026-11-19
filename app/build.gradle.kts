@@ -20,8 +20,8 @@ android {
         applicationId = "de.dalang.nav"
         minSdk = 29
         targetSdk = 34
-        versionCode = 130
-        versionName = "1.3.29"
+        versionCode = 131
+        versionName = "1.4.0"
         // Upload-Link aus Env/CI-Secret, steht nicht im Repo; leer = Upload aus
         buildConfigField("String", "DALANG_DEBUG_UPLOAD_URL", "\"${System.getenv("DALANG_DEBUG_UPLOAD_URL") ?: ""}\"")
         ndk { abiFilters += "arm64-v8a" }  // nur Fairphone/aktuelle Geräte → APK deutlich kleiner
@@ -100,6 +100,5 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")  // echtes org.json statt Android-Stub
 }
