@@ -88,7 +88,8 @@ object DebugUpload {
         }
     }
 
-    fun tail(log: String?, n: Int = LOG_LINES): String = log?.lines()?.takeLast(n)?.joinToString("\n") ?: "-"
+    fun tail(log: String?, n: Int = LOG_LINES): String =
+        log?.lines()?.takeLast(n)?.joinToString("\n")?.let { CrashLogger.redact(it) } ?: "-"  // auch Alt-Logs maskieren
 
     // ---------- Android-Teil ----------
 

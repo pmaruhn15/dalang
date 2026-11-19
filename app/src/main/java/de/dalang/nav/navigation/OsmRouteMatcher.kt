@@ -98,7 +98,7 @@ internal object OsmRouteMatcher {
             typicalDuration = here.typicalDuration,
             hasTrafficData = here.hasTrafficData,
             trafficSegments = remapTraffic(here.trafficSegments, here.geometry, osm.geometry),
-            steps = osm.steps.map { it.copy(duration = it.duration * factor) }
+            steps = osm.steps.map { it.copy(duration = it.duration * factor, freeFlowDuration = it.duration) }
         )
     }
 

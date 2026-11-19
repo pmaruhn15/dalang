@@ -33,7 +33,9 @@ class DaLangApp : Application() {
             CrashLogger.logError("DaLangApp", "HereConfig init failed", e)
         }
 
-        try { de.dalang.nav.util.DebugUpload.init(this) } catch (e: Exception) {
+        // Nicht im :crash-Prozess (CrashActivity) — sonst flushen zwei Prozesse dieselbe Queue (Review)
+        val isMainProcess = android.app.Application.getProcessName() == packageName
+        if (isMainProcess) try { de.dalang.nav.util.DebugUpload.init(this) } catch (e: Exception) {
             CrashLogger.logError("DaLangApp", "DebugUpload init failed", e)
         }
 

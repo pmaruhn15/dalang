@@ -27,7 +27,8 @@ data class RouteStep(
     val maneuver: Maneuver,
     val geometry: List<LatLng>,
     val laneInfo: LaneInfo? = null,
-    val isMotorway: Boolean? = null  // aus OSM via OSRM-"classes"; null = unbekannt
+    val isMotorway: Boolean? = null,  // aus OSM via OSRM-"classes"; null = unbekannt
+    val freeFlowDuration: Double? = null  // unskalierte OSRM-Dauer (Straßentyp-Einstufung)
 )
 
 data class Maneuver(

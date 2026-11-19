@@ -46,7 +46,9 @@ object DebugReporter {
             current = File(dir, "$base.txt") to File(dir, "$base.m4a")
             startedAt = System.currentTimeMillis()
             @Suppress("DEPRECATION")
-            recorder = MediaRecorder().apply {
+            // Erst zuweisen, dann konfigurieren: wirft prepare()/start(), gibt der catch-Block frei
+            recorder = MediaRecorder()
+            recorder!!.apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)

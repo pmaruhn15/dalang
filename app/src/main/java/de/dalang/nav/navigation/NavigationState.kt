@@ -166,7 +166,10 @@ fun RouteStep.isRelevantManeuver(): Boolean {
  * Die erste (größte) Distanz ist auch der Punkt, ab dem die Spuranzeige erscheint.
  */
 fun announceDistancesM(roadStep: RouteStep?): List<Int> {
-    val plannedKmh = roadStep?.takeIf { it.duration > 0 }?.let { it.distance / it.duration * 3.6 } ?: 0.0
+    // Straßentyp aus der verkehrsfreien Dauer: die HERE-Gesamtdauer wird global auf die Steps
+    // skaliert, Stau irgendwo würde sonst eine freie Autobahn zur "Landstraße" machen (Review).
+    val dur = roadStep?.freeFlowDuration ?: roadStep?.duration ?: 0.0
+    val plannedKmh = if (roadStep != null && dur > 0) roadStep.distance / dur * 3.6 else 0.0
     return when {
         roadStep?.isMotorway == true || plannedKmh >= 85 -> listOf(5000, 1000, 300)  // Fernankündigung, Vorbereitung, kurz davor
         plannedKmh >= 55 -> listOf(500, 100)          // Landstraße

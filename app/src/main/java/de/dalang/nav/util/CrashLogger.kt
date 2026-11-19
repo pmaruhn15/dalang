@@ -103,11 +103,16 @@ object CrashLogger {
                 file.writeText("... [truncated]\n$halfContent")
             }
 
-            file.appendText(text)
+            file.appendText(redact(text))
         } catch (e: Exception) {
             Log.e(TAG, "File write failed", e)
         }
     }
+
+    // API-Keys/Tokens in URLs maskieren: das Log geht per Debug-Report in die Nextcloud (Review).
+    private val SECRET = Regex("""(?i)\b(api_?key|key|access_token|token)=[^&\s"']+""")
+
+    fun redact(text: String): String = SECRET.replace(text) { "${it.groupValues[1]}=***" }
 
     fun getLastCrashLog(): String? {
         return try {
