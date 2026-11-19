@@ -112,6 +112,9 @@ class RouteProgress(val route: Route, private val log: (String) -> Unit = {}) {
 
     val remainingM: Double get() = (lengthM - s).coerceAtLeast(0.0)
 
+    /** Lage des Manövers von Step [i] auf der Route (m ab Start); für die Offline-Auswertung (TripEvaluation). */
+    fun stepPositionM(i: Int): Double = stepS[i]
+
     /** Distanz entlang der Route bis zum Manöver von Step [i] (Routenende, falls es ihn nicht gibt). */
     fun distanceToStep(i: Int): Double =
         if (i in stepS.indices) (stepS[i] - s).coerceAtLeast(0.0) else remainingM
