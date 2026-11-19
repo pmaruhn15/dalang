@@ -22,6 +22,8 @@ android {
         targetSdk = 34
         versionCode = 130
         versionName = "1.3.29"
+        // Upload-Link aus Env/CI-Secret, steht nicht im Repo; leer = Upload aus
+        buildConfigField("String", "DALANG_DEBUG_UPLOAD_URL", "\"${System.getenv("DALANG_DEBUG_UPLOAD_URL") ?: ""}\"")
         ndk { abiFilters += "arm64-v8a" }  // nur Fairphone/aktuelle Geräte → APK deutlich kleiner
     }
 
@@ -50,6 +52,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {
@@ -87,6 +90,8 @@ dependencies {
 
     // DataStore for preferences
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    testImplementation("junit:junit:4.13.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

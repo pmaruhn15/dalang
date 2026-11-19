@@ -28,6 +28,8 @@ jobs:
 
     - name: Build Debug APK
       run: ./gradlew assembleDebug
+      env:
+        DALANG_DEBUG_UPLOAD_URL: ${{ secrets.DALANG_DEBUG_UPLOAD_URL }}
 
     - name: Get version info
       id: version

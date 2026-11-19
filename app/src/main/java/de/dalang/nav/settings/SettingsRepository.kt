@@ -72,6 +72,15 @@ class SettingsRepository(context: Context) {
         set(value) = prefs.edit { putBoolean(KEY_VOICE_ENABLED, value) }
 
     // Piper TTS (hochwertige Offline-Stimme) aktivieren/deaktivieren
+    /** Override fuer den Debug-Upload-Link (leer = BuildConfig-Default). */
+    var debugUploadUrl: String
+        get() = prefs.getString("debug_upload_url", "") ?: ""
+        set(value) = prefs.edit { putString("debug_upload_url", value.trim()) }
+
+    var testerName: String
+        get() = prefs.getString("tester_name", null)?.takeIf { it.isNotBlank() } ?: android.os.Build.MODEL
+        set(value) = prefs.edit { putString("tester_name", value.trim()) }
+
     var piperTtsEnabled: Boolean
         get() = prefs.getBoolean(KEY_PIPER_TTS_ENABLED, true)
         set(value) = prefs.edit { putBoolean(KEY_PIPER_TTS_ENABLED, value) }
