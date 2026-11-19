@@ -844,31 +844,37 @@ fun DrawerContent(
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                ThemeMode.entries.forEach { mode ->
-                    val isSelected = currentThemeMode == mode
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = {
-                            currentThemeMode = mode
-                            settingsRepository.themeMode = mode
-                            onSettingsChanged()
-                        },
-                        label = {
-                            Text(
-                                text = when (mode) {
-                                    ThemeMode.AUTO -> "Auto"
-                                    ThemeMode.LIGHT -> "Hell"
-                                    ThemeMode.DARK -> "Dunkel"
-                                    ThemeMode.SYSTEM -> "System"
-                                },
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    )
+            // 2x2 statt einer Reihe: 4 Chips passen nicht in 300 dp, "System" brach
+            // buchstabenweise um (Fahrer-Screenshot)
+            ThemeMode.entries.chunked(2).forEach { rowModes ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowModes.forEach { mode ->
+                        FilterChip(
+                            selected = currentThemeMode == mode,
+                            onClick = {
+                                currentThemeMode = mode
+                                settingsRepository.themeMode = mode
+                                onSettingsChanged()
+                            },
+                            label = {
+                                Text(
+                                    text = when (mode) {
+                                        ThemeMode.AUTO -> "Auto"
+                                        ThemeMode.LIGHT -> "Hell"
+                                        ThemeMode.DARK -> "Dunkel"
+                                        ThemeMode.SYSTEM -> "System"
+                                    },
+                                    maxLines = 1,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         }
@@ -887,7 +893,7 @@ fun DrawerContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {  // Abstand zum Schalter
                 Text(
                     text = "Piper TTS",
                     style = MaterialTheme.typography.bodyMedium,

@@ -132,11 +132,12 @@ object DebugUpload {
                 val info = "Gerät: ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\n" +
                     "App: ${appCtx.packageManager.getPackageInfo(appCtx.packageName, 0).versionName}\nTester: $tester\nZeit: $now\n"
                 val zip = File(outbox(appCtx), fileName(now, tester))
+                val screenshot = File(snapshotTxt.path.removeSuffix(".txt") + ".jpg")
                 writeZip(
-                    zip, mapOf("audio.m4a" to audio, "track.gpx" to gpx),
+                    zip, mapOf("audio.m4a" to audio, "track.gpx" to gpx, "screenshot.jpg" to screenshot),
                     mapOf("info.txt" to info, "snapshot.txt" to (snapshotTxt.takeIf { it.exists() }?.readText() ?: "-"))
                 )
-                listOf(snapshotTxt, audio, gpx).forEach { it.delete() }
+                listOf(snapshotTxt, audio, gpx, screenshot).forEach { it.delete() }
                 val files = queued().toMutableList()
                 while (files.size > 1 && files.sumOf { it.length() } > MAX_QUEUE_BYTES) files.removeAt(0).delete()
                 refresh()

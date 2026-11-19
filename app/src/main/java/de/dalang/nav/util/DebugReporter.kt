@@ -1,7 +1,17 @@
 package de.dalang.nav.util
 
+import android.app.Activity
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.view.SurfaceView
+import android.view.View
+import android.view.ViewGroup
 import android.media.MediaRecorder
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -43,6 +53,7 @@ object DebugReporter {
                 }
             }.also { it.start() }
 
+            (context as? Activity)?.let { captureScreen(it, File(dir, "$base.jpg")) }
             current = File(dir, "$base.txt") to File(dir, "$base.m4a")
             startedAt = System.currentTimeMillis()
             @Suppress("DEPRECATION")
@@ -71,6 +82,58 @@ object DebugReporter {
             recorder = null
             false
         }
+    }
+
+    /**
+     * Screenshot des eigenen Fensters im Moment des Tippens (für visuelle Bugs). PixelCopy statt
+     * View.drawToBitmap, weil die MapLibre-Karte eine GL-Surface ist und sonst schwarz bliebe.
+     * Braucht keine Berechtigung (nur eigenes Fenster).
+     */
+    private fun captureScreen(activity: Activity, out: File) {
+        try {
+            val view = activity.window.decorView
+            if (view.width == 0 || view.height == 0) return
+            val main = Handler(Looper.getMainLooper())
+            val win = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+            // Die Karte ist eine eigene GL-SurfaceView (im Fenster-Puffer nur ein Loch) ->
+            // separat kopieren und unter das Fenster legen.
+            val surface = findSurfaceView(view)
+            val loc = IntArray(2).also { surface?.getLocationInWindow(it) }
+            val map = surface?.takeIf { it.width > 0 && it.height > 0 }
+                ?.let { Bitmap.createBitmap(it.width, it.height, Bitmap.Config.ARGB_8888) }
+
+            fun compose() = Thread {
+                try {
+                    val outBmp = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                    Canvas(outBmp).apply {
+                        drawColor(Color.BLACK)
+                        map?.let { drawBitmap(it, loc[0].toFloat(), loc[1].toFloat(), null) }
+                        drawBitmap(win, 0f, 0f, null)
+                    }
+                    out.outputStream().use { outBmp.compress(Bitmap.CompressFormat.JPEG, 80, it) }
+                    outBmp.recycle()
+                } catch (e: Exception) {
+                    CrashLogger.logError("DebugReporter", "screenshot write failed", e)
+                } finally { win.recycle(); map?.recycle() }
+            }.start()
+
+            PixelCopy.request(activity.window, win, { r ->
+                if (r != PixelCopy.SUCCESS) { CrashLogger.log("DebugReporter: window copy failed ($r)"); return@request }
+                if (surface == null || map == null) { compose(); return@request }
+                PixelCopy.request(surface, map, { r2 ->
+                    if (r2 != PixelCopy.SUCCESS) CrashLogger.log("DebugReporter: map copy failed ($r2)")
+                    compose()
+                }, main)
+            }, main)
+        } catch (e: Exception) {
+            CrashLogger.logError("DebugReporter", "screenshot failed", e)
+        }
+    }
+
+    private fun findSurfaceView(v: View): SurfaceView? = when (v) {
+        is SurfaceView -> v
+        is ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { findSurfaceView(v.getChildAt(it)) }
+        else -> null
     }
 
     private var startedAt = 0L
