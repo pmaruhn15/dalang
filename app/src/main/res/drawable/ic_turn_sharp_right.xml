@@ -5,8 +5,14 @@
     android:viewportWidth="48"
     android:viewportHeight="48">
 
-    <!-- Sharp right turn arrow (more aggressive angle) -->
+    <!-- Scharf rechts: Strich (8 breit, runde Ecken) + Pfeilspitze, gleicher Stil wie ic_turn_slight_* -->
+    <path
+        android:pathData="M12,44L12,12L34,34"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="8"
+        android:strokeLineJoin="round" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M44,32L44,12L36,20L36,16L24,16L24,44L32,44L32,24L36,24L36,20L44,28Z" />
+        android:pathData="M42.5,42.5L26.2,41.8L41.8,26.2Z" />
 </vector>
