@@ -52,10 +52,14 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         name: DaLang ${{ steps.version.outputs.version }}
         tag_name: ${{ steps.version.outputs.tag }}
+        # Tag auf den gebauten Commit (sonst Default-Branch -> alle Releases gleiches created_at,
+        # GitHubs "latest" wurde zufällig und ältere Geräte bekamen kein Update angeboten)
+        target_commitish: ${{ github.sha }}
+        make_latest: true
         body: |
           Automatischer Build von Commit ${{ github.sha }}
 

@@ -86,7 +86,9 @@ class UpdateRepository(private val context: Context) {
         CrashLogger.log("UpdateRepository: Checking for updates...")
 
         try {
-            val url = "https://api.github.com/repos/$githubOwner/$githubRepo/releases/latest"
+            // Liste statt /releases/latest: "latest" war bei gleichen created_at-Daten zufällig
+            // -> höchste Version selbst bestimmen.
+            val url = "https://api.github.com/repos/$githubOwner/$githubRepo/releases?per_page=15"
             CrashLogger.log("UpdateRepository: Fetching $url")
 
             val connection = URL(url).openConnection()
@@ -96,7 +98,11 @@ class UpdateRepository(private val context: Context) {
             connection.readTimeout = 15000
 
             val response = connection.getInputStream().bufferedReader().readText()
-            val json = JSONObject(response)
+            val releases = org.json.JSONArray(response)
+            val json = (0 until releases.length()).map { releases.getJSONObject(it) }
+                .filter { !it.optBoolean("prerelease") && !it.optBoolean("draft") }
+                .maxByOrNull { parseVersionCode(it.optString("tag_name", "").removePrefix("v")) }
+                ?: JSONObject()
 
             val tagName = json.optString("tag_name", "").removePrefix("v")
             val releaseNotes = json.optString("body", "Keine Release-Notes verfügbar")
