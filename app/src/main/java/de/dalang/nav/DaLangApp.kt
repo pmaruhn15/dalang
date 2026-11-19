@@ -39,6 +39,10 @@ class DaLangApp : Application() {
             CrashLogger.logError("DaLangApp", "DebugUpload init failed", e)
         }
 
+        if (isMainProcess) try { de.dalang.nav.util.TripRecorder.recoverIncomplete(this) } catch (e: Exception) {
+            CrashLogger.logError("DaLangApp", "TripRecorder recover failed", e)
+        }
+
         // MapLibre MUSS vor jeder View initialisiert werden
         try {
             CrashLogger.log("DaLangApp: Initializing MapLibre")

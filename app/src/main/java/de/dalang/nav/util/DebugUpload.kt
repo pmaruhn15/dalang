@@ -3,6 +3,7 @@ package de.dalang.nav.util
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -45,9 +46,15 @@ import java.util.zip.ZipOutputStream
  */
 object DebugUpload {
     private const val MAX_QUEUE_BYTES = 50L * 1024 * 1024
+    private const val MAX_TRIP_BYTES = 300L * 1024 * 1024
+    const val TRIP_PREFIX = "trip_"
     private const val LOG_LINES = 2000
 
+    /** Debug-Reports in der Warteschlange. */
     var pending by mutableIntStateOf(0)
+        private set
+    /** Fahrten (trip_*.zip) in der Warteschlange; gehen nur über unmetered Netz (WLAN) raus. */
+    var pendingTrips by mutableIntStateOf(0)
         private set
 
     private val io = Executors.newSingleThreadExecutor()
@@ -66,8 +73,10 @@ object DebugUpload {
         Regex("""^(https?://[^/]+(?:/.*?)?)/s/([A-Za-z0-9]+)/?(?:[?#].*)?$""")
             .matchEntire(link.trim())?.let { it.groupValues[1] to it.groupValues[2] }
 
-    fun fileName(time: Date, tester: String): String =
-        "dalang_report_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.GERMANY).format(time) +
+    fun stamp(time: Date): String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.GERMANY).format(time)
+
+    fun fileName(time: Date, tester: String, prefix: String = "dalang_report_"): String =
+        prefix + stamp(time) +
             "_" + tester.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "tester" }.take(40) + ".zip"
 
     fun putRequest(base: String, token: String, name: String, file: File, legacy: Boolean): Request {
@@ -101,7 +110,19 @@ object DebugUpload {
     private fun queued(): List<File> =
         outbox(appCtx).listFiles { f -> f.extension == "zip" }?.sortedBy { it.name } ?: emptyList()
 
-    private fun refresh() { val n = queued().size; main.post { pending = n } }
+    private fun isTrip(f: File) = f.name.startsWith(TRIP_PREFIX)
+
+    private fun refresh() {
+        val q = queued()
+        val t = q.count { isTrip(it) }
+        main.post { pending = q.size - t; pendingTrips = t }
+    }
+
+    /** WLAN o.ä.: Verbindung ist nicht datenvolumenpflichtig. */
+    private fun unmetered(): Boolean = try {
+        val cm = appCtx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == true
+    } catch (e: Exception) { false }
 
     private fun toast(msg: String) = main.post { Toast.makeText(appCtx, msg, Toast.LENGTH_SHORT).show() }
 
@@ -138,8 +159,7 @@ object DebugUpload {
                     mapOf("info.txt" to info, "snapshot.txt" to (snapshotTxt.takeIf { it.exists() }?.readText() ?: "-"))
                 )
                 listOf(snapshotTxt, audio, gpx, screenshot).forEach { it.delete() }
-                val files = queued().toMutableList()
-                while (files.size > 1 && files.sumOf { it.length() } > MAX_QUEUE_BYTES) files.removeAt(0).delete()
+                trim(false, MAX_QUEUE_BYTES)
                 refresh()
                 toast("Report gespeichert")
                 flush(silent = false)
@@ -147,10 +167,36 @@ object DebugUpload {
         }
     }
 
+    /**
+     * Aus TripRecorder (eigener Thread): Fahrt-Ordner zippen (trip_*.zip, erst .tmp, dann atomar umbenennen -
+     * flush() läuft parallel), Ordner löschen, Fahrten-Limit durchsetzen. Upload nur im WLAN (siehe flush).
+     */
+    fun enqueueTrip(ctx: Context, name: String, dir: File) {
+        appCtx = ctx.applicationContext
+        io.execute {
+            try {
+                val tmp = File(outbox(appCtx), "$name.tmp")
+                writeZip(tmp, dir.listFiles().orEmpty().sortedBy { it.name }.associate { it.name to it }, emptyMap())
+                tmp.renameTo(File(outbox(appCtx), name))
+                dir.deleteRecursively()
+                trim(true, MAX_TRIP_BYTES)
+                refresh()
+                flush(silent = true)
+            } catch (e: Exception) { CrashLogger.logError("DebugUpload", "enqueueTrip failed", e) }
+        }
+    }
+
+    /** Älteste Zips (Fahrten bzw. Reports) löschen, bis die Gruppe unter [limit] liegt; das neueste bleibt immer. */
+    private fun trim(trips: Boolean, limit: Long) {
+        val files = queued().filter { isTrip(it) == trips }.toMutableList()
+        while (files.size > 1 && files.sumOf { it.length() } > limit) files.removeAt(0).delete()
+    }
+
     fun flush(silent: Boolean) {
         io.execute {
             val share = parseShare(uploadUrl(appCtx)) ?: return@execute
-            val files = queued()
+            // Reports immer, Fahrten (trip_ sortiert nach den Reports) nur im WLAN
+            val files = queued().filter { !isTrip(it) || unmetered() }
             var ok = 0
             for (f in files) {
                 if (!send(share, f)) break

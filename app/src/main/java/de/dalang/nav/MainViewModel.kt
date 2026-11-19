@@ -19,6 +19,7 @@ import de.dalang.nav.settings.SettingsRepository
 import de.dalang.nav.settings.ThemeMode
 import de.dalang.nav.util.CrashLogger
 import de.dalang.nav.util.GpsTrackLogger
+import de.dalang.nav.util.TripRecorder
 import java.io.File
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
@@ -317,6 +318,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     .collect { location ->
                         try {
+                            TripRecorder.location(location)  // Fahrtenschreiber: jeder Fix, vor allen Filtern
                             val now = System.currentTimeMillis()
                             val accuracy = if (location.hasAccuracy()) location.accuracy else null
                             val good = accuracy == null || accuracy <= RouteProgress.GOOD_FIX_ACCURACY_M
@@ -325,6 +327,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             if (p?.estimating == true && !good) {
                                 p.update(LatLng(location.latitude, location.longitude), null,
                                     if (location.hasSpeed()) location.speed else null, accuracy, now)
+                                TripRecorder.progress(p, location.elapsedRealtimeNanos)
                                 return@collect
                             }
                             if (p != null && good && p.lastGoodFixMs > 0 && now - p.lastGoodFixMs > RouteProgress.GPS_LOSS_MS) {
@@ -365,6 +368,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     if (location.hasSpeed()) location.speed else null,
                                     accuracy, now
                                 )
+                                TripRecorder.progress(p, location.elapsedRealtimeNanos)
                                 // Anzeige auf die Route snappen, solange sie nah genug ist
                                 _displayLocation.value = p.position?.takeIf { p.matched && p.lateralM <= 30 } ?: smoothedLocation
                                 _distanceToRoute.value = p.lateralM
@@ -607,6 +611,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
 
+            // Fahrtenschreiber (vor der ersten Ansage, damit sie mitgeschrieben wird)
+            TripRecorder.start(getApplication(), state.route, state.destination, state.destinationName)
+
             // Service starten
             try {
                 val intent = Intent(getApplication(), NavigationService::class.java).apply {
@@ -633,6 +640,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun stopNavigation() {
         CrashLogger.log("MainViewModel: stopNavigation")
         try {
+            TripRecorder.stop()
+
             // Pending Route-Retry stoppen — User hat aufgegeben.
             pendingRetryJob?.cancel()
             pendingRetryJob = null
@@ -730,6 +739,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
 
                     CrashLogger.log("MainViewModel: Combined route with waypoint - ${combinedSteps.size} steps, ${combinedDistance}m")
+                    TripRecorder.routeActivated("waypoint", combinedRoute)
 
                     _navigationState.update {
                         it.copy(
@@ -778,6 +788,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 val route = routeRepository.getRoute(current, destination)
                 if (route != null) {
+                    TripRecorder.routeActivated("waypoint", route)
                     _navigationState.update {
                         it.copy(
                             route = route,
@@ -828,6 +839,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (locationJob?.isActive != true) continue
                     val p = currentProgress() ?: continue
                     if (!p.deadReckon(System.currentTimeMillis())) continue
+                    TripRecorder.progress(p)
                     val pos = p.position ?: continue
                     _displayLocation.value = pos
                     _distanceToRoute.value = 0.0
@@ -948,6 +960,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val nearDestByRoad = p.matched && toDest < ARRIVAL_RADIUS_DEST_M && p.remainingM < ARRIVAL_MAX_REMAINING_M
         if (!nearDestByRoad && !p.atRouteEnd) return false
         CrashLogger.log("MainViewModel: Arrived (toDest=${toDest.toInt()}m) — ${p.debugLine()}")
+        TripRecorder.event("arrive", "Ziel erreicht", mapOf("toDest" to toDest, "remaining" to p.remainingM, "s" to p.s))
         _navigationState.update { it.copy(hasArrived = true, isNavigating = false) }
         navigationService?.speakNow("Ziel erreicht")
         stopNavigation()
@@ -969,11 +982,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         recalcJob = viewModelScope.launch(exceptionHandler) {
             try {
                 _isRecalculatingRoute.value = true
+                TripRecorder.event("recalcStart", null, mapOf("lat" to currentLocation.lat, "lng" to currentLocation.lng))
                 CrashLogger.log("MainViewModel: Recalculating route to destination...")
 
                 val route = routeRepository.getRoute(currentLocation, destination)
                 if (route != null && _navigationState.value.isNavigating) {
                     CrashLogger.log("MainViewModel: New route calculated with ${route.steps.size} steps")
+                    TripRecorder.routeActivated("recalc", route)
+                    TripRecorder.event("recalcDone", null, mapOf("ok" to true, "steps" to route.steps.size, "distance" to route.distance))
                     _navigationState.update {
                         it.copy(
                             route = route,
@@ -987,6 +1003,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Verfahren, Fahrer-Report). Die Distanz-Voransagen greifen beim nächsten
                     // GPS-Update, falls das erste Manöver schon in Reichweite liegt.
                 } else {
+                    TripRecorder.event("recalcDone", null, mapOf("ok" to false))
                     CrashLogger.logError("MainViewModel", "Route recalculation failed")
                 }
             } catch (e: Exception) {
@@ -1028,6 +1045,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         CrashLogger.log("MainViewModel: Route promoted; ${newRoute.alternatives.size} alternatives remain")
+        TripRecorder.routeActivated("alternative", newRoute)
     }
 
     // Proaktives Rerouting - prüft periodisch ob schnellere Route verfügbar
@@ -1073,6 +1091,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (timeSaved >= MIN_TIME_SAVINGS_SECONDS) {
                     val savedMinutes = (timeSaved / 60).toInt()
                     CrashLogger.log("MainViewModel: Faster route found! Saves $savedMinutes min")
+                    TripRecorder.routeActivated("faster", newRoute)
 
                     // Route automatisch übernehmen und User informieren
                     _navigationState.update {
@@ -1216,6 +1235,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         CrashLogger.log("MainViewModel: onCleared")
         super.onCleared()
+        TripRecorder.stop(incomplete = true, reason = "vmCleared")
         try {
             stopLocationUpdates()
             if (serviceBound) {
