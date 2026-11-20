@@ -18,7 +18,7 @@ class PhotonResultsTest {
     private val lon = 11.5077
     private val dir = File("src/test/resources/search")
 
-    private fun search(query: String): List<SearchResult> {
+    private fun photonJson(query: String): String {
         val f = File(dir, query.replace("ß", "ss").replace(Regex("[^a-z0-9]+"), "_") + ".json")
         if (System.getenv("SEARCH_RECORD") == "1") {
             Thread.sleep(1100) // Fair-Use
@@ -26,8 +26,10 @@ class PhotonResultsTest {
                 .header("User-Agent", "DaLang Navigation App").build()
             f.writeText(OkHttpClient().newCall(req).execute().use { it.body!!.string() })
         }
-        return PhotonResults.process(f.readText(), query, lat, lon)
+        return f.readText()
     }
+
+    private fun search(query: String) = PhotonResults.process(photonJson(query), query, lat, lon)
 
     private fun List<SearchResult>.dump() = joinToString("\n") {
         "${it.title} | ${it.typeLabel} | ${it.address} | ${"%.1f".format(it.distance)} km" +
@@ -182,5 +184,93 @@ class PhotonResultsTest {
         assertTrue(url, url.contains("limit=20") && url.contains("lang=de"))
         assertTrue(url, url.contains("lat=48.1799") && url.contains("lon=11.5077"))
         assertFalse(SearchRepository.photonUrl("x", null, null).contains("lat="))
+    }
+
+    // ---------------------------------------------------------------- Straße → Hausnummer
+
+    /** Die Münchner Dachauer Straße (1. Treffer, 0,9 km), wie nach dem Tipp in der Liste. */
+    private val dachauerMuenchen by lazy { StreetContext.of(search("dachauer straße").first())!! }
+
+    private fun houseNumbers(query: String, number: String) =
+        PhotonResults.houseNumbers(photonJson(query), dachauerMuenchen, number, lat, lon)
+
+    @Test
+    fun strassenKontext_startNurBeiStrasse_endetWennNameVeraendert() {
+        val street = search("dachauer straße").first()
+        assertTrue(street.isStreet)
+        assertEquals("München", street.city)
+        assertEquals(null, StreetContext.of(search("bergtierpark blindham").first()))
+        assertEquals(null, StreetContext.of(search("bunzlauer straße 8").first { it.typeLabel == "Adresse" }))
+
+        val ctx = dachauerMuenchen
+        assertEquals("Dachauer Straße", ctx.street)
+        assertTrue(ctx.covers("Dachauer Straße "))
+        assertTrue(ctx.covers("Dachauer Straße 12a"))
+        assertTrue(ctx.covers("dachauer straße 1"))
+        assertFalse(ctx.covers("Dachauer Straß"))
+        assertFalse(ctx.covers("Dachauer Weg 12"))
+        assertFalse(ctx.covers(""))
+    }
+
+    @Test
+    fun hausnummerImQuery() {
+        val ctx = dachauerMuenchen
+        assertEquals("", ctx.houseNumberIn("Dachauer Straße "))
+        assertEquals("", ctx.houseNumberIn("Dachauer Straße"))
+        listOf("12", "12a", "12 a", "12-14", "12 - 14", "12-", "12/1", "1").forEach {
+            assertEquals(it, ctx.houseNumberIn("Dachauer Straße $it"))
+        }
+        assertEquals(null, ctx.houseNumberIn("Dachauer Straße München"))
+        assertEquals(null, ctx.houseNumberIn("Dachauer Straße 12 München"))
+        assertEquals("Dachauer Strasse 12 München", ctx.photonQuery("12"))
+    }
+
+    @Test
+    fun hausnummer_nurGleicheStrasseImGleichenOrt_poisZusammengefasst() {
+        // Rohdaten: Nr. 12 auch in Olching, Emmering, Erdweg, Petershausen, Haimhausen …
+        val towns = Regex("\"city\":\"([^\"]+)\"").findAll(photonJson("dachauer strasse 12")).map { it.groupValues[1] }.toSet()
+        assertTrue(towns.toString(), towns.size >= 5 && "München" in towns && "Olching" in towns)
+
+        for (query in listOf("dachauer strasse 12", "dachauer strasse 12 münchen")) {
+            val r = houseNumbers(query, "12")
+            assertEquals(query + " " + r.dump(), 1, r.size)
+            with(r[0]) {
+                assertEquals("Dachauer Straße 12", title)
+                assertEquals("80335 München", address) // andere PLZ als der Straßen-Treffer (80637)
+                assertEquals("Adresse · Advastay by KING's, California Bean", typeLabel)
+                assertEquals("Dachauer Straße 12, 80335 München", displayName)
+                assertEquals("house", type) // Koordinate der reinen Adresse, nicht des Hotels
+            }
+        }
+    }
+
+    @Test
+    fun hausnummer_praefix_sortiertNachNummer() {
+        // „… 1 münchen“: München liefert Photon nur 98 und 118, Oberschleißheim/Indersdorf haben die echte 1
+        val r = houseNumbers("dachauer strasse 1 münchen", "1")
+        assertEquals(r.dump(), listOf("Dachauer Straße 118"), r.map { it.title })
+        assertEquals("Adresse · Oberlandesgericht München - Strafsenate", r[0].typeLabel)
+        // 12, 12a, 12b … sortiert, 12 vor 12a
+        val ctx = StreetContext(dachauerMuenchen.result.copy(city = "Oberschleißheim"))
+        val o = PhotonResults.houseNumbers(photonJson("dachauer strasse 12 münchen"), ctx, "12", lat, lon)
+        assertEquals(listOf("12a", "12b", "12c"), o.map { it.title.substringAfterLast(" ") })
+    }
+
+    @Test
+    fun hausnummerNichtGefunden_hinweisStattLeererListe() {
+        val ctx = dachauerMuenchen
+        val none = houseNumbers("dachauer strasse 12", "99")
+        assertTrue(none.isEmpty())
+        val list = ctx.withAddresses(none)
+        assertEquals(1, list.size)
+        assertEquals("Hausnummer nicht gefunden – Dachauer Straße ohne Nummer navigieren", list[0].title)
+        assertEquals(ctx.result, ctx.target(list[0]))
+
+        assertEquals(listOf("Dachauer Straße · ohne Hausnummer navigieren"), ctx.withAddresses(null).map { it.title })
+        val found = ctx.withAddresses(houseNumbers("dachauer strasse 12", "12"))
+        assertEquals(listOf("Dachauer Straße · ohne Hausnummer navigieren", "Dachauer Straße 12"), found.map { it.title })
+        assertEquals(ctx.result, ctx.target(found[0]))
+        assertEquals(found[1], ctx.target(found[1]))
+        assertTrue(found.none { it.isStreet }) // erneuter Tipp startet keinen neuen Kontext
     }
 }

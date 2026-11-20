@@ -35,6 +35,7 @@ import de.dalang.nav.destinations.SavedDestination
 import de.dalang.nav.navigation.LatLng
 import de.dalang.nav.search.SearchRepository
 import de.dalang.nav.search.SearchResult
+import de.dalang.nav.search.StreetContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -60,7 +61,22 @@ fun FavoriteAddressDialog(
     var selectedResult by remember { mutableStateOf<SearchResult?>(null) }
     var searchJob by remember { mutableStateOf<Job?>(null) }
     var showHouseNumberInput by remember { mutableStateOf(false) }
-    var streetName by remember { mutableStateOf("") }
+    var street by remember { mutableStateOf<StreetContext?>(null) }
+
+    fun searchHouseNumber() {
+        val s = street ?: return
+        if (houseNumber.isBlank()) return
+        searchJob?.cancel()
+        searchJob = scope.launch {
+            isSearching = true
+            searchResults = s.withAddresses(
+                searchRepository.searchHouseNumber(s, houseNumber.trim(), currentLocation?.lat, currentLocation?.lng)
+            )
+            isSearching = false
+            showHouseNumberInput = false
+            keyboardController?.hide()
+        }
+    }
 
     // Bei vorhandener Adresse diese als "ausgewählt" markieren
     LaunchedEffect(currentAddress) {
@@ -121,7 +137,7 @@ fun FavoriteAddressDialog(
                 // Hausnummer-Eingabe (wenn Straße erkannt)
                 if (showHouseNumberInput) {
                     Text(
-                        text = streetName,
+                        text = street?.street.orEmpty(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Medium
@@ -161,23 +177,7 @@ fun FavoriteAddressDialog(
                                         imeAction = ImeAction.Search
                                     ),
                                     keyboardActions = KeyboardActions(
-                                        onSearch = {
-                                            if (houseNumber.isNotEmpty()) {
-                                                // Suche mit Straße + Hausnummer
-                                                searchJob?.cancel()
-                                                searchJob = scope.launch {
-                                                    isSearching = true
-                                                    searchResults = searchRepository.search(
-                                                        query = "$streetName $houseNumber",
-                                                        currentLat = currentLocation?.lat,
-                                                        currentLon = currentLocation?.lng
-                                                    )
-                                                    isSearching = false
-                                                    showHouseNumberInput = false
-                                                    keyboardController?.hide()
-                                                }
-                                            }
-                                        }
+                                        onSearch = { searchHouseNumber() }
                                     ),
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -205,22 +205,7 @@ fun FavoriteAddressDialog(
 
                     // Suchen-Button für Hausnummer
                     Button(
-                        onClick = {
-                            if (houseNumber.isNotEmpty()) {
-                                searchJob?.cancel()
-                                searchJob = scope.launch {
-                                    isSearching = true
-                                    searchResults = searchRepository.search(
-                                        query = "$streetName $houseNumber",
-                                        currentLat = currentLocation?.lat,
-                                        currentLon = currentLocation?.lng
-                                    )
-                                    isSearching = false
-                                    showHouseNumberInput = false
-                                    keyboardController?.hide()
-                                }
-                            }
-                        },
+                        onClick = { searchHouseNumber() },
                         enabled = houseNumber.isNotEmpty(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.onSurface,
@@ -358,10 +343,7 @@ fun FavoriteAddressDialog(
                                     items = searchResults,
                                     key = { index, result -> "fav_search_${index}_${result.lat}_${result.lon}" }
                                 ) { _, result ->
-                                    val isStreet = result.type == "highway" ||
-                                                   result.type == "road" ||
-                                                   result.type == "street" ||
-                                                   result.type == "residential"
+                                    val isStreet = result.isStreet
 
                                     Row(
                                         modifier = Modifier
@@ -369,13 +351,14 @@ fun FavoriteAddressDialog(
                                             .clickable {
                                                 if (isStreet) {
                                                     // Bei Straße: Hausnummer-Eingabe zeigen
-                                                    streetName = result.displayName.split(",").first().trim()
+                                                    street = StreetContext.of(result)
+                                                    houseNumber = ""
                                                     showHouseNumberInput = true
                                                     searchResults = emptyList()
                                                     query = ""
                                                 } else {
-                                                    // Normale Adresse: direkt auswählen
-                                                    selectedResult = result
+                                                    // Normale Adresse: direkt auswählen („ohne Nummer“ = die Straße)
+                                                    selectedResult = street?.target(result) ?: result
                                                     query = ""
                                                     searchResults = emptyList()
                                                 }

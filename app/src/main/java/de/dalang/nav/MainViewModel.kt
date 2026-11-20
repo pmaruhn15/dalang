@@ -15,12 +15,14 @@ import de.dalang.nav.location.LocationSmoother
 import de.dalang.nav.navigation.*
 import de.dalang.nav.search.SearchRepository
 import de.dalang.nav.search.SearchResult
+import de.dalang.nav.search.StreetContext
 import de.dalang.nav.settings.SettingsRepository
 import de.dalang.nav.settings.ThemeMode
 import de.dalang.nav.util.CrashLogger
 import de.dalang.nav.util.GpsTrackLogger
 import de.dalang.nav.util.TripRecorder
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -415,37 +417,72 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         headingJob?.cancel()
     }
 
+    /** Gewählte Straße, solange der Nutzer die Hausnummer tippt (siehe [StreetContext]). */
+    private var streetContext: StreetContext? = null
+
     fun updateSearchQuery(query: String) {
         _searchQuery.value = query
-
         searchJob?.cancel()
-        if (query.length >= 3) {
-            searchJob = viewModelScope.launch(exceptionHandler) {
-                try {
-                    delay(300) // Debounce
-                    _isSearching.value = true
+        val street = streetContext?.takeIf { it.covers(query) }
+        streetContext = street
 
-                    // Aktuelle Position für standortbasierte Suche
-                    val location = _currentLocation.value
-                    _searchResults.value = searchRepository.search(
-                        query = query,
-                        currentLat = location?.lat,
-                        currentLon = location?.lng
-                    )
-
-                    _isSearching.value = false
-                } catch (e: Exception) {
-                    CrashLogger.logError("MainViewModel", "search failed", e)
-                    _isSearching.value = false
-                    _searchResults.value = emptyList()
-                }
+        val location = _currentLocation.value
+        val number = street?.houseNumberIn(query)
+        when {
+            street == null ->
+                if (query.length >= 3) launchSearch { searchRepository.search(query, location?.lat, location?.lng) }
+                else _searchResults.value = emptyList()
+            number == "" -> {
+                _isSearching.value = false
+                _searchResults.value = street.withAddresses(null)
             }
-        } else {
-            _searchResults.value = emptyList()
+            number != null -> launchSearch {
+                street.withAddresses(searchRepository.searchHouseNumber(street, number, location?.lat, location?.lng))
+            }
+            else -> launchSearch {
+                listOf(street.streetOnly) + searchRepository.search(query, location?.lat, location?.lng)
+            }
         }
     }
 
+    private fun launchSearch(search: suspend () -> List<SearchResult>) {
+        searchJob = viewModelScope.launch(exceptionHandler) {
+            delay(300) // Debounce
+            _isSearching.value = true
+            try {
+                _searchResults.value = search()
+            } catch (e: CancellationException) {
+                throw e // nicht die Ergebnisse der neueren Suche mit emptyList() überschreiben
+            } catch (e: Exception) {
+                CrashLogger.logError("MainViewModel", "search failed", e)
+                _searchResults.value = emptyList()
+            } finally {
+                _isSearching.value = false
+            }
+        }
+    }
+
+    /**
+     * Tipp auf einen Suchtreffer. Straße (ohne aktiven Kontext) → Feld wird „<Straße> “, Hausnummer tippen;
+     * sonst navigieren. @return true = Ziel gewählt (Suche schließen), false = weiter tippen.
+     */
+    fun onSearchResultClick(result: SearchResult): Boolean {
+        val street = streetContext
+        if (street == null) {
+            StreetContext.of(result)?.let {
+                streetContext = it
+                updateSearchQuery("${it.street} ")
+                return false
+            }
+        }
+        streetContext = null
+        selectDestination(street?.target(result) ?: result)
+        return true
+    }
+
     fun clearSearch() {
+        streetContext = null
+        searchJob?.cancel()
         _searchQuery.value = ""
         _searchResults.value = emptyList()
     }

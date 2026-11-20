@@ -24,7 +24,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,7 +39,8 @@ fun SearchBar(
     onQueryChange: (String) -> Unit,
     results: List<SearchResult>,
     isSearching: Boolean,
-    onResultClick: (SearchResult) -> Unit,
+    /** true = Ziel gewählt (Suche schließen), false = weiter tippen (Straße gewählt, Hausnummer folgt). */
+    onResultClick: (SearchResult) -> Boolean,
     onClear: () -> Unit,
     onMenuClick: (() -> Unit)? = null,
     onFocusChanged: ((Boolean) -> Unit)? = null,
@@ -48,6 +51,9 @@ fun SearchBar(
     var isFocused by remember { mutableStateOf(false) }
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    // Eigener TextFieldValue, damit von außen gesetzter Text („Dachauer Straße “) den Cursor ans Ende bekommt
+    var field by remember { mutableStateOf(TextFieldValue(query, TextRange(query.length))) }
+    val fieldValue = if (field.text == query) field else TextFieldValue(query, TextRange(query.length))
 
     Column(
         modifier = modifier
@@ -106,10 +112,11 @@ fun SearchBar(
                         }
 
                         BasicTextField(
-                            value = query,
+                            value = fieldValue,
                             onValueChange = {
-                                onQueryChange(it)
-                                isExpanded = it.isNotEmpty()
+                                field = it
+                                if (it.text != query) onQueryChange(it.text)
+                                isExpanded = it.text.isNotEmpty()
                             },
                             textStyle = TextStyle(
                                 color = MaterialTheme.colorScheme.onSurface,
@@ -174,17 +181,15 @@ fun SearchBar(
                     }
                 } else {
                     val select: (SearchResult) -> Unit = { selectedResult ->
-                        // WICHTIG: Erst Fokus und Keyboard entfernen BEVOR UI geändert wird
-                        // Das verhindert den LayoutCoordinate Crash
-                        focusManager.clearFocus()
-                        keyboardController?.hide()
-
-                        // Dann UI aktualisieren
-                        isExpanded = false
-                        onClear()
-
-                        // Zuletzt Ziel auswählen (kann UI-Änderungen auslösen)
-                        onResultClick(selectedResult)
+                        // Straße gewählt → Feld zeigt „<Straße> “, Fokus/Tastatur bleiben für die Hausnummer.
+                        // Sonst Fokus/Keyboard weg, bevor die Suchleiste verschwindet (LayoutCoordinate-Crash);
+                        // die Route kommt asynchron, die Leiste verschwindet also erst nach diesem Handler.
+                        if (onResultClick(selectedResult)) {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
+                            isExpanded = false
+                            onClear()
+                        }
                     }
                     val firstFar = results.indexOfFirst { it.isFar }
                     LazyColumn {

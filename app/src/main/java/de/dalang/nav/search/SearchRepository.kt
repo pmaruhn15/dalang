@@ -26,7 +26,11 @@ data class SearchResult(
     /** Liegt außerhalb der Region (> PhotonResults.NEAR_KM) — UI zeigt Abschnitt „Weiter entfernt“. */
     val isFar: Boolean = false,
     /** Zugehörige, separat anfahrbare Teilobjekte (Parkplatz, Bahnhof). */
-    val related: List<SearchResult> = emptyList()
+    val related: List<SearchResult> = emptyList(),
+    /** Straße ohne Hausnummer — Tippen startet die Hausnummer-Eingabe ([StreetContext]). */
+    val isStreet: Boolean = false,
+    /** Ort (city, sonst district/locality) — Straßen-Kontext filtert darauf, nicht auf die PLZ. */
+    val city: String = ""
 )
 
 class SearchRepository {
@@ -44,35 +48,47 @@ class SearchRepository {
         query: String,
         currentLat: Double? = null,
         currentLon: Double? = null
-    ): List<SearchResult> = withContext(Dispatchers.IO) {
-        if (query.isBlank()) return@withContext emptyList()
+    ): List<SearchResult> =
+        if (query.isBlank()) emptyList()
+        else photon(query, currentLat, currentLon) { PhotonResults.process(it, query, currentLat, currentLon) } ?: emptyList()
 
-        try {
-            CrashLogger.log("SearchRepository: Searching for '$query'")
-
-            // Eigener User-Agent ist Pflicht: Photon blockt den OkHttp-Default seit Nov 2026 mit 403
-            // (HTML-Antwort -> JSON-Parse-Fehler -> 0 Treffer, "kein Ziel eingebbar").
-            val request = Request.Builder()
-                .url(photonUrl(query, currentLat, currentLon))
-                .header("User-Agent", USER_AGENT)
-                .build()
-
-            val body = client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    CrashLogger.logError("SearchRepository", "Photon HTTP ${response.code}")
-                    return@withContext emptyList()
-                }
-                response.body?.string()
-            } ?: return@withContext emptyList()
-
-            val results = PhotonResults.process(body, query, currentLat, currentLon)
-            CrashLogger.log("SearchRepository: Found ${results.size} results")
-            results
-        } catch (e: Exception) {
-            CrashLogger.logError("SearchRepository", "Search failed", e)
-            emptyList()
+    /** Adressen zu [number] in der Straße von [street] (gefiltert, siehe [PhotonResults.houseNumbers]); null = Fehler. */
+    suspend fun searchHouseNumber(
+        street: StreetContext,
+        number: String,
+        currentLat: Double? = null,
+        currentLon: Double? = null
+    ): List<SearchResult>? =
+        photon(street.photonQuery(number), currentLat, currentLon) {
+            PhotonResults.houseNumbers(it, street, number, currentLat, currentLon)
         }
-    }
+
+    private suspend fun <T : List<*>> photon(query: String, lat: Double?, lon: Double?, parse: (String) -> T): T? =
+        withContext(Dispatchers.IO) {
+            try {
+                CrashLogger.log("SearchRepository: Searching for '$query'")
+
+                // Eigener User-Agent ist Pflicht: Photon blockt den OkHttp-Default seit Nov 2026 mit 403
+                // (HTML-Antwort -> JSON-Parse-Fehler -> 0 Treffer, "kein Ziel eingebbar").
+                val request = Request.Builder()
+                    .url(photonUrl(query, lat, lon))
+                    .header("User-Agent", USER_AGENT)
+                    .build()
+
+                val body = client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        CrashLogger.logError("SearchRepository", "Photon HTTP ${response.code}")
+                        return@withContext null
+                    }
+                    response.body?.string()
+                } ?: return@withContext null
+
+                parse(body).also { CrashLogger.log("SearchRepository: Found ${it.size} results") }
+            } catch (e: Exception) {
+                CrashLogger.logError("SearchRepository", "Search failed", e)
+                null
+            }
+        }
 
     suspend fun reverseGeocode(lat: Double, lon: Double): String? = withContext(Dispatchers.IO) {
         try {

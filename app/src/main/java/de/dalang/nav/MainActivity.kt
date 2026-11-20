@@ -476,7 +476,7 @@ fun DaLangAppContent(viewModel: MainViewModel) {
                     },
                     results = searchResults,
                     isSearching = isSearching,
-                    onResultClick = viewModel::selectDestination,
+                    onResultClick = viewModel::onSearchResultClick,
                     onClear = {
                         viewModel.clearSearch()
                         // showRecentDestinations wird automatisch durch derivedState aktualisiert

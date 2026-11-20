@@ -84,6 +84,9 @@ internal object PhotonResults {
         val title = name.ifBlank { streetLine.ifBlank { kind.label } }
         val titleTokens = tokens(title)
         val isFar get() = distanceKm != null && distanceKm > NEAR_KM
+        val town = city.ifBlank { district.ifBlank { locality } }
+        /** Straße/Fußgängerzone als Ganzes (Layer street), nicht Weg oder Ampel-Knoten (highway=traffic_signals). */
+        val isStreet = layer == "street" && kind.linear && kind.priority >= PlaceKind.NORMAL
 
         private val searchTokens = tokens("$name $street $housenumber $city $district $locality")
         private val postcodeTokens = tokens(postcode)
@@ -185,7 +188,6 @@ internal object PhotonResults {
     internal fun Place.addressLine(): String {
         val parts = mutableListOf<String>()
         if (streetLine.isNotBlank() && streetLine != title) parts += streetLine
-        val town = city.ifBlank { district.ifBlank { locality } }
         when {
             town.isNotBlank() && !town.equals(title, ignoreCase = true) -> parts += "$postcode $town".trim()
             kind.priority >= PlaceKind.MAIN && osmKey in setOf("place", "boundary") ->
@@ -208,9 +210,59 @@ internal object PhotonResults {
             typeLabel = kind.label,
             address = address,
             isFar = isFar,
-            related = related
+            related = related,
+            isStreet = isStreet,
+            city = town
         )
     }
+
+    // ---------------------------------------------------------------- Hausnummern
+
+    /** Ohne Ort: Adresse gehört zur Straße, wenn sie so nah am Straßenpunkt liegt (lange Dorfstraße ~ 2–3 km). */
+    private const val SAME_STREET_M = 3000.0
+
+    /**
+     * Adressvorschläge für [number] in [street]: nur dieselbe Straße (normalisierter Name) im selben **Ort** —
+     * nicht PLZ, die Dachauer Straße in München hat 80335…80992, Photon liefert für „dachauer strasse 12“ aber
+     * auch Olching, Petershausen, Haimhausen … Präfix auf die Hausnummer („1“ → 1, 10, 12a, soweit Photon sie
+     * liefert). Adresse + POIs an derselben Nummer (Hotel, Café) → ein Eintrag, POI-Namen nur im Typ-Text.
+     */
+    fun houseNumbers(json: String, street: StreetContext, number: String, lat: Double?, lon: Double?): List<SearchResult> {
+        val streetTokens = tokens(street.street)
+        val prefix = houseNumberKey(number)
+        val city = normalize(street.city)
+        return parse(json, lat, lon)
+            .filter { p ->
+                p.housenumber.isNotBlank() && tokens(p.street) == streetTokens &&
+                    houseNumberKey(p.housenumber).startsWith(prefix) &&
+                    if (city.isNotEmpty()) normalize(p.town) == city
+                    else GeoUtils.calculateDistanceMeters(p.lat, p.lon, street.result.lat, street.result.lon) <= SAME_STREET_M
+            }
+            .groupBy { houseNumberKey(it.housenumber) }
+            .toSortedMap(compareBy<String> { it.takeWhile(Char::isDigit).toIntOrNull() ?: Int.MAX_VALUE }.thenBy { it })
+            .values
+            .map { same ->
+                val head = same.firstOrNull { it.name.isBlank() } ?: same.first()
+                val pois = same.map { it.name }.filter { it.isNotBlank() }.distinct().take(2)
+                val title = "${head.street} ${head.housenumber}"
+                val address = "${head.postcode} ${head.town}".trim()
+                SearchResult(
+                    displayName = "$title, $address",
+                    lat = head.lat,
+                    lon = head.lon,
+                    type = head.osmValue,
+                    distance = head.distanceKm ?: 0.0,
+                    title = title,
+                    typeLabel = listOf("Adresse", pois.joinToString(", ")).filter { it.isNotEmpty() }.joinToString(" · "),
+                    address = address,
+                    city = head.town
+                )
+            }
+            .take(MAX_RESULTS)
+    }
+
+    /** „12 a“ = „12A“ = „12a“. */
+    private fun houseNumberKey(s: String) = s.lowercase(Locale.GERMAN).filterNot { it.isWhitespace() }
 
     // ---------------------------------------------------------------- Textabgleich
 
