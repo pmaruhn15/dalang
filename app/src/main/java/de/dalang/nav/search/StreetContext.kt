@@ -19,20 +19,18 @@ data class StreetContext(val result: SearchResult) {
     }
 
     /**
-     * Messung 2026-11-20 (München-Moosach, Ziel Dachauer Straße 12 München 80335):
-     *  - „dachauer straße 12“: 9 Treffer, kein einziger aus München (Olching, Emmering, Erdweg, Wien).
-     *  - „dachauer straße 12 münchen“: 2 Treffer, beide Unsinn (Dachdecker in Berlin). Gleiches bei
-     *    „bunzlauer straße 8 münchen“. Photon verträgt „ß“ in dieser Kombination nicht.
-     *  - „dachauer strasse 12“: 20 Treffer, München-12 (Adresse, Hotel, Café) + 14 andere Orte.
-     *  - „dachauer strasse 12 münchen“: 20 Treffer, dieselben München-12 + nur noch 5 andere Orte.
-     *  - „dachauer strasse 1“ → keine München-Adresse; „… 1 münchen“ → immerhin 118 (Präfix-Treffer).
-     * Daher ß→ss und Ort anhängen.
+     * Messung 2026-11-20, korrekt UTF-8-kodiert (München-Moosach, limit 20):
+     *  - „dachauer straße 12“ → 20 Treffer, davon 3× München-12; „… 12 münchen“ → 7 Treffer, dieselben 3.
+     *  - „dachauer straße 1“ → 1 München-Adresse; „… 1 münchen“ → 10 München-Adressen (Präfix-Treffer).
+     *  - „ß“ und „ss“ liefern identische Ergebnisse (eine frühere Messung mit „ß kaputt“ war ein
+     *    Kodierungsfehler der Git-Bash, nicht Photon).
+     * Daher Ort anhängen: weniger Fremdorte, mehr Hausnummern derselben Straße.
      */
-    fun photonQuery(number: String) = "$street $number $city".trim().replace("ß", "ss")
+    fun photonQuery(number: String) = "$street $number $city".trim()
 
     /** Oberster Eintrag: direkt zur Straße navigieren (bisheriges Verhalten beim Straßen-Tap). */
-    val streetOnly get() = entry("$street · ohne Hausnummer navigieren")
-    val notFound get() = entry("Hausnummer nicht gefunden – $street ohne Nummer navigieren")
+    val streetOnly get() = entry("Ohne Hausnummer navigieren")
+    val notFound get() = entry("Hausnummer nicht gefunden – ohne Nummer navigieren")
 
     /** null = (noch) nicht gesucht/Fehler → nur [streetOnly]; leer → [notFound] statt leerer Liste. */
     fun withAddresses(addresses: List<SearchResult>?): List<SearchResult> = when {
@@ -44,8 +42,9 @@ data class StreetContext(val result: SearchResult) {
     /** Ziel hinter einem Eintrag: [streetOnly]/[notFound] stehen für die Straße selbst. */
     fun target(clicked: SearchResult) = if (clicked.type == STREET_ONLY) result else clicked
 
-    private fun entry(title: String) = result.copy(
-        displayName = "$title, ${result.address}", title = title, typeLabel = "",
+    // Titel = Straßenname, Hinweis als Typzeile (vorher "Straße · ohne Hausnummer n…" abgeschnitten)
+    private fun entry(hint: String) = result.copy(
+        displayName = "$street, ${result.address}", title = street, typeLabel = hint,
         type = STREET_ONLY, related = emptyList(), isStreet = false, isFar = false
     )
 

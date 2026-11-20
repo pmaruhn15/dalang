@@ -222,7 +222,7 @@ class PhotonResultsTest {
         }
         assertEquals(null, ctx.houseNumberIn("Dachauer Straße München"))
         assertEquals(null, ctx.houseNumberIn("Dachauer Straße 12 München"))
-        assertEquals("Dachauer Strasse 12 München", ctx.photonQuery("12"))
+        assertEquals("Dachauer Straße 12 München", ctx.photonQuery("12"))
     }
 
     @Test
@@ -263,12 +263,13 @@ class PhotonResultsTest {
         assertTrue(none.isEmpty())
         val list = ctx.withAddresses(none)
         assertEquals(1, list.size)
-        assertEquals("Hausnummer nicht gefunden – Dachauer Straße ohne Nummer navigieren", list[0].title)
+        assertEquals("Dachauer Straße", list[0].title)
+        assertEquals("Hausnummer nicht gefunden – ohne Nummer navigieren", list[0].typeLabel)
         assertEquals(ctx.result, ctx.target(list[0]))
 
-        assertEquals(listOf("Dachauer Straße · ohne Hausnummer navigieren"), ctx.withAddresses(null).map { it.title })
+        assertEquals(listOf("Ohne Hausnummer navigieren"), ctx.withAddresses(null).map { it.typeLabel })
         val found = ctx.withAddresses(houseNumbers("dachauer strasse 12", "12"))
-        assertEquals(listOf("Dachauer Straße · ohne Hausnummer navigieren", "Dachauer Straße 12"), found.map { it.title })
+        assertEquals(listOf("Dachauer Straße", "Dachauer Straße 12"), found.map { it.title })
         assertEquals(ctx.result, ctx.target(found[0]))
         assertEquals(found[1], ctx.target(found[1]))
         assertTrue(found.none { it.isStreet }) // erneuter Tipp startet keinen neuen Kontext
