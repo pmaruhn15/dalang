@@ -113,6 +113,18 @@ class RouteRepository {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
+    // OSM-Anpassung ist nur Verfeinerung: harte Obergrenze pro Anfrage, sonst blockiert ein
+    // hängender OSRM-Request die Zielauswahl (Testfahrt: 15 s Timeout -> "kein Ziel eingebbar").
+    // IPv4 zuerst: router.project-osrm.org war per IPv6 vom Handy aus nicht erreichbar, OkHttp 4
+    // probiert Adressen nacheinander -> hing bis zum Timeout (gemessen: curl -4 0,1 s, -6 Timeout).
+    private val osrmClient = client.newBuilder()
+        .callTimeout(4, TimeUnit.SECONDS)
+        .dns(object : okhttp3.Dns {
+            override fun lookup(hostname: String) =
+                okhttp3.Dns.SYSTEM.lookup(hostname).sortedBy { if (it is java.net.Inet4Address) 0 else 1 }
+        })
+        .build()
+
     suspend fun getRoute(from: LatLng, to: LatLng): Route? = withContext(Dispatchers.IO) {
         // HERE API nutzen wenn konfiguriert UND Limit nicht erreicht
         val isConfigured = HereConfig.isConfigured()
@@ -156,7 +168,12 @@ class RouteRepository {
         val actionsAlong = here.steps.map { hereCum[OsmRouteMatcher.nearestIndex(here.geometry, it.maneuver.location)] }
         var vias = emptyList<OsmRouteMatcher.Via>()
         var plainBody: String? = null
+        val startMs = System.currentTimeMillis()
         for (attempt in 0 until OsmRouteMatcher.MAX_REQUESTS) {
+            if (attempt > 0 && System.currentTimeMillis() - startMs > OSM_MATCH_BUDGET_MS) {
+                CrashLogger.log("RouteRepository: OSM-Anpassung Zeitbudget überschritten → HERE-Geometrie")
+                return null to plainBody
+            }
             if (attempt > 0) delay(1100)  // Demo-Server-Policy: max. 1 Anfrage/s
             val body = fetch(OsmRouteMatcher.osrmUrl(OSRM_BASE_URL, here.geometry, vias))
             if (attempt == 0) plainBody = body
@@ -188,7 +205,7 @@ class RouteRepository {
     /** GET, Body auch bei HTTP-Fehler (OSRM schickt dann JSON mit code/message). */
     private fun httpGet(url: String): String? = try {
         val request = Request.Builder().url(url).header("User-Agent", "DaLang Navigation App").build()
-        client.newCall(request).execute().use { it.body?.string() }
+        osrmClient.newCall(request).execute().use { it.body?.string() }
     } catch (e: Exception) {
         CrashLogger.logError("RouteRepository", "OSRM request failed", e)
         null
@@ -238,7 +255,7 @@ class RouteRepository {
                 .header("User-Agent", "DaLang Navigation App")
                 .build()
 
-            val response = client.newCall(request).execute()
+            val response = osrmClient.newCall(request).execute()
             val body = response.body?.string() ?: return emptyList<Pair<LatLng, LaneInfo>>() to emptyList()
 
             return parseOsrmLaneData(body)
@@ -1043,5 +1060,6 @@ class RouteRepository {
 
     companion object {
         private const val OSRM_BASE_URL = "https://router.project-osrm.org"
+        private const val OSM_MATCH_BUDGET_MS = 5_000L  // danach sofort HERE-Geometrie zeigen
     }
 }

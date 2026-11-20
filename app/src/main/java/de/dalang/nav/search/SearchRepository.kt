@@ -49,11 +49,19 @@ class SearchRepository {
 
             CrashLogger.log("SearchRepository: Searching for '$query'")
 
+            // Eigener User-Agent ist Pflicht: Photon blockt den OkHttp-Default seit Nov 2026 mit 403
+            // (HTML-Antwort -> JSON-Parse-Fehler -> 0 Treffer, "kein Ziel eingebbar").
             val request = Request.Builder()
                 .url(url)
+                .header("User-Agent", "DaLang Navigation App")
                 .build()
 
             val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                CrashLogger.logError("SearchRepository", "Photon HTTP ${response.code}")
+                response.close()
+                return@withContext emptyList()
+            }
             val body = response.body?.string() ?: return@withContext emptyList()
 
             val results = parsePhotonResults(body, currentLat, currentLon)
