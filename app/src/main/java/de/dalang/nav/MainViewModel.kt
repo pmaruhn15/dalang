@@ -461,7 +461,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun selectDestination(result: SearchResult) {
         CrashLogger.log("MainViewModel: selectDestination: ${result.displayName}")
         val to = LatLng(result.lat, result.lon)
-        val displayName = result.displayName.split(",").first()
+        val displayName = result.title  // Namen mit Komma („Aying, Peißer Straße 8“) nicht abschneiden
         // Vorhandenen Retry abbrechen — neue Destination ersetzt die alte.
         pendingRetryJob?.cancel()
         pendingRetryJob = null

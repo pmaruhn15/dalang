@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.dalang.nav.search.SearchResult
@@ -172,28 +173,34 @@ fun SearchBar(
                         )
                     }
                 } else {
+                    val select: (SearchResult) -> Unit = { selectedResult ->
+                        // WICHTIG: Erst Fokus und Keyboard entfernen BEVOR UI geändert wird
+                        // Das verhindert den LayoutCoordinate Crash
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+
+                        // Dann UI aktualisieren
+                        isExpanded = false
+                        onClear()
+
+                        // Zuletzt Ziel auswählen (kann UI-Änderungen auslösen)
+                        onResultClick(selectedResult)
+                    }
+                    val firstFar = results.indexOfFirst { it.isFar }
                     LazyColumn {
                         itemsIndexed(
                             items = results,
                             key = { index, result -> "search_${index}_${result.lat}_${result.lon}" }
-                        ) { _, result ->
-                            SearchResultItem(
-                                result = result,
-                                onClick = {
-                                    // WICHTIG: Erst Fokus und Keyboard entfernen BEVOR UI geändert wird
-                                    // Das verhindert den LayoutCoordinate Crash
-                                    focusManager.clearFocus()
-                                    keyboardController?.hide()
-
-                                    // Dann UI aktualisieren
-                                    val selectedResult = result
-                                    isExpanded = false
-                                    onClear()
-
-                                    // Zuletzt Ziel auswählen (kann UI-Änderungen auslösen)
-                                    onResultClick(selectedResult)
-                                }
-                            )
+                        ) { index, result ->
+                            if (index == firstFar) {
+                                Text(
+                                    text = "Weiter entfernt",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
+                                )
+                            }
+                            SearchResultItem(result = result, onClick = select)
                         }
                     }
                 }
@@ -202,42 +209,71 @@ fun SearchBar(
     }
 }
 
+/** Name / „Typ · Adresse“ / Entfernung, darunter auswählbare Teilziele (Parkplatz, Bahnhof). */
 @Composable
 private fun SearchResultItem(
     result: SearchResult,
-    onClick: () -> Unit
+    onClick: (SearchResult) -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            val parts = result.displayName.split(",")
-            Text(
-                text = parts.first().trim(),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            if (parts.size > 1) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onClick(result) }
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = parts.drop(1).take(2).joinToString(",").trim(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
+                    text = result.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+                val details = listOf(result.typeLabel, result.address).filter { it.isNotBlank() }
+                if (details.isNotEmpty()) {
+                    Text(
+                        text = details.joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            DistanceText(result.distance)
+        }
+        result.related.forEach { sub ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onClick(sub) }
+                    .padding(start = 32.dp, end = 16.dp, top = 2.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "↳ ${sub.title}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                DistanceText(sub.distance)
             }
         }
+    }
+}
 
-        // Distanz anzeigen wenn vorhanden
-        if (result.distance > 0) {
-            Text(
-                text = DistanceFormatter.formatKilometersSimple(result.distance),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+@Composable
+private fun DistanceText(km: Double) {
+    if (km > 0) {
+        Text(
+            text = DistanceFormatter.formatKilometersSimple(km),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 8.dp)
+        )
     }
 }
